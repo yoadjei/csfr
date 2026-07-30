@@ -1,0 +1,168 @@
+{
+  "corpus": "mikus_12-carve-ext2",
+  "input": "B:\\rsencarver\\Datasets\\NickMikus\\12-carve-ext2\\12-carve-ext2.dd",
+  "protocol": {
+    "patch": 64,
+    "stride": 64,
+    "overlapping": false,
+    "min_side": 64,
+    "min_std": 10.0,
+    "max_per_image": 16,
+    "seed": 2026,
+    "colour": true
+  },
+  "n_patches": 26,
+  "n_source_images": 3,
+  "patches_per_source_image": {
+    "0": 16,
+    "1": 5,
+    "2": 5
+  },
+  "largest_cluster_share": 0.6153846153846154,
+  "images": [
+    {
+      "source_image": 0,
+      "identifier": "12-carve-ext2.dd#carved0000",
+      "sha256": "181fc4c940527f2c191ebbea6a6407ba5210f728f9519b95f3e697c9fb5e965e",
+      "image_hw": [
+        333,
+        346
+      ],
+      "mode": "RGB",
+      "n_patches": 16,
+      "coords": [
+        [
+          192,
+          0
+        ],
+        [
+          192,
+          128
+        ],
+        [
+          256,
+          0
+        ],
+        [
+          64,
+          192
+        ],
+        [
+          64,
+          128
+        ],
+        [
+          256,
+          64
+        ],
+        [
+          64,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          128,
+          64
+        ],
+        [
+          64,
+          64
+        ],
+        [
+          192,
+          64
+        ],
+        [
+          0,
+          256
+        ],
+        [
+          128,
+          128
+        ],
+        [
+          0,
+          64
+        ],
+        [
+          192,
+          192
+        ],
+        [
+          256,
+          128
+        ]
+      ]
+    },
+    {
+      "source_image": 1,
+      "identifier": "12-carve-ext2.dd#carved0002",
+      "sha256": "65c9166bc5e565b1b8094113f3eab8eee75b28d493591a60e174fadf3d6be440",
+      "image_hw": [
+        68,
+        358
+      ],
+      "mode": "RGB",
+      "n_patches": 5,
+      "coords": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          64
+        ],
+        [
+          0,
+          128
+        ],
+        [
+          0,
+          192
+        ],
+        [
+          0,
+          256
+        ]
+      ]
+    },
+    {
+      "source_image": 2,
+      "identifier": "12-carve-ext2.dd#carved0017",
+      "sha256": "f9e9b16f809f751e600e9268142c0b2f270ceb752950a4099c41bd8ea15beab9",
+      "image_hw": [
+        146,
+        196
+      ],
+      "mode": "RGB",
+      "n_patches": 5,
+      "coords": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          64
+        ],
+        [
+          0,
+          128
+        ],
+        [
+          64,
+          64
+        ],
+        [
+          64,
+          128
+        ]
+      ]
+    }
+  ],
+  "out": "B:\\paper2_recon\\data\\patches_mikus_12-carve-ext2.npy"
+}
