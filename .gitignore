@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# checkpoints and large intermediate arrays (regenerate from patches + config)
+*.pt
+*.npy
+*.npz
+*.bin
+# but keep every input corpus, cluster label, and manifest under data/
+!data/*.npy
+
+# Logs & temp
+logs/
+tmp_smoke/
+*.log
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# LaTeX aux
+*.aux
+*.bbl
+*.blg
+*.spl
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Internal review material — never publish
+*.docx
+REVIEW_AND_ACTION_PLAN.md
+_comments_extract.md
+COMMIT_PLAN.md
+
+# debug scratch renders (not part of the manuscript)
+paper/_chk*.png
+
+# internal planning notes (not part of the reproducibility package)
+tasks/
