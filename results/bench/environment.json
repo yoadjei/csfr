@@ -1,0 +1,26 @@
+{
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 189 Stepping 1, GenuineIntel",
+    "python": "3.14.6",
+    "torch": "2.13.0+cpu",
+    "torch_threads": 8,
+    "numpy": "2.5.1",
+    "scipy": "1.17.1",
+    "scikit-learn": "1.9.0",
+    "scikit-image": "0.26.0",
+    "opencv": "4.11.0",
+    "cpu_count_physical": 8,
+    "cpu_count_logical": 8,
+    "total_ram_gb": 15.7
+  },
+  "cell": "results/csfr_sweep_2d_v2/CF1_L3/seed0",
+  "device": "cpu",
+  "solver": {
+    "lam_l1": 0.02,
+    "lam_tv": 0.1,
+    "lam_fc": 0.005,
+    "max_iter": 600,
+    "lr": 2.0
+  }
+}
