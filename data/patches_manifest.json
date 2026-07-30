@@ -1,0 +1,48 @@
+{
+  "corpus": "dfrws2006",
+  "note": "Cluster labels for the committed data/patches.npy. Reconstructed from the extraction manifest: patches were concatenated in source-image order and the stack truncated to the first 300, so each patch's source image is recoverable from the per-image counts.",
+  "source_manifest": "B:\\rsencarver\\data_manifests\\image_patches\\manifest.json",
+  "n_patches": 300,
+  "n_source_images": 6,
+  "patches_per_source_image": {
+    "0": 8,
+    "1": 8,
+    "2": 124,
+    "3": 47,
+    "4": 5,
+    "5": 108
+  },
+  "image_hw": {
+    "0": [
+      120,
+      160
+    ],
+    "1": [
+      120,
+      160
+    ],
+    "2": [
+      1536,
+      2048
+    ],
+    "3": [
+      1100,
+      1400
+    ],
+    "4": [
+      11598,
+      11598
+    ],
+    "5": [
+      500,
+      339
+    ]
+  },
+  "largest_cluster_share": 0.41333333333333333,
+  "protocol": {
+    "patch_size": 64,
+    "min_side": 96,
+    "min_std": 10.0
+  },
+  "patches_sha256": "d64c9b968cdf99742e091edf116a60300c7dabd99f3a1ae7df7704814a038d3b"
+}
