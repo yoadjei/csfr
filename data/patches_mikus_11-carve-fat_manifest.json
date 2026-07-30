@@ -1,0 +1,144 @@
+{
+  "corpus": "mikus_11-carve-fat",
+  "input": "B:\\rsencarver\\Datasets\\NickMikus\\11-carve-fat\\11-carve-fat.dd",
+  "protocol": {
+    "patch": 64,
+    "stride": 64,
+    "overlapping": false,
+    "min_side": 64,
+    "min_std": 10.0,
+    "max_per_image": 16,
+    "seed": 2026,
+    "colour": true
+  },
+  "n_patches": 20,
+  "n_source_images": 3,
+  "patches_per_source_image": {
+    "0": 16,
+    "1": 2,
+    "2": 2
+  },
+  "largest_cluster_share": 0.8,
+  "images": [
+    {
+      "source_image": 0,
+      "identifier": "11-carve-fat.dd#carved0168",
+      "sha256": "040a2e0836d0e79778a7b3af4a7d7f11ef2bbe954db1180bca8327886bc842de",
+      "image_hw": [
+        461,
+        396
+      ],
+      "mode": "RGB",
+      "n_patches": 16,
+      "coords": [
+        [
+          64,
+          0
+        ],
+        [
+          384,
+          256
+        ],
+        [
+          384,
+          64
+        ],
+        [
+          192,
+          192
+        ],
+        [
+          128,
+          256
+        ],
+        [
+          256,
+          256
+        ],
+        [
+          128,
+          64
+        ],
+        [
+          0,
+          128
+        ],
+        [
+          192,
+          320
+        ],
+        [
+          128,
+          128
+        ],
+        [
+          320,
+          64
+        ],
+        [
+          64,
+          320
+        ],
+        [
+          192,
+          64
+        ],
+        [
+          64,
+          128
+        ],
+        [
+          128,
+          192
+        ],
+        [
+          384,
+          192
+        ]
+      ]
+    },
+    {
+      "source_image": 1,
+      "identifier": "11-carve-fat.dd#carved0170",
+      "sha256": "a0c689498ad46d9cad70c52a2c952977f8888f8fd8d7a2fbdb2d2294583c4efd",
+      "image_hw": [
+        120,
+        160
+      ],
+      "mode": "RGB",
+      "n_patches": 2,
+      "coords": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          64
+        ]
+      ]
+    },
+    {
+      "source_image": 2,
+      "identifier": "11-carve-fat.dd#carved0172",
+      "sha256": "df429bde3695716ffdc00fdb1206a6796d54c820cf9537cb4109d69908f1b925",
+      "image_hw": [
+        100,
+        160
+      ],
+      "mode": "RGB",
+      "n_patches": 2,
+      "coords": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          64
+        ]
+      ]
+    }
+  ],
+  "out": "B:\\paper2_recon\\data\\patches_mikus_11-carve-fat.npy"
+}
