@@ -1,0 +1,702 @@
+{
+  "schema": "csfr2d-1.0",
+  "artefact": "csfr-provenance-manifest",
+  "patch_id": "dfrws2006/CF1_L3/seed0/patch0",
+  "observation": {
+    "n_pixels": 4096,
+    "n_observed": 2867,
+    "n_imputed": 1229,
+    "mask_sha256": "3084627983c4c945aa019baaa3315340f2954b61523bbe7fa8785b97410706a1",
+    "observed_sha256": "2ecccd42022c54e4f12468b00f85429c15c1e08053f3f5d7fc74cc897db7c2c6"
+  },
+  "solver_configuration": {
+    "lam_l1": 0.02,
+    "lam_tv": 0.1,
+    "lam_fc": 0.005
+  },
+  "constraints": {
+    "C1_fragment_consistency": "hard; observed pixels returned unmodified by the terminal projection",
+    "C2_spatial_continuity": "soft penalty, lambda_tv=0.1",
+    "C3_intensity_bounds": "hard; clipped to [0.0, 255.0] each iteration",
+    "C4_frequency_coherence": "soft penalty, lambda_fc=0.005"
+  },
+  "attribution_method": "implicit-function theorem at the returned iterate: dx/dy = (grad^2_xx J)^-1 M, solved per queried pixel by conjugate gradients with autograd Hessian-vector products",
+  "caveats": [
+    "Weights describe the stationarity condition of the solver objective; the fixed iteration budget is not certified to have reached a stationary point.",
+    "Weights are normalised to sum to one in absolute value over their support and are contribution shares, not probabilities."
+  ],
+  "queries": [
+    {
+      "pixel": [
+        0,
+        1
+      ],
+      "reconstructed_value": 220.0747833251953,
+      "status": "imputed",
+      "n_contributing_observed_pixels": 2867,
+      "weight_mass_in_top_k": 0.29841334055865815,
+      "top_contributors": [
+        {
+          "pixel": [
+            0,
+            0
+          ],
+          "weight": 0.08952820356952096,
+          "observed_value": 220.0
+        },
+        {
+          "pixel": [
+            0,
+            2
+          ],
+          "weight": 0.05112860123069485,
+          "observed_value": 221.0
+        },
+        {
+          "pixel": [
+            1,
+            1
+          ],
+          "weight": 0.04322848799959158,
+          "observed_value": 212.0
+        },
+        {
+          "pixel": [
+            1,
+            2
+          ],
+          "weight": 0.025292585330711742,
+          "observed_value": 213.0
+        },
+        {
+          "pixel": [
+            0,
+            3
+          ],
+          "weight": 0.02323096326201569,
+          "observed_value": 222.0
+        },
+        {
+          "pixel": [
+            2,
+            5
+          ],
+          "weight": -0.010416684254095155,
+          "observed_value": 213.0
+        },
+        {
+          "pixel": [
+            3,
+            0
+          ],
+          "weight": -0.0102314251463404,
+          "observed_value": 215.0
+        },
+        {
+          "pixel": [
+            2,
+            0
+          ],
+          "weight": 0.009968205519072345,
+          "observed_value": 216.0
+        },
+        {
+          "pixel": [
+            3,
+            4
+          ],
+          "weight": -0.009439167873730017,
+          "observed_value": 221.0
+        },
+        {
+          "pixel": [
+            3,
+            2
+          ],
+          "weight": -0.0092094182340326,
+          "observed_value": 217.0
+        },
+        {
+          "pixel": [
+            3,
+            1
+          ],
+          "weight": -0.008932763116972036,
+          "observed_value": 216.0
+        },
+        {
+          "pixel": [
+            1,
+            5
+          ],
+          "weight": -0.007806835021880768,
+          "observed_value": 219.0
+        }
+      ],
+      "solve": {
+        "cg_iterations": 22,
+        "residual_norm": 2.8881222999547545e-09
+      }
+    },
+    {
+      "pixel": [
+        0,
+        7
+      ],
+      "reconstructed_value": 224.94244384765625,
+      "status": "imputed",
+      "n_contributing_observed_pixels": 2867,
+      "weight_mass_in_top_k": 0.25189094403866213,
+      "top_contributors": [
+        {
+          "pixel": [
+            0,
+            6
+          ],
+          "weight": 0.04391411975595796,
+          "observed_value": 225.0
+        },
+        {
+          "pixel": [
+            0,
+            8
+          ],
+          "weight": 0.043851563341793215,
+          "observed_value": 226.0
+        },
+        {
+          "pixel": [
+            1,
+            8
+          ],
+          "weight": 0.02806377565152812,
+          "observed_value": 223.0
+        },
+        {
+          "pixel": [
+            1,
+            6
+          ],
+          "weight": 0.027850922593932716,
+          "observed_value": 220.0
+        },
+        {
+          "pixel": [
+            0,
+            9
+          ],
+          "weight": 0.019840558357773205,
+          "observed_value": 225.0
+        },
+        {
+          "pixel": [
+            0,
+            5
+          ],
+          "weight": 0.01920978973848061,
+          "observed_value": 225.0
+        },
+        {
+          "pixel": [
+            2,
+            7
+          ],
+          "weight": 0.01652161143212054,
+          "observed_value": 212.0
+        },
+        {
+          "pixel": [
+            3,
+            4
+          ],
+          "weight": -0.011903730899739607,
+          "observed_value": 221.0
+        },
+        {
+          "pixel": [
+            2,
+            10
+          ],
+          "weight": -0.011551316265774375,
+          "observed_value": 217.0
+        },
+        {
+          "pixel": [
+            3,
+            10
+          ],
+          "weight": -0.010314079583296502,
+          "observed_value": 224.0
+        },
+        {
+          "pixel": [
+            3,
+            5
+          ],
+          "weight": -0.009955512560796098,
+          "observed_value": 223.0
+        },
+        {
+          "pixel": [
+            2,
+            6
+          ],
+          "weight": 0.008913963857469188,
+          "observed_value": 213.0
+        }
+      ],
+      "solve": {
+        "cg_iterations": 22,
+        "residual_norm": 3.987721395457419e-09
+      }
+    },
+    {
+      "pixel": [
+        0,
+        12
+      ],
+      "reconstructed_value": 221.0608673095703,
+      "status": "imputed",
+      "n_contributing_observed_pixels": 2867,
+      "weight_mass_in_top_k": 0.2629181055949421,
+      "top_contributors": [
+        {
+          "pixel": [
+            0,
+            11
+          ],
+          "weight": 0.04208028111971686,
+          "observed_value": 221.0
+        },
+        {
+          "pixel": [
+            0,
+            13
+          ],
+          "weight": 0.04207060979861828,
+          "observed_value": 220.0
+        },
+        {
+          "pixel": [
+            1,
+            12
+          ],
+          "weight": 0.035014676719867466,
+          "observed_value": 224.0
+        },
+        {
+          "pixel": [
+            1,
+            11
+          ],
+          "weight": 0.026042300931699618,
+          "observed_value": 225.0
+        },
+        {
+          "pixel": [
+            1,
+            13
+          ],
+          "weight": 0.02563869985340199,
+          "observed_value": 224.0
+        },
+        {
+          "pixel": [
+            0,
+            10
+          ],
+          "weight": 0.019510371157415936,
+          "observed_value": 223.0
+        },
+        {
+          "pixel": [
+            0,
+            14
+          ],
+          "weight": 0.019146700284690343,
+          "observed_value": 221.0
+        },
+        {
+          "pixel": [
+            2,
+            12
+          ],
+          "weight": 0.013875249256984681,
+          "observed_value": 219.0
+        },
+        {
+          "pixel": [
+            2,
+            9
+          ],
+          "weight": -0.012000767888405086,
+          "observed_value": 215.0
+        },
+        {
+          "pixel": [
+            3,
+            14
+          ],
+          "weight": -0.011152891730225113,
+          "observed_value": 227.0
+        },
+        {
+          "pixel": [
+            3,
+            10
+          ],
+          "weight": -0.009008841522126436,
+          "observed_value": 224.0
+        },
+        {
+          "pixel": [
+            1,
+            16
+          ],
+          "weight": -0.007376715331790273,
+          "observed_value": 225.0
+        }
+      ],
+      "solve": {
+        "cg_iterations": 22,
+        "residual_norm": 3.9195942263839615e-09
+      }
+    },
+    {
+      "pixel": [
+        0,
+        15
+      ],
+      "reconstructed_value": 221.08944702148438,
+      "status": "imputed",
+      "n_contributing_observed_pixels": 2867,
+      "weight_mass_in_top_k": 0.2589252093301853,
+      "top_contributors": [
+        {
+          "pixel": [
+            0,
+            16
+          ],
+          "weight": 0.04193977691560169,
+          "observed_value": 221.0
+        },
+        {
+          "pixel": [
+            0,
+            14
+          ],
+          "weight": 0.04090763224455022,
+          "observed_value": 221.0
+        },
+        {
+          "pixel": [
+            1,
+            15
+          ],
+          "weight": 0.03569848887679216,
+          "observed_value": 222.0
+        },
+        {
+          "pixel": [
+            1,
+            16
+          ],
+          "weight": 0.0269396994808992,
+          "observed_value": 225.0
+        },
+        {
+          "pixel": [
+            1,
+            14
+          ],
+          "weight": 0.026072908745386023,
+          "observed_value": 222.0
+        },
+        {
+          "pixel": [
+            0,
+            17
+          ],
+          "weight": 0.01937497698573687,
+          "observed_value": 224.0
+        },
+        {
+          "pixel": [
+            0,
+            13
+          ],
+          "weight": 0.018282837565473366,
+          "observed_value": 220.0
+        },
+        {
+          "pixel": [
+            2,
+            18
+          ],
+          "weight": -0.011616259382830492,
+          "observed_value": 222.0
+        },
+        {
+          "pixel": [
+            2,
+            12
+          ],
+          "weight": -0.011291070353973136,
+          "observed_value": 219.0
+        },
+        {
+          "pixel": [
+            3,
+            12
+          ],
+          "weight": -0.010053340327931318,
+          "observed_value": 226.0
+        },
+        {
+          "pixel": [
+            2,
+            14
+          ],
+          "weight": 0.008484642629352385,
+          "observed_value": 216.0
+        },
+        {
+          "pixel": [
+            3,
+            17
+          ],
+          "weight": -0.00826357582165851,
+          "observed_value": 217.0
+        }
+      ],
+      "solve": {
+        "cg_iterations": 22,
+        "residual_norm": 2.8614209466118688e-09
+      }
+    },
+    {
+      "pixel": [
+        0,
+        18
+      ],
+      "reconstructed_value": 224.353271484375,
+      "status": "imputed",
+      "n_contributing_observed_pixels": 2867,
+      "weight_mass_in_top_k": 0.23162965755919693,
+      "top_contributors": [
+        {
+          "pixel": [
+            0,
+            19
+          ],
+          "weight": 0.04963251124530607,
+          "observed_value": 226.0
+        },
+        {
+          "pixel": [
+            0,
+            17
+          ],
+          "weight": 0.047297139628637186,
+          "observed_value": 224.0
+        },
+        {
+          "pixel": [
+            1,
+            19
+          ],
+          "weight": 0.03325293187007936,
+          "observed_value": 224.0
+        },
+        {
+          "pixel": [
+            0,
+            16
+          ],
+          "weight": 0.021241584492319904,
+          "observed_value": 221.0
+        },
+        {
+          "pixel": [
+            2,
+            18
+          ],
+          "weight": 0.01981507369889756,
+          "observed_value": 222.0
+        },
+        {
+          "pixel": [
+            2,
+            21
+          ],
+          "weight": -0.010422771244551318,
+          "observed_value": 225.0
+        },
+        {
+          "pixel": [
+            3,
+            21
+          ],
+          "weight": -0.010309579886129744,
+          "observed_value": 220.0
+        },
+        {
+          "pixel": [
+            2,
+            14
+          ],
+          "weight": -0.009286879121150598,
+          "observed_value": 216.0
+        },
+        {
+          "pixel": [
+            1,
+            16
+          ],
+          "weight": 0.008918707482174628,
+          "observed_value": 225.0
+        },
+        {
+          "pixel": [
+            3,
+            20
+          ],
+          "weight": -0.007479881561049232,
+          "observed_value": 219.0
+        },
+        {
+          "pixel": [
+            4,
+            16
+          ],
+          "weight": -0.007359546895093096,
+          "observed_value": 239.0
+        },
+        {
+          "pixel": [
+            1,
+            14
+          ],
+          "weight": -0.006613050433808214,
+          "observed_value": 222.0
+        }
+      ],
+      "solve": {
+        "cg_iterations": 22,
+        "residual_norm": 3.0817213041592713e-09
+      }
+    },
+    {
+      "pixel": [
+        0,
+        20
+      ],
+      "reconstructed_value": 223.89048767089844,
+      "status": "imputed",
+      "n_contributing_observed_pixels": 2867,
+      "weight_mass_in_top_k": 0.23962399271527327,
+      "top_contributors": [
+        {
+          "pixel": [
+            0,
+            19
+          ],
+          "weight": 0.04790518045115537,
+          "observed_value": 226.0
+        },
+        {
+          "pixel": [
+            0,
+            21
+          ],
+          "weight": 0.04275826962710546,
+          "observed_value": 223.0
+        },
+        {
+          "pixel": [
+            1,
+            19
+          ],
+          "weight": 0.030679951025811742,
+          "observed_value": 224.0
+        },
+        {
+          "pixel": [
+            1,
+            21
+          ],
+          "weight": 0.026518890956153084,
+          "observed_value": 219.0
+        },
+        {
+          "pixel": [
+            0,
+            22
+          ],
+          "weight": 0.017997068351358676,
+          "observed_value": 226.0
+        },
+        {
+          "pixel": [
+            2,
+            20
+          ],
+          "weight": 0.015921703003398444,
+          "observed_value": 224.0
+        },
+        {
+          "pixel": [
+            2,
+            23
+          ],
+          "weight": -0.01269447485783624,
+          "observed_value": 223.0
+        },
+        {
+          "pixel": [
+            3,
+            17
+          ],
+          "weight": -0.01188010212242391,
+          "observed_value": 217.0
+        },
+        {
+          "pixel": [
+            3,
+            23
+          ],
+          "weight": -0.01100947670376126,
+          "observed_value": 214.0
+        },
+        {
+          "pixel": [
+            2,
+            24
+          ],
+          "weight": -0.007960821744770917,
+          "observed_value": 225.0
+        },
+        {
+          "pixel": [
+            2,
+            21
+          ],
+          "weight": 0.007383839089487124,
+          "observed_value": 225.0
+        },
+        {
+          "pixel": [
+            1,
+            16
+          ],
+          "weight": -0.0069142147820110515,
+          "observed_value": 225.0
+        }
+      ],
+      "solve": {
+        "cg_iterations": 22,
+        "residual_norm": 3.5838619970294388e-09
+      }
+    }
+  ]
+}
