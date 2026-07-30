@@ -1,0 +1,28 @@
+{
+  "weights_simplex": {
+    "n_weightings": 253,
+    "csfr_rank_min": 1,
+    "csfr_rank_max": 4,
+    "fraction_csfr_rank1": 0.6996047430830039,
+    "note": "CSFR rank on the validity axis over the full weight simplex"
+  },
+  "hrp_normaliser": {
+    "0.5x": 1,
+    "0.75x": 1,
+    "1.0x": 1,
+    "1.5x": 1,
+    "2.0x": 1
+  },
+  "equal_weight_point": {
+    "csfr_rank": 1,
+    "scores": {
+      "csfr": 0.8416,
+      "zero_fill": 0.3169,
+      "bilinear": 0.4425,
+      "inpaint_telea": 0.5968,
+      "inpaint_ns": 0.5963,
+      "dictlearn": 0.6398
+    }
+  },
+  "interpretation": "TS is the only axis on which CSFR is uniquely maximal, so wherever w3>0 CSFR cannot be beaten on validity by a TS=0 method unless that method's CVR/HRP advantage outweighs the TS gap. The rank range records exactly where that happens."
+}
