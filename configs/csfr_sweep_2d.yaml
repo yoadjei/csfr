@@ -1,0 +1,34 @@
+# CSFR Sweep 2D — Experiment Configuration
+# 4 corruption families × 5 severity levels, N=300 patches per cell
+
+experiment: csfr_sweep_2d
+description: >
+  Constraint-driven reconstruction quality vs corruption severity
+  on real DFRWS-2006 grayscale 64×64 image patches.
+
+seeds: [0, 1, 2]        # three independent runs per condition (paper §Protocol)
+device: auto            # auto → xpu → cuda → cpu
+precision: float32
+
+patches_path: data/patches.npy
+output_dir: results/csfr_sweep_2d_v2   # v1 (single seed 2026) kept for reference
+
+solver:
+  lam_l1: 0.02
+  lam_tv: 0.10
+  lam_fc: 0.005
+  max_iter: 600
+  lr: 2.0
+  ckpt_every: 150
+
+evaluation:
+  tv_thresh: 64.0
+  hf_thresh: 32.0
+
+families: [CF1, CF2, CF3, CF4]
+levels:
+  L1: 0.05
+  L2: 0.15
+  L3: 0.30
+  L4: 0.50
+  L5: 0.70
