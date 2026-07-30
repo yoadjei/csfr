@@ -1,0 +1,490 @@
+%% paper2_reconstruction.bib — Bibliography for Paper 2 (CSFR Reconstruction)
+%% Includes shared references from Paper 1 + new references for reconstruction
+
+%%======================================================================
+%% shared references
+%%======================================================================
+
+
+
+@misc{fft75dataset,
+  author       = {Mittal, Govind and Saha, Sourya Dipta and Castillo, Carlos},
+  title        = {{FFT-75}: File Fragment Type Dataset --- 75 Classes},
+  howpublished = {IEEE DataPort},
+  year         = {2020},
+  url          = {https://ieee-dataport.org/open-access/file-fragment-type-fft-75-dataset}
+}
+
+@book{carrier2005forensics,
+  author    = {Carrier, Brian},
+  title     = {File System Forensic Analysis},
+  publisher = {Addison-Wesley Professional},
+  year      = {2005},
+  isbn      = {0-321-26817-2},
+  isbn    = {0-321-26817-2}
+}
+
+@article{calhoun2008sceadan,
+  author  = {Calhoun, William C. and Coles, Drue},
+  title   = {Predicting the Types of File Fragments},
+  journal = {Digital Investigation},
+  volume  = {5},
+  pages   = {S14--S20},
+  year    = {2008},
+  doi       = {10.1016/j.diin.2008.05.005}
+}
+
+
+@misc{daubert1993,
+  author = {{United States Supreme Court}},
+  title  = {Daubert v.\ {Merrell Dow Pharmaceuticals, Inc.}, 509 {U.S.} 579},
+  year   = {1993},
+  note   = {Leading case establishing admissibility standard for scientific expert testimony in US federal courts}
+}
+
+
+@article{shannon1948entropy,
+  author  = {Shannon, Claude E.},
+  title   = {A Mathematical Theory of Communication},
+  journal = {The Bell System Technical Journal},
+  volume  = {27},
+  number  = {3},
+  pages   = {379--423},
+  year    = {1948},
+  doi       = {10.1002/j.1538-7305.1948.tb00917.x}
+}
+
+
+@misc{bowden1999,
+  title = {{R v Bowden} [1999] 4 {All ER} 43},
+  howpublished = {Court of Appeal (Criminal Division)},
+  year = {1999},
+  note = {Leading UK case on digital forensics and evidence admissibility}
+}
+
+%%======================================================================
+%% COMPRESSED SENSING — CORE THEORY
+%%======================================================================
+
+@article{candes2006robust,
+  author  = {Cand\`{e}s, Emmanuel J. and Romberg, Justin K. and Tao, Terence},
+  title   = {Robust Uncertainty Principles: Exact Signal Recovery from Highly Incomplete Frequency Information},
+  journal = {IEEE Transactions on Information Theory},
+  volume  = {52},
+  number  = {2},
+  pages   = {489--509},
+  year    = {2006},
+  doi     = {10.1109/TIT.2005.862083}
+}
+
+@article{donoho2006compressed,
+  author  = {Donoho, David L.},
+  title   = {Compressed Sensing},
+  journal = {IEEE Transactions on Information Theory},
+  volume  = {52},
+  number  = {4},
+  pages   = {1289--1306},
+  year    = {2006},
+  doi     = {10.1109/TIT.2006.871582}
+}
+
+@article{candes2006stable,
+  author  = {Cand\`{e}s, Emmanuel J. and Romberg, Justin K. and Tao, Terence},
+  title   = {Stable Signal Recovery from Incomplete and Inaccurate Measurements},
+  journal = {Communications on Pure and Applied Mathematics},
+  volume  = {59},
+  number  = {8},
+  pages   = {1207--1223},
+  year    = {2006},
+  doi     = {10.1002/cpa.20124}
+}
+
+@article{candes2008restricted,
+  author  = {Cand\`{e}s, Emmanuel J.},
+  title   = {The Restricted Isometry Property and Its Implications for Compressed Sensing},
+  journal = {Comptes Rendus Mathematique},
+  volume  = {346},
+  number  = {9--10},
+  pages   = {589--592},
+  year    = {2008},
+  doi     = {10.1016/j.crma.2008.03.014}
+}
+
+%%======================================================================
+%% REGULARIZATION AND INVERSE PROBLEMS
+%%======================================================================
+
+@article{rudin1992nonlinear,
+  author  = {Rudin, Leonid I. and Osher, Stanley and Fatemi, Emad},
+  title   = {Nonlinear Total Variation Based Noise Removal Algorithms},
+  journal = {Physica D: Nonlinear Phenomena},
+  volume  = {60},
+  number  = {1--4},
+  pages   = {259--268},
+  year    = {1992},
+  doi     = {10.1016/0167-2789(92)90242-F}
+}
+
+@book{tikhonov1977solutions,
+  author    = {Tikhonov, Andrey N. and Arsenin, Vasiliy Y.},
+  title     = {Solutions of Ill-Posed Problems},
+  publisher = {Winston \& Sons},
+  year      = {1977}
+}
+
+%%======================================================================
+%% DICTIONARY LEARNING AND SPARSE CODING
+%%======================================================================
+
+@article{elad2006image,
+  author  = {Elad, Michael and Aharon, Michal},
+  title   = {Image Denoising via Sparse and Redundant Representations over Learned Dictionaries},
+  journal = {IEEE Transactions on Image Processing},
+  volume  = {15},
+  number  = {12},
+  pages   = {3736--3745},
+  year    = {2006},
+  doi     = {10.1109/TIP.2006.881969}
+}
+
+@article{mairal2009online,
+  author  = {Mairal, Julien and Bach, Francis and Ponce, Jean and Sapiro, Guillermo},
+  title   = {Online Dictionary Learning for Sparse Coding},
+  journal = {Proceedings of the International Conference on Machine Learning (ICML)},
+  pages   = {689--696},
+  year    = {2009},
+  doi       = {10.1145/1553374.1553463}
+}
+
+@article{aharon2006ksvd,
+  author  = {Aharon, Michal and Elad, Michael and Bruckstein, Alfred},
+  title   = {{K-SVD}: An Algorithm for Designing Overcomplete Dictionaries for Sparse Representation},
+  journal = {IEEE Transactions on Signal Processing},
+  volume  = {54},
+  number  = {11},
+  pages   = {4311--4322},
+  year    = {2006},
+  doi     = {10.1109/TSP.2006.881199}
+}
+
+%%======================================================================
+%% CLASSICAL IMAGE INPAINTING
+%%======================================================================
+
+@article{bertalmio2000image,
+  author  = {Bertalmio, Marcelo and Sapiro, Guillermo and Caselles, Vicent and Ballester, Coloma},
+  title   = {Image Inpainting},
+  journal = {Proceedings of ACM SIGGRAPH},
+  pages   = {417--424},
+  year    = {2000},
+  doi     = {10.1145/344779.344972}
+}
+
+@article{criminisi2004region,
+  author  = {Criminisi, Antonio and P\'{e}rez, Patrick and Toyama, Kentaro},
+  title   = {Region Filling and Object Removal by Exemplar-Based Image Inpainting},
+  journal = {IEEE Transactions on Image Processing},
+  volume  = {13},
+  number  = {9},
+  pages   = {1200--1212},
+  year    = {2004},
+  doi     = {10.1109/TIP.2004.833105}
+}
+
+%%======================================================================
+%% DEEP LEARNING RECONSTRUCTION (CITED FOR CONTRAST)
+%%======================================================================
+
+@inproceedings{yu2018generative,
+  author    = {Yu, Jiahui and Lin, Zhe and Yang, Jimei and Shen, Xiaohui and Lu, Xin and Huang, Thomas S.},
+  title     = {Generative Image Inpainting with Contextual Attention},
+  booktitle = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {5505--5514},
+  year      = {2018},
+  doi       = {10.1109/CVPR.2018.00577}
+}
+
+@inproceedings{suvorov2022resolution,
+  author    = {Suvorov, Roman and Logacheva, Elizaveta and Mashikhin, Anton and Remizova, Anastasia and Ashukha, Arsenii and Silvestrov, Aleksei and Kong, Naejin and Goka, Harshith and Park, Kiwoong and Lempitsky, Victor},
+  title     = {Resolution-Robust Large Mask Inpainting with {Fourier} Convolutions},
+  booktitle = {Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+  pages     = {2149--2159},
+  year      = {2022},
+  doi       = {10.1109/WACV51458.2022.00323}
+}
+
+@inproceedings{ho2020denoising,
+  author    = {Ho, Jonathan and Jain, Ajay and Abbeel, Pieter},
+  title     = {Denoising Diffusion Probabilistic Models},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {33},
+  pages     = {6840--6851},
+  year      = {2020},
+  url       = {https://arxiv.org/abs/2006.11239}
+}
+
+@inproceedings{rombach2022high,
+  author    = {Rombach, Robin and Blattmann, Andreas and Lorenz, Dominik and Esser, Patrick and Ommer, Bj\"{o}rn},
+  title     = {High-Resolution Image Synthesis with Latent Diffusion Models},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {10684--10695},
+  year      = {2022},
+  doi       = {10.1109/CVPR52688.2022.01042}
+}
+
+@inproceedings{lugmayr2022repaint,
+  author    = {Lugmayr, Andreas and Danelljan, Martin and Romero, Andr\'{e}s and Yu, Fisher and Timofte, Radu and Van Gool, Luc},
+  title     = {{RePaint}: Inpainting Using Denoising Diffusion Probabilistic Models},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {11461--11471},
+  year      = {2022},
+  doi       = {10.1109/CVPR52688.2022.01117}
+}
+
+@inproceedings{zheng2019pluralistic,
+  author    = {Zheng, Chuanxia and Cham, Tat-Jen and Cai, Jianfei},
+  title     = {Pluralistic Image Completion},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {1438--1447},
+  year      = {2019},
+  doi       = {10.1109/CVPR.2019.00153}
+}
+
+%%======================================================================
+%% FORENSIC IMAGE ANALYSIS AND FILE CARVING
+%%======================================================================
+
+@book{casey2011digital,
+  author    = {Casey, Eoghan},
+  title     = {Digital Evidence and Computer Crime: Forensic Science, Computers, and the Internet},
+  edition   = {3rd},
+  publisher = {Academic Press},
+  year      = {2011},
+  isbn    = {978-0-12-374268-1}
+}
+
+@article{garfinkel2007carving,
+  author  = {Garfinkel, Simson L.},
+  title   = {Carving Contiguous and Fragmented Files with Fast Object Validation},
+  journal = {Digital Investigation},
+  volume  = {4},
+  pages   = {S2--S12},
+  year    = {2007},
+  doi     = {10.1016/j.diin.2007.06.017}
+}
+
+@inproceedings{poisel2013advanced,
+  author    = {Poisel, Rainer and Tjoa, Simon},
+  title     = {Forensics Investigations of Multimedia Data: A Review of the State-of-the-Art},
+  booktitle = {Sixth International Conference on IT Security Incident Management and IT Forensics (IMF)},
+  pages     = {48--61},
+  year      = {2011},
+  doi       = {10.1109/IMF.2011.14}
+}
+
+@inproceedings{mikus2005evaluation,
+  author    = {Mikus, Nick},
+  title     = {An Analysis of Disc Carving Techniques},
+  booktitle = {Naval Postgraduate School Technical Report},
+  year      = {2005},
+  url       = {http://dftt.sourceforge.net/}
+}
+
+@article{pal2009evolution,
+  author  = {Pal, Anandabrata and Memon, Nasir},
+  title   = {The Evolution of File Carving},
+  journal = {IEEE Signal Processing Magazine},
+  volume  = {26},
+  number  = {2},
+  pages   = {59--71},
+  year    = {2009},
+  doi     = {10.1109/MSP.2008.937841}
+}
+
+%%======================================================================
+%% IMAGE QUALITY METRICS
+%%======================================================================
+
+@article{wang2004image,
+  author  = {Wang, Zhou and Bovik, Alan C. and Sheikh, Hamid R. and Simoncelli, Eero P.},
+  title   = {Image Quality Assessment: From Error Visibility to Structural Similarity},
+  journal = {IEEE Transactions on Image Processing},
+  volume  = {13},
+  number  = {4},
+  pages   = {600--612},
+  year    = {2004},
+  doi     = {10.1109/TIP.2003.819861}
+}
+
+%%======================================================================
+%% WAVELETS AND SIGNAL PROCESSING
+%%======================================================================
+
+@book{mallat2009wavelet,
+  author    = {Mallat, St\'{e}phane},
+  title     = {A Wavelet Tour of Signal Processing: The Sparse Way},
+  edition   = {3rd},
+  publisher = {Academic Press},
+  year      = {2009},
+  isbn    = {978-0-12-374370-1}
+}
+
+%%======================================================================
+%% SOFTWARE
+%%======================================================================
+
+
+%%======================================================================
+%% forensic admissibility and legal
+%%======================================================================
+
+@article{swgde2023,
+  author  = {{Scientific Working Group on Digital Evidence (SWGDE)}},
+  title   = {Best Practices for Digital and Multimedia Evidence},
+  journal = {SWGDE Documents},
+  year    = {2023},
+  note    = {Version 4.0},
+  url     = {https://www.swgde.org/documents/published-complete-listing/}
+}
+
+@article{bhadra2021hallucinations,
+  author  = {Bhadra, Sayantan and Kelkar, Varun A. and Brooks, Frank J. and Anastasio, Mark A.},
+  title   = {On Hallucinations in Tomographic Image Reconstruction},
+  journal = {IEEE Transactions on Medical Imaging},
+  volume  = {40},
+  number  = {11},
+  pages   = {3249--3260},
+  year    = {2021},
+  doi     = {10.1109/TMI.2021.3077857}
+}
+
+@article{farid2009digital,
+  author  = {Farid, Hany},
+  title   = {Image Forgery Detection},
+  journal = {IEEE Signal Processing Magazine},
+  volume  = {26},
+  number  = {2},
+  pages   = {16--25},
+  year    = {2009},
+  doi     = {10.1109/MSP.2008.931079}
+}
+
+@article{telea2004image,
+  author  = {Telea, Alexandru},
+  title   = {An Image Inpainting Technique Based on the Fast Marching Method},
+  journal = {Journal of Graphics Tools},
+  volume  = {9},
+  number  = {1},
+  pages   = {23--34},
+  year    = {2004},
+  doi     = {10.1080/10867651.2004.10487596}
+}
+
+@inproceedings{corneanu2024latentpaint,
+  author    = {Corneanu, Ciprian and Gadde, Raghudeep and Martinez, Aleix M.},
+  title     = {LatentPaint: Image Inpainting in Latent Space with Diffusion Models},
+  booktitle = {IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+  year      = {2024},
+  doi       = {10.1109/WACV57701.2024.00428}
+}
+
+@article{grechka2024gradpaint,
+  author  = {Grechka, Asya and Couairon, Guillaume and Cord, Matthieu},
+  title   = {GradPaint: Gradient-guided inpainting with diffusion models},
+  journal = {Computer Vision and Image Understanding},
+  volume  = {240},
+  pages   = {103928},
+  year    = {2024},
+  doi     = {10.1016/j.cviu.2024.103928}
+}
+
+@article{garfinkel2009bringing,
+  author  = {Garfinkel, Simson and Farrell, Paul and Roussev, Vassil and Dinolt, George},
+  title   = {Bringing Science to Digital Forensics with Standardized Forensic Corpora},
+  journal = {Digital Investigation},
+  volume  = {6},
+  pages   = {S2--S11},
+  year    = {2009},
+  doi     = {10.1016/j.diin.2009.06.016}
+}
+
+@article{horsman2024sources,
+  author  = {Horsman, Graeme},
+  title   = {Sources of Error in Digital Forensics},
+  journal = {Forensic Science International: Digital Investigation},
+  volume  = {48},
+  pages   = {301693},
+  year    = {2024},
+  doi     = {10.1016/j.fsidi.2024.301693}
+}
+
+@inproceedings{arslan2024reliability,
+  author    = {Arslan, {\c{C}}etin and Ata, Sefa},
+  title     = {The Reliability of Digital Evidence in Criminal Proceedings and the Potential
+               Utilization of Artificial Intelligence in the Evidence Evaluation Process},
+  booktitle = {12th International Symposium on Digital Forensics and Security (ISDFS)},
+  pages     = {1--4},
+  year      = {2024},
+  doi       = {10.1109/ISDFS60797.2024.10527346}
+}
+
+@inproceedings{tivnan2024hallucination,
+  author    = {Tivnan, Matthew and Yoon, Siyeop and Chen, Zhennong and Li, Xiang
+               and Wu, Dufan and Li, Quanzheng},
+  title     = {Hallucination Index: An Image Quality Metric for Generative Reconstruction Models},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI)},
+  series    = {Lecture Notes in Computer Science},
+  pages     = {449--458},
+  year      = {2024},
+  doi       = {10.1007/978-3-031-72117-5_42}
+}
+
+@inproceedings{kingma2015adam,
+  author    = {Kingma, Diederik P. and Ba, Jimmy},
+  title     = {Adam: A Method for Stochastic Optimization},
+  booktitle = {3rd International Conference on Learning Representations (ICLR)},
+  year      = {2015},
+  url       = {https://arxiv.org/abs/1412.6980}
+}
+
+@article{wilcoxon1945individual,
+  author  = {Wilcoxon, Frank},
+  title   = {Individual Comparisons by Ranking Methods},
+  journal = {Biometrics Bulletin},
+  volume  = {1},
+  number  = {6},
+  pages   = {80--83},
+  year    = {1945},
+  doi     = {10.2307/3001968}
+}
+
+@article{holm1979simple,
+  author  = {Holm, Sture},
+  title   = {A Simple Sequentially Rejective Multiple Test Procedure},
+  journal = {Scandinavian Journal of Statistics},
+  volume  = {6},
+  number  = {2},
+  pages   = {65--70},
+  year    = {1979},
+  url     = {https://www.jstor.org/stable/4615733}
+}
+
+@book{cohen1988statistical,
+  author    = {Cohen, Jacob},
+  title     = {Statistical Power Analysis for the Behavioral Sciences},
+  edition   = {2nd},
+  publisher = {Lawrence Erlbaum Associates},
+  year      = {1988},
+  isbn      = {978-0-8058-0283-2}
+}
+
+@article{cliff1993dominance,
+  author  = {Cliff, Norman},
+  title   = {Dominance Statistics: Ordinal Analyses to Answer Ordinal Questions},
+  journal = {Psychological Bulletin},
+  volume  = {114},
+  number  = {3},
+  pages   = {494--509},
+  year    = {1993},
+  doi     = {10.1037/0033-2909.114.3.494}
+}
