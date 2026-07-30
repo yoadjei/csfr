@@ -1,0 +1,42 @@
+# CSFR Sweep — external validation on GovDocs1
+# Identical protocol to configs/csfr_sweep_2d.yaml (same solver settings, same
+# corruption families, levels and seeds); only the corpus changes. Nothing is
+# re-tuned for this corpus, so the numbers are an out-of-corpus generalisation
+# check rather than a second fitted result.
+
+experiment: csfr_sweep_govdocs1
+description: >
+  External validation of constraint-driven reconstruction on 300 grayscale
+  64x64 patches carved from 176 distinct GovDocs1 JPEGs -- a corpus disjoint
+  from the DFRWS 2006 challenge image used for the primary sweep.
+
+seeds: [0, 1, 2]
+device: auto
+precision: float32
+
+patches_path: data/patches_govdocs1.npy
+output_dir: results/csfr_sweep_govdocs1
+
+# Full solver only: the constraint ablation is reported on the primary corpus
+# and is not repeated here.
+variants: [csfr]
+
+solver:
+  lam_l1: 0.02
+  lam_tv: 0.10
+  lam_fc: 0.005
+  max_iter: 600
+  lr: 2.0
+  ckpt_every: 150
+
+evaluation:
+  tv_thresh: 64.0
+  hf_thresh: 32.0
+
+families: [CF1, CF2, CF3, CF4]
+levels:
+  L1: 0.05
+  L2: 0.15
+  L3: 0.30
+  L4: 0.50
+  L5: 0.70
