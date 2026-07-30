@@ -1,0 +1,16 @@
+{
+  "unit_of_analysis": "image patch (matched across methods by index)",
+  "primary_test": "Wilcoxon signed-rank, two-sided",
+  "secondary_test": "paired t-test, two-sided",
+  "multiplicity": "Holm-Bonferroni within each metric across all (family, level, seed, baseline) comparisons",
+  "ci": "percentile bootstrap, 10000 resamples, 95%",
+  "effect_sizes": [
+    "Cohen's d_z (paired)",
+    "Cliff's delta"
+  ],
+  "clustering": "Patches are nested within source images and are not independent. Where cluster labels are available the analysis additionally reports (a) a cluster bootstrap CI resampling whole source images, and (b) a Wilcoxon test on per-source-image mean differences. The cluster-level test is deliberately low-powered: it reports the evidence the sampling design supports.",
+  "psnr_definitions": {
+    "psnr": "whole-patch MSE (definition used by the sweep harness and all manuscript tables)",
+    "psnr_masked": "MSE restricted to corrupted pixels only"
+  }
+}
