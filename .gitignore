@@ -14,6 +14,13 @@ build/
 *.bin
 # but keep every input corpus, cluster label, and manifest under data/
 !data/*.npy
+# small frozen digit CNN for the downstream utility experiment (Task 1a)
+!results/downstream/classifier.pt
+# SVHN / MNIST raw downloads — re-fetch via src/downstream.py; do not commit
+data/svhn/*.mat
+data/svhn/*.part
+data/mnist/*.gz
+data/mnist/*.ubyte
 
 # Logs & temp
 logs/
@@ -61,3 +68,9 @@ paper/_chk*.png
 
 # internal planning notes (not part of the reproducibility package)
 tasks/
+
+# junk from a broken git dir, and an internal status note
+.git_broken_*/
+IMPLEMENTATION_STATUS_LAMA.md
+# matched-compute sweep: config is released, results were never completed
+results/csfr_sweep_2d_t2400/
