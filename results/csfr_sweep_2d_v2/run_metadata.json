@@ -37,6 +37,22 @@
       "L5": 0.7
     }
   },
-  "device": "cpu",
-  "n_cells": 20
+  "device": "cuda",
+  "n_cells": 20,
+  "environment": {
+    "python": "3.12.13",
+    "platform": "Linux-6.12.90+-x86_64-with-glibc2.35",
+    "processor": "x86_64",
+    "torch": "2.10.0+cu128",
+    "numpy": "2.5.1",
+    "scipy": "1.16.3",
+    "scikit-learn": "1.6.1",
+    "scikit-image": "0.25.2",
+    "opencv": "4.11.0",
+    "diffusers": "0.37.1",
+    "transformers": "5.0.0",
+    "cpu_count_physical": 2,
+    "total_ram_gb": 31.3
+  },
+  "patches_sha256": "2039e47488c641ffbd095d3d69a5e651c9de10e2401f5be6c02086daa3bed06c"
 }

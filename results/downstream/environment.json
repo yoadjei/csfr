@@ -1,0 +1,60 @@
+{
+  "config": {
+    "experiment": "downstream_utility",
+    "description": "Reconstruct corrupted SVHN digits with classical baselines and CSFR, then measure frozen-CNN classification utility. ECE / McNemar / AUTO tables are computed later (Task 1c); this config only drives the harness.\n",
+    "seeds": [
+      0
+    ],
+    "device": "auto",
+    "precision": "float32",
+    "corpus": "svhn",
+    "classifier_path": "results/downstream/classifier.pt",
+    "output_dir": "results/downstream",
+    "n_test": 1000,
+    "families": [
+      "CF4"
+    ],
+    "levels": {
+      "L1": 0.05,
+      "L2": 0.15,
+      "L3": 0.3,
+      "L4": 0.5,
+      "L5": 0.7
+    },
+    "methods": [
+      "lama"
+    ],
+    "lama_weights": null,
+    "solver": {
+      "lam_l1": 0.02,
+      "lam_tv": 0.1,
+      "lam_fc": 0.005,
+      "max_iter": 600,
+      "lr": 2.0,
+      "ckpt_every": 9999
+    },
+    "bounded_unknown_threshold": 0.5,
+    "centre_box_frac": 0.5,
+    "signal_covering_threshold": 0.25
+  },
+  "device": "cuda",
+  "corpus": "svhn",
+  "n_test": 1000,
+  "classifier_path": "/kaggle/working/paper2_recon/results/downstream/classifier.pt",
+  "clean_accuracy": 0.869,
+  "environment": {
+    "python": "3.12.13",
+    "platform": "Linux-6.12.90+-x86_64-with-glibc2.35",
+    "processor": "x86_64",
+    "torch": "2.10.0+cu128",
+    "numpy": "2.5.1",
+    "scipy": "1.16.3",
+    "scikit-learn": "1.6.1",
+    "scikit-image": "0.25.2",
+    "opencv": "4.11.0",
+    "diffusers": "0.37.1",
+    "transformers": "5.0.0",
+    "cpu_count_physical": 2,
+    "total_ram_gb": 31.3
+  }
+}
