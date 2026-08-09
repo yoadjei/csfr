@@ -44,3 +44,54 @@ records the array's SHA-256.
 | GovDocs1 | https://digitalcorpora.org/corpora/files/ | external validation corpus |
 | DFTT carving images #11, #12 (Nick Mikus) | http://dftt.sourceforge.net/ | full-resolution colour cases |
 | FFT-75 | https://ieee-dataport.org/open-access/file-fragment-type-fft-75-dataset | protocol extension (specified, not executed) |
+| SVHN (`train_32x32.mat`, `test_32x32.mat`) | http://ufldl.stanford.edu/housenumbers/ | downstream digit CNN (preferred) |
+| MNIST IDX gz | https://ossci-datasets.s3.amazonaws.com/mnist/ | downstream digit CNN (fallback) |
+
+## Downstream digit corpus
+
+The CSFR downstream utility experiment needs labelled digits for classifying
+reconstructed image patches. Prefer **SVHN**: 32×32 RGB street-view house
+numbers from Stanford, automatically converted to grayscale luminance by
+`src/downstream.py`. The raw SVHN distribution encodes digit zero as label `10`;
+the loader maps this to `0` for consistency with other datasets.
+
+SVHN is **automatically fetched on first use** when running `scripts/run_downstream.py` or
+the test suite. The downloader calls `download_svhn()` to fetch `train_32x32.mat`
+and `test_32x32.mat` (64 mb each) from http://ufldl.stanford.edu/housenumbers/
+into `data/svhn/`. The `data/svhn/` directory is gitignored; re-fetching on a
+fresh clone is the intended path.
+
+You can manually fetch SVHN without running experiments:
+```bash
+python -c "from src.downstream import download_svhn; download_svhn()"
+```
+
+**note:** `download_svhn()` fetches both train and test regardless of the split
+requested. See `src/downstream.py` for the implementation.
+
+**evaluation subset:** The downstream utility harness uses a class-balanced
+1000-image evaluation subset selected from the SVHN test set, using seed=0 for
+reproducibility. This subset is used consistently across all downstream metrics
+in the paper; 100 images are drawn per digit class (0–9) from the test set,
+preserving class balance.
+
+**frozen classifier weights:** The downstream evaluation uses a small DigitCNN
+trained on clean SVHN, frozen and committed at `results/downstream/classifier.pt`
+(2.4 mb). Retraining on a different machine (especially a GPU) would silently
+change the accuracy ceiling and invalidate all downstream comparisons. The
+classifier is therefore an **exception to the no-checkpoints policy**: it is
+deliberately committed so that every downstream accuracy and ECE number in the
+paper refers to the same bit-identical classifier.
+
+Clean top-1 accuracy (reported once in the README, not recalculated):
+- Full SVHN test set (10,000 images): 87.83%
+- Class-balanced evaluation subset (1,000 images, seed=0): 86.90%
+
+The evaluation subset is used consistently for all downstream metrics in the
+paper.
+
+**MNIST fallback.** If the SVHN host is unreachable, `load_digit_dataset(prefer="svhn")`
+falls back to MNIST (grayscale, 28×28, resized to 32×32 via nearest-neighbour).
+MNIST is a weaker proxy for street-view digits: cleaner glyphs, centred, no
+outdoor lighting variations. Always check the returned corpus name when
+interpreting downstream accuracy and ECE numbers.

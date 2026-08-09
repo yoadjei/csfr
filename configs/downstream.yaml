@@ -1,0 +1,67 @@
+# Downstream utility pipeline: experiment configuration
+# Corruption families x severity x reconstruction methods, then frozen DigitCNN.
+
+experiment: downstream_utility
+description: >
+  Reconstruct corrupted SVHN digits with classical baselines and CSFR,
+  then measure frozen-CNN classification utility. ECE / McNemar / AUTO
+  tables are computed later (Task 1c); this config only drives the harness.
+
+seeds: [0]
+device: auto            # auto → xpu → cuda → cpu
+precision: float32
+
+# preferred corpus; falls back to MNIST if SVHN cannot be loaded
+corpus: svhn
+classifier_path: results/downstream/classifier.pt
+output_dir: results/downstream
+
+# default 200 keeps a full CF×L×method grid smokeable in one session.
+# paper run: set n_test to 1000 (or pass --n-test 1000).
+n_test: 200
+
+families: [CF1, CF2, CF3, CF4]
+levels:
+  L1: 0.05
+  L2: 0.15
+  L3: 0.30
+  L4: 0.50
+  L5: 0.70
+
+# reconstruction methods. lama is a Phase-2 hook and is skipped when weights
+# are absent (see lama_weights below).
+methods: [zero_fill, bilinear, telea, ns, dictlearn, csfr, lama]
+lama_weights: null      # path to Phase-2 weights; null → skip lama
+
+solver:
+  lam_l1: 0.02
+  lam_tv: 0.10
+  lam_fc: 0.005
+  max_iter: 600
+  lr: 2.0
+  ckpt_every: 9999      # no mid-solve checkpoints for the utility grid
+
+# Bounded-Unknown (a priori; do not tune after seeing results):
+# Measured firing rate by family and severity over 200 masks per cell (threshold=0.5):
+#            L1(.05)  L2(.15)  L3(.30)  L4(.50)  L5(.70)
+#     CF1       0.00     0.00     0.00     0.00     0.00
+#     CF2       0.92     0.99     1.00     1.00     1.00
+#     CF3       0.00     1.00     1.00     1.00     1.00
+#     CF4       0.00     1.00     1.00     1.00     1.00
+# The binary flag is nearly determined by (family, level) and carries little per-patch
+# information. The continuous statistic isolated_missing_frac is recorded alongside and
+# is informative where the boolean is not.
+# True iff fraction of missing pixels with zero observed 4-neighbours (isolated_missing_frac)
+# exceeds this threshold, OR the patch has no observed pixels.
+bounded_unknown_threshold: 0.5
+
+# centre box as a fraction of each side length (0.5 → half-linear centre box).
+# used for mask_overlap_centre and centre_erased_frac.
+centre_box_frac: 0.5
+
+# signal-covering threshold (a priori; do not tune after seeing results):
+# patches where centre_erased_frac >= threshold are classified as signal-covering
+# (destruction of discriminative pixels affects classification ability).
+# 0.25: at least 1/4 of centre box erased. chosen on mask geometry alone before
+# any outcome data was inspected, fixed throughout analysis.
+signal_covering_threshold: 0.25
