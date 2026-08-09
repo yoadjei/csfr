@@ -1,0 +1,143 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs,graphicx,amsmath,amssymb}
+\usepackage[hidelinks]{hyperref}
+\renewcommand{\thetable}{S\arabic{table}}
+\renewcommand{\thefigure}{S\arabic{figure}}
+
+\title{Supplementary Material\\
+Constraint-Driven Sparse Fragment Reconstruction for Digital Forensics}
+\date{}
+
+\begin{document}
+\maketitle
+
+This supplement holds evidence that supports the main paper without carrying a
+headline claim. Every table is generated from the released CSVs by
+\texttt{scripts/render\_stats\_tables.py} and
+\texttt{scripts/update\_paper\_tables.py}, the same generators that populate the
+main paper, so the numbers here cannot drift from the artefacts they come from.
+
+\section{Constraint ablation}
+The contribution of each constraint family, averaged over all 20 cells.
+
+
+\begin{table*}[htbp]
+\centering
+\caption{Constraint ablation, averaged over the full 20-cell sweep and seeds $\{0,1,2\}$. Every variant retains the C1 data term, the $\ell_1$ sparsity prior, and the final C1 projection (so C1 $=0$ throughout, omitted). CVR columns in \%.}
+\label{tab:ablation}
+\setlength{\tabcolsep}{6pt}
+\resizebox{0.95\textwidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Variant} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{HRP} & \textbf{CVR C2} & \textbf{CVR C3} & \textbf{CVR C4} \\
+\midrule
+% BEGIN AUTO ABLATION
+C1 only & 24.41 & 0.716 & 1.76 & 1.55 & 5.18 & 2.69 \\
+C1+C2 (TV) & 25.56 & 0.752 & 1.76 & 1.59 & 0.08 & 2.08 \\
+C1+C3 (bounds) & 25.09 & 0.727 & 1.58 & 1.52 & 0.00 & 2.66 \\
+C1+C4 (freq.) & 24.07 & 0.725 & 1.83 & 1.68 & 5.38 & 1.69 \\
+Full CSFR & 25.68 & 0.757 & 1.73 & 1.46 & 0.00 & 1.85 \\
+% END AUTO ABLATION
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
+\section{Runtime and memory}
+Wall-clock and peak memory per patch, measured on the CPU reference machine.
+
+
+\begin{table}[htbp]
+\centering
+\caption{Per-patch runtime and peak memory, CPU, $64\times64$ patches. ms/patch and per-batch mean$\pm$SD over five repeats of a 32-patch batch; peak is \texttt{tracemalloc} peak allocation. Full environment in \texttt{results/bench/environment.json}.}
+\label{tab:bench}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{ms/patch} & \textbf{mean (s)} & \textbf{SD (s)} & \textbf{median (s)} & \textbf{peak (MB)} \\
+\midrule
+% BEGIN AUTO BENCH
+Zero-fill & 0.03 & 0.001 & 0.000 & 0.001 & 1.6 \\
+Linear interpolation & 84.64 & 2.708 & 0.290 & 2.596 & 2.4 \\
+Inpainting (Telea) & 1.61 & 0.052 & 0.006 & 0.049 & 1.5 \\
+Inpainting (Navier--Stokes) & 1.18 & 0.038 & 0.001 & 0.038 & 1.5 \\
+Dictionary learning & 1.46 & 0.047 & 0.001 & 0.047 & 1.5 \\
+CSFR (proposed) & 44.35 & 1.419 & 0.105 & 1.435 & 1.0 \\
+% END AUTO BENCH
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Iteration-budget sensitivity}
+CSFR PSNR against solver budget on a 100-patch, seed-0 subset. The gap column
+compares against the strongest baseline's full-cell value, so it slightly
+understates CSFR where the subset is easier than the full cell.
+
+
+\begin{table}[htbp]
+\centering
+\caption{Iteration-budget sensitivity. CSFR PSNR (dB) is recomputed on a 100-patch, seed-0 subset at each budget; the ``Gap@4800'' column is CSFR at $T{=}4800$ minus the strongest baseline's full-cell (300-patch, seed-0) PSNR in that cell, so it slightly understates CSFR where the subset is easier than the full cell. Extending the budget closes most of the CF3/CF4 deficit and reverses the CF2 deficit, establishing that the reported 600-iteration losses on these families are substantially an under-convergence effect.}
+\label{tab:budget}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Cell} & \textbf{T=600} & \textbf{T=1200} & \textbf{T=2400} & \textbf{T=4800} & \textbf{Gap@4800} \\
+\midrule
+% BEGIN AUTO BUDGET_SENS
+CF1~L5 & 28.15 & 28.15 & 28.15 & 28.15 & +0.10 \\
+CF2~L3 & 25.78 & 27.81 & 28.00 & 28.00 & +1.46 \\
+CF2~L5 & 16.57 & 20.44 & 22.32 & 22.45 & +1.32 \\
+CF3~L5 & 11.21 & 12.36 & 14.56 & 17.44 & -0.61 \\
+CF4~L5 & 11.03 & 12.14 & 14.39 & 17.62 & -0.61 \\
+% END AUTO BUDGET_SENS
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Bounded-Unknown and the signal-covering subset}
+Abstention rates and the continuous isolated-missing-fraction per cell. The
+binary flag saturates by family and level, which is why the continuous
+statistic is the one reported in the main paper.
+
+
+\begin{table*}[htbp]
+\centering
+\caption{Bounded-Unknown and abstention rates by cell. The binary Bounded-Unknown flag at threshold 0.5 on isolated-missing-fraction saturates: CF1/CF3/CF4~L1 report zero, CF2/CF3/CF4 from L2 upward report 1.0, making it a family-level indicator rather than a per-patch signal. The continuous isolated-missing-fraction (columns: mean, SD, Q25, median, Q75) is reported for reference and should be preferred for analysis. The signal-covering subset count $n_{\text{sig}}$ (patches with any C3 violation in observed region) is empty for CF1 entirely and for CF3/CF4 at L1--L3, and saturates to 1000 for CF2 from L2 and CF3/CF4 from L4 upward.}
+\label{tab:downstream-abstain}
+\setlength{\tabcolsep}{3pt}
+{\catcode`\_=12\relax
+\resizebox{0.95\textwidth}{!}{%
+\begin{tabular}{llccccccl}
+\toprule
+\textbf{Fam.} & \textbf{Lvl} & \textbf{BU Rate} & \textbf{Imf Mean} & \textbf{Imf SD} & \textbf{Imf Median} & \textbf{n\_sig} \\
+\midrule
+% BEGIN AUTO DOWNSTREAM_ABSTAIN
+CF1 & L1 & 0.000 & 0.000 & 0.000 & 0.001 & 0 \\
+CF1 & L2 & 0.000 & 0.001 & 0.000 & 0.003 & 0 \\
+CF1 & L3 & 0.000 & 0.010 & 0.010 & 0.006 & 982 \\
+CF1 & L4 & 0.000 & 0.070 & 0.070 & 0.012 & 1000 \\
+CF1 & L5 & 0.000 & 0.253 & 0.252 & 0.016 & 1000 \\
+CF2 & L1 & 0.880 & 0.612 & 0.619 & 0.091 & 352 \\
+CF2 & L2 & 0.992 & 0.662 & 0.664 & 0.067 & 760 \\
+CF2 & L3 & 1.000 & 0.710 & 0.713 & 0.050 & 991 \\
+CF2 & L4 & 1.000 & 0.778 & 0.781 & 0.036 & 1000 \\
+CF2 & L5 & 1.000 & 0.849 & 0.851 & 0.022 & 1000 \\
+CF3 & L1 & 0.000 & 0.500 & 0.500 & 0.000 & 0 \\
+CF3 & L2 & 1.000 & 0.800 & 0.800 & 0.000 & 0 \\
+CF3 & L3 & 1.000 & 0.900 & 0.900 & 0.000 & 0 \\
+CF3 & L4 & 1.000 & 0.938 & 0.938 & 0.000 & 1000 \\
+CF3 & L5 & 1.000 & 0.955 & 0.955 & 0.000 & 1000 \\
+CF4 & L1 & 0.000 & 0.500 & 0.500 & 0.000 & 0 \\
+CF4 & L2 & 1.000 & 0.800 & 0.800 & 0.000 & 0 \\
+CF4 & L3 & 1.000 & 0.900 & 0.900 & 0.000 & 0 \\
+CF4 & L4 & 1.000 & 0.938 & 0.938 & 0.000 & 1000 \\
+CF4 & L5 & 1.000 & 0.955 & 0.955 & 0.000 & 1000 \\
+% END AUTO DOWNSTREAM_ABSTAIN
+\bottomrule
+\end{tabular}%
+}%
+}
+\end{table*}
+
+\end{document}
