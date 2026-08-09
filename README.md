@@ -1,9 +1,7 @@
-# csfr
-
-constraint-driven sparse fragment reconstruction for digital forensics.
+# csfr: compressed sensing fragment reconstruction
 
 reproducibility package for the paper *constraint-driven forensic image
-reconstruction using auditable compressed sensing*.
+reconstruction using auditable compressed sensing*
 
 csfr reconstructs corrupted image fragments as a regularised inverse problem
 under four forensic constraints. it preserves observed pixels exactly, carries a
