@@ -1,4 +1,9 @@
-"""Render all five manuscript figures (F1, F2, F6, F8, F9) from scratch.
+"""Render the manuscript figures (F1, F2, F8, F9) from scratch.
+
+F6, a traceability schematic, was removed: it drew hardcoded attribution
+weights as though they were measured, which contradicts the per-pixel
+provenance the paper computes. See paper2_F12_provenance.png for the
+measured version.
 
 Design rules (ResearchOS figure standards):
 - designed at final print width (7.5 in full text width), fonts >= 8 pt
@@ -25,13 +30,17 @@ from matplotlib.patches import Patch
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 BLUE = "#1f4e79"
-BLUE_MID = "#5b8fbf"
+BLUE_MID = "#56B4E9"
 BLUE_PALE = "#F4F8FC"
 BLUE_PALE2 = "#E6EEF8"
 RED = "#c00000"
-GREY = "#7f7f7f"
+GREY = "#999999"
 WHITE = "#FFFFFF"
-GREEN, ORANGE, PURPLE = "#2e7d32", "#e65100", "#6a1b9a"
+# okabe-ito colour-blind-safe palette, matching scripts/render_frontier.py.
+# the previous values (#2e7d32 green, #e65100 orange, alongside the red used for
+# the external-prior method) are the deuteranopia failure triplet, and #e65100
+# was also almost indistinguishable from the external-prior colour #D55E00.
+GREEN, ORANGE, PURPLE = "#009E73", "#E69F00", "#CC79A7"
 
 plt.rcParams.update({
     "font.family": "DejaVu Sans",
@@ -146,61 +155,6 @@ def render_f2(out, patches_path):
     print("[F2] done")
 
 
-# ------------------------------------------------------------------ F6
-def render_f6(out):
-    fig, ax = plt.subplots(figsize=(7.5, 4.2), dpi=DPI)
-    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    ax.set_xlim(0, 100); ax.set_ylim(0, 100); ax.axis("off")
-
-    # nodes
-    top_xy = (36, 85)
-    node(ax, *top_xy, "Reconstructed pixel $\\hat{x}[i,j]$\nCSFR solver output",
-         fc=WHITE, ec=RED, fs=8.5, lw=1.8, weight="bold")
-
-    mids = [(14, 50, "Constraint $c_1$\nspatial continuity"),
-            (36, 50, "Constraint $c_2$\nintensity bounds"),
-            (58, 50, "Constraint $c_3$\nfragment consistency")]
-    for x, y, lab in mids:
-        node(ax, x, y, lab, fc=BLUE_PALE2, ec=BLUE_MID, fs=7.8, lw=1.4)
-
-    bots = [(14, 15, "Fragment F1\nbytes 0–511"),
-            (36, 15, "Fragment F2\nbytes 512–1023"),
-            (58, 15, "Fragment F3\nbytes 1024–1535")]
-    for x, y, lab in bots:
-        node(ax, x, y, lab, fc=BLUE_PALE, ec=BLUE, fs=8.0, lw=1.4, weight="bold")
-
-    # fragment -> constraint mesh
-    for xb, yb, _ in bots:
-        for xm, ym, _ in mids:
-            arrow(ax, (xb, yb), (xm, ym), color=GREY, lw=0.8, alpha=0.4,
-                  shrinkA=16, shrinkB=16)
-
-    # constraint -> pixel, with weights
-    weights = ["$\\alpha_1{=}0.42$", "$\\alpha_2{=}0.31$", "$\\alpha_3{=}0.27$"]
-    dests = [(24, 78), (36, 78), (48, 78)]
-    for (xm, ym, _), wl, dst in zip(mids, weights, dests):
-        arrow(ax, (xm, ym), dst, color=BLUE, lw=1.5, shrinkA=18, shrinkB=0)
-        mx, my = (xm + dst[0]) / 2, (ym + dst[1]) / 2 + 1.5
-        ax.text(mx, my, wl, fontsize=8.0, color=BLUE, style="italic",
-                ha="center", zorder=12,
-                bbox=dict(facecolor=WHITE, edgecolor="none", pad=1.2))
-
-    # audit panel
-    audit = ("$\\bf{Audit\\ query}$\n\n"
-             "Q. Which inputs determine\n     pixel $(i, j)$?\n\n"
-             "A. F1: 42% via $c_1$\n     F2: 31% via $c_2$\n     F3: 27% via $c_3$\n\n"
-             "Deterministic.\nNo black box.")
-    ax.text(86, 50, audit, ha="center", va="center", fontsize=7.8,
-            color="#222", linespacing=1.6, zorder=10,
-            bbox=dict(boxstyle="round,pad=0.8", facecolor=WHITE,
-                      edgecolor=RED, linewidth=1.5))
-
-    fig.savefig(out / "paper2_F6_traceability.png", dpi=DPI,
-                bbox_inches="tight", pad_inches=0.06, facecolor=WHITE)
-    plt.close(fig)
-    print("[F6] done")
-
-
 # ------------------------------------------------------------------ F8
 def _load_summary(csv_path):
     data = collections.defaultdict(dict)
@@ -212,12 +166,20 @@ def _load_summary(csv_path):
     return data
 
 
+# lama is the external-prior inpainter. it belongs on this figure: it achieves
+# the best psnr on 13 of the 20 cells, so a per-cell psnr plot that omits it
+# would show the paper losing to weaker methods than the one it actually ran.
+# colour matches scripts/render_frontier.py, which uses the okabe-ito
+# colour-blind-safe palette.
+LAMA_ORANGE = "#D55E00"
+
 SERIES = [
     ("zero_fill", "Zero-fill", GREY, "-", "o", 1.4, 4),
     ("bilinear", "Bilinear", BLUE_MID, "--", "s", 1.4, 4),
     ("inpaint_telea", "Telea", GREEN, "-.", "^", 1.4, 4),
     ("inpaint_ns", "Navier–Stokes", ORANGE, ":", "v", 1.4, 4),
     ("dictlearn", "Dict. learning", PURPLE, "--", "x", 1.4, 5),
+    ("lama", "LaMa (external-prior)", LAMA_ORANGE, "-", "*", 1.4, 6),
     ("csfr", "CSFR (proposed)", BLUE, "-", "D", 2.2, 5),
 ]
 
@@ -312,7 +274,6 @@ def main():
     out = Path(args.out_dir); out.mkdir(parents=True, exist_ok=True)
     render_f1(out)
     render_f2(out, args.patches)
-    render_f6(out)
     render_f8(out, args.csfr_csv)
     render_f9(out, args.csfr_csv)
 

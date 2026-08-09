@@ -17,17 +17,35 @@ OUT = ROOT / "paper/figures/paper2_F9_method_frontier.png"
 plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10,
                      "pdf.fonttype": 42})
 
-METH = {"zero_fill": ("Zero-fill", "#7f7f7f", "o"),
-        "bilinear": ("Bilinear", "#4477AA", "s"),
-        "inpaint_telea": ("Telea", "#2e7d32", "^"),
-        "inpaint_ns": ("Navier-Stokes", "#e65100", "v"),
-        "dictlearn": ("Dict. learning", "#6a1b9a", "x"),
+# okabe-ito colour-blind-safe palette. the previous scheme put red (#d62728),
+# green (#2e7d32) and orange (#e65100) on three adjacent points, which is the
+# textbook deuteranopia failure: those three are the ones a red-green colour
+# blind reader cannot separate, and they were the three clustered markers.
+# marker shape carries the same information independently of hue, so the figure
+# also reads in greyscale, and the assigned colours differ in lightness as well
+# as hue for the same reason.
+METH = {"zero_fill": ("Zero-fill", "#999999", "o"),
+        "bilinear": ("Bilinear", "#56B4E9", "s"),
+        "inpaint_telea": ("Telea", "#009E73", "^"),
+        "inpaint_ns": ("Navier-Stokes", "#E69F00", "v"),
+        "dictlearn": ("Dict. learning", "#CC79A7", "x"),
+        "lama": ("LaMa (external-prior)", "#D55E00", "*"),
         "csfr": ("CSFR", "#003366", "D")}
 # per-method label offsets (points) to avoid collisions of near-coincident points
-LABEL_OFFSET = {"inpaint_telea": (-14, -22), "inpaint_ns": (8, 10),
-                "dictlearn": (8, 8), "csfr": (10, 4),
-                "bilinear": (8, -16), "zero_fill": (8, 8)}
-TS = {"csfr": 1.0}  # provenance map released only by CSFR; others release none
+# telea, navier-stokes and lama sit within 0.8 db and 0.011 validity of each
+# other, so their labels are fanned out with leader lines rather than placed
+# adjacent to the markers, where they overlapped each other and the points.
+# dictlearn sits just below the 2/3 ceiling, so its label goes below the marker:
+# placed above, it straddles the line and reads as though the method were inside
+# the region only CSFR reaches.
+LABEL_OFFSET = {"inpaint_telea": (-56, -30), "inpaint_ns": (-16, 42),
+                "dictlearn": (8, -20), "lama": (-30, -40), "csfr": (12, 6),
+                "bilinear": (10, -18), "zero_fill": (10, 8)}
+# methods whose label needs a leader line back to its marker
+LEADERED = {"inpaint_telea", "inpaint_ns", "lama"}
+# Traceability score by method. CSFR provides per-pixel provenance; others do not.
+# Generative methods (lama) are by construction non-auditable: TS = 0.
+TS = {"csfr": 1.0, "lama": 0.0}
 
 rows = collections.defaultdict(lambda: collections.defaultdict(list))
 with SUMMARY.open(encoding="utf-8") as f:
@@ -47,13 +65,30 @@ for m, (label, color, marker) in METH.items():
     validity = ((1 - cvr) + (1 - hrp / hrp_max) + TS.get(m, 0.0)) / 3
     kw = {} if marker == "x" else {"edgecolor": "black", "linewidth": 0.6}
     ax.scatter(psnr, validity, s=110, color=color, marker=marker, zorder=3, **kw)
+    arrow = (dict(arrowstyle="-", color=color, linewidth=0.7,
+                  shrinkA=0, shrinkB=4) if m in LEADERED else None)
     ax.annotate(label, (psnr, validity), xytext=LABEL_OFFSET.get(m, (6, 5)),
                 textcoords="offset points", fontsize=10, color=color,
-                fontweight="bold")
+                fontweight="bold", arrowprops=arrow)
 
-ax.axhspan(0, 1 / 3, color="#d32f2f", alpha=0.08)
-ax.text(14.5, 0.05, "TS = 0 region (DL methods, cited): inadmissible\n"
-        "regardless of PSNR", fontsize=8.5, color="#b71c1c", style="italic")
+# the composite is ((1 - cvr) + (1 - hrp/hrp_max) + TS)/3, so a method with
+# TS = 0 cannot exceed 2/3 however good its reconstruction is. that ceiling is
+# the honest structural claim: the region above it is reachable only with a
+# per-pixel provenance record.
+#
+# the earlier version shaded the bottom third and called it "the TS = 0 region,
+# inadmissible for forensic use". that was wrong three ways: six of the seven
+# methods have TS = 0 and five of them plot above the band; the only point in
+# the band was zero-fill, which is not an external-prior method; and asserting
+# inadmissibility contradicts this paper's own position that admissibility is a
+# determination for a court.
+TS_CEILING = 2 / 3
+ax.axhspan(TS_CEILING, 1.0, color="#003366", alpha=0.06)
+ax.axhline(TS_CEILING, color="#003366", linewidth=0.8, linestyle="--", alpha=0.5)
+ax.text(14.3, 0.94,
+        "Unreachable without per-pixel provenance: with TS = 0 the composite\n"
+        "cannot exceed 2/3, whatever the reconstruction quality",
+        fontsize=8.5, color="#003366", style="italic")
 ax.set_xlabel("Mean PSNR over 20-cell sweep (dB)")
 ax.set_ylabel("Forensic validity composite")
 ax.set_ylim(0, 1.0)

@@ -1,0 +1,48 @@
+# CSFR Sweep 2D at the converged budget — matched-compute secondary result
+# Same corpus, masks and seeds as configs/csfr_sweep_2d.yaml, solver budget
+# raised from 600 to 2400 iterations. Only the families where CSFR loses at
+# T=600 are re-run (CF2, CF3, CF4), and only the csfr variant, so the ablation
+# arms are not recomputed. No baseline is re-run either: none of them depends on
+# the solver budget, so the primary sweep already holds their values, and
+# including the external-prior inpainter here would cost hours per cell for a
+# number this run has no use for.
+#
+# The primary audited result stays T=600. This run exists to show how much of
+# the CF2/CF3/CF4 deficit is a stopping-rule artefact rather than a method
+# ceiling. It differs from results/budget_sensitivity/, which is a 100-patch
+# seed-0 subset: this one is the full 300-patch, 3-seed sample.
+
+experiment: csfr_sweep_2d_t2400
+description: >
+  Full-sample CSFR reconstruction at the converged solver budget (2400
+  iterations) on the families where the 600-iteration budget under-converges.
+
+seeds: [0, 1, 2]        # identical to the primary sweep
+device: auto            # auto → xpu → cuda → cpu
+precision: float32
+
+patches_path: data/patches.npy
+output_dir: results/csfr_sweep_2d_t2400
+
+variants: [csfr]        # no ablation arms
+baselines: []           # none: they are budget-independent, see the note above
+
+solver:
+  lam_l1: 0.02
+  lam_tv: 0.10
+  lam_fc: 0.005
+  max_iter: 2400        # the only change from the primary sweep
+  lr: 2.0
+  ckpt_every: 600
+
+evaluation:
+  tv_thresh: 64.0
+  hf_thresh: 32.0
+
+families: [CF2, CF3, CF4]
+levels:
+  L1: 0.05
+  L2: 0.15
+  L3: 0.30
+  L4: 0.50
+  L5: 0.70

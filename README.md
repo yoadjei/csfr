@@ -5,124 +5,132 @@ reconstruction using auditable compressed sensing*
 
 csfr reconstructs corrupted image fragments as a regularised inverse problem
 under four forensic constraints. it preserves observed pixels exactly, carries a
-conditional recovery bound, then emits a per-pixel provenance record. this repo
-holds the solver, the evaluation harness, the released results, the manuscript.
+conditional recovery bound, and emits a per-pixel provenance record saying which
+observed pixels determined each imputed one. the claim is auditability, not
+perceptual quality.
 
-## setup
-
-```bash
-python -m venv .venv && source .venv/Scripts/activate   # windows git-bash
-pip install -r requirements.txt                          # python >= 3.10
-```
-
-## reproduce
-
-one command runs the tests, regenerates the tables from the released csvs, then
-builds the pdf:
+## verify the released work
 
 ```bash
 bash scripts/verify.sh
 ```
 
-to rerun the experiments from scratch (cpu, a few hours for the primary sweep):
+about 35 seconds. runs the test suite, a downstream smoke test into a temporary
+directory, regenerates every table from the released csvs, and builds the
+manuscript. exit 0 only if all of it passes with zero undefined references and
+zero latex errors.
+
+this checks the released numbers without recomputing them. full recomputation
+takes hours of cpu plus a gpu.
+
+## what is released
+
+| path | what |
+|---|---|
+| `src/` | solver, provenance, downstream classifier, external-prior inpainter |
+| `scripts/` | sweep, downstream, statistics, figure and table generators |
+| `configs/` | experiment configurations |
+| `data/` | patch corpora with cluster labels and manifests, see `data/README.md` |
+| `results/` | per-cell metrics, statistics, released table bodies |
+| `paper/` | manuscript, supplement, figures |
+| `tests/` | 67 tests, including checks that every number in the paper matches its csv |
+
+not released, by policy: solver checkpoints, per-seed `x_hat`, `y` and `mask`
+arrays, raw corpora, model weights. all regenerate from the committed patch sets
+and configs. one exception is `results/downstream/classifier.pt` (2.4 mb), the
+frozen classifier, committed so anyone re-running gets bit-identical downstream
+numbers.
+
+## where each number comes from
+
+every table in the paper is generated, never typed.
+
+| table | generator | source |
+|---|---|---|
+| psnr/ssim, cvr, hrp, ablation | `update_paper_tables.py` | `results/csfr_sweep_2d_v2/summary.csv` |
+| paired inference | `render_stats_tables.py` | `results/paired_stats/` |
+| runtime, external, budget | `render_stats_tables.py` | `results/bench/`, `csfr_sweep_govdocs1/`, `budget_sensitivity/` |
+| downstream, abstention | `render_stats_tables.py` | `results/downstream/` |
+| f9 frontier | `render_frontier.py` | `results/csfr_sweep_2d_v2/summary.csv` |
+| f12 provenance | `render_provenance_walkthrough.py` | `results/provenance_example/` |
+
+prose numbers are hand-written. `tests/test_manuscript_numbers.py` recomputes
+each one from the csvs and fails if a claim is missing as well as if it is wrong.
+
+## cpu and gpu
+
+everything except the `lama` method was computed on cpu (windows 11, python
+3.14, torch cpu build). the `lama` results were computed on an nvidia t4
+(python 3.12, torch 2.10.0+cu128). these are separate runs reported separately.
+no table row in the paper mixes devices.
+
+## reproducing from scratch
 
 ```bash
-python scripts/run_csfr_sweep.py --config configs/csfr_sweep_2d.yaml        # primary sweep
-python scripts/run_csfr_sweep.py --config configs/csfr_sweep_govdocs1.yaml  # external corpus
-python scripts/run_paired_stats.py                                          # paired inference
-python scripts/run_bench.py                                                 # runtime + memory
-python scripts/run_budget_sensitivity.py                                    # budget sweep
-python scripts/run_frontier_sensitivity.py                                  # frontier weights
-python scripts/render_figures.py && python scripts/render_frontier.py       # figures f1-f9
-python scripts/render_qualitative.py && python scripts/render_fullres_colour.py  # f10 f11
+pip install -r requirements.txt
 ```
 
-seeds are `[0, 1, 2]` (config key `seeds:`). the solver is deterministic on
-fixed hardware; each result directory records its environment in
-`run_metadata.json`.
+cpu, roughly 4 to 6 hours:
 
-## layout
-
-```
-src/        solver, metrics, provenance
-scripts/    experiment harness, statistics, figures, tables
-configs/    sweep configs (primary + external)
-data/       patch corpora, cluster labels, manifests
-results/    released metrics, statistics, generated table rows
-paper/      manuscript tex, bib, pdf, figures
-tests/      unit + smoke tests
+```bash
+python scripts/run_csfr_sweep.py --config configs/csfr_sweep_2d.yaml
+python scripts/run_csfr_sweep.py --config configs/csfr_sweep_govdocs1.yaml
+python scripts/run_paired_stats.py
+python scripts/run_bench.py
+python scripts/run_budget_sensitivity.py
+python scripts/run_frontier_sensitivity.py
 ```
 
-## files needed to reproduce
+gpu, about an hour, see `kaggle/README.md`:
 
-each line gives the file with a brief conventional-commit label.
+```bash
+python scripts/run_downstream.py --config configs/downstream.yaml --n-test 1000
+python scripts/run_downstream_stats.py
+```
 
-**source**
-- `src/__init__.py` — chore: package marker
-- `src/csfr_reconstruct_2d.py` — feat: csfr dct-2d solver
-- `src/metrics.py` — feat: forensic metrics psnr ssim cvr hrp ts
-- `src/provenance.py` — feat: per-pixel provenance via implicit differentiation
+figures and tables:
 
-**experiment scripts**
-- `scripts/run_csfr_sweep.py` — feat: corruption sweep with constraint ablation
-- `scripts/run_paired_stats.py` — feat: paired cluster-robust inference
-- `scripts/run_bench.py` — feat: runtime and peak-memory benchmark
-- `scripts/run_budget_sensitivity.py` — feat: iteration-budget sensitivity
-- `scripts/run_frontier_sensitivity.py` — feat: frontier-weight sensitivity
-- `scripts/extract_patches.py` — feat: carve and dice patch corpora
+```bash
+python scripts/render_figures.py
+python scripts/render_frontier.py
+python scripts/render_provenance_walkthrough.py
+python scripts/update_paper_tables.py
+python scripts/render_stats_tables.py
+```
 
-**figures and tables**
-- `scripts/render_figures.py` — feat: render figures f1 f2 f6 f8 f9
-- `scripts/render_frontier.py` — feat: render method-frontier figure
-- `scripts/render_qualitative.py` — feat: render qualitative panel f10
-- `scripts/render_fullres_colour.py` — feat: render full-res colour cases f11
-- `scripts/render_stats_tables.py` — feat: splice paired bench external budget tables
-- `scripts/update_paper_tables.py` — feat: splice psnr cvr hrp ablation tables
-- `scripts/verify.sh` — test: build-and-test gate
+there is no one-command full reproduction. the gate verifies, recomputation is a
+documented multi-step process.
 
-**configs**
-- `configs/csfr_sweep_2d.yaml` — chore: primary sweep config
-- `configs/csfr_sweep_govdocs1.yaml` — chore: external-validation config
+## external-prior baseline
 
-**data**
-- `data/patches.npy` — data: dfrws 2006 patch corpus
-- `data/patches_cluster.npy` — data: dfrws source-image labels
-- `data/patches_manifest.json` — docs: dfrws corpus manifest
-- `data/patches_govdocs1.npy` — data: govdocs1 external corpus
-- `data/patches_govdocs1_cluster.npy` — data: govdocs1 source-image labels
-- `data/patches_govdocs1_manifest.json` — docs: govdocs1 manifest
-- `data/patches_mikus_11-carve-fat.npy` — data: mikus fat colour corpus
-- `data/patches_mikus_12-carve-ext2.npy` — data: mikus ext2 colour corpus
-- `data/full_mikus_11-carve-fat/` — data: carved full images (fat)
-- `data/full_mikus_12-carve-ext2/` — data: carved full images (ext2)
-- `data/README.md` — docs: data provenance with rebuild steps
+the paper argues against generative restoration in evidential use, so it runs
+one: lama, via `simple-lama-inpainting`, weights fetched on first use and not
+committed.
 
-**results**
-- `results/csfr_sweep_2d_v2/` — data: primary sweep metrics + summary
-- `results/csfr_sweep_govdocs1/` — data: external sweep metrics
-- `results/paired_stats/` — data: per-patch metrics + paired tests
-- `results/bench/` — data: runtime and memory
-- `results/budget_sensitivity/` — data: budget sweep
-- `results/sensitivity/` — data: frontier sensitivity
-- `results/provenance_example/` — data: example provenance manifest
-- `results/tables_tex/` — data: generated latex table rows
+installing it downgrades numpy and pillow. restore them before importing
+anything, in a separate cell or shell:
 
-**tests**
-- `tests/test_csfr_smoke.py` — test: solver smoke test
-- `tests/test_metrics.py` — test: metrics unit tests
-- `tests/test_provenance.py` — test: provenance unit tests
+```bash
+pip install simple-lama-inpainting
+pip install --upgrade "numpy>=2" "pillow>=10.1"
+```
 
-**manuscript**
-- `paper/paper2_reconstruction.tex` — docs: manuscript source
-- `paper/paper2_reconstruction.bib` — docs: bibliography
-- `paper/paper2_reconstruction.pdf` — docs: compiled manuscript
-- `paper/figures/` — docs: manuscript figures
+numpy's c extension cannot be reloaded in a live process, so install first,
+import second.
 
-**meta**
-- `requirements.txt` — build: pinned dependencies
-- `README.md` — docs: reproducibility guide
-- `LICENSE` — chore: mit licence
+## tests
+
+```bash
+python -m pytest tests/ -q
+```
+
+67 passed, 4 skipped. the skips are the mnist tests when the cache is absent and
+the heavy inpainter tests when model weights are absent. run the heavy ones with:
+
+```bash
+CSFR_RUN_INPAINTER_TESTS=1 python -m pytest tests/test_inpainter.py -q
+```
 
 ## licence
 
-mit. see [LICENSE](LICENSE).
+see `LICENSE`.

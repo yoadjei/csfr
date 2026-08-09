@@ -14,6 +14,7 @@ import platform
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
@@ -175,6 +176,50 @@ def baseline_dictlearn(y: np.ndarray, M: np.ndarray, rng_seed: int,
     return out
 
 
+def baseline_lama(y: np.ndarray, M: np.ndarray, seed: int,
+                  device: str = "cpu") -> Optional[np.ndarray]:
+    """External-prior generative inpainting: LaMa (preferred) or Stable Diffusion.
+
+    Note: this method carries NO per-pixel provenance (traceability score = 0 by
+    construction). It is included as an empirical baseline to test the paper's
+    argument that generative priors are problematic in forensic settings.
+
+    Methodological caveat: native input is 32x32 or 64x64 grayscale; the model
+    expects 512x512 RGB. We resize, replicate channels, run inference, then resize
+    back. This is a real limitation shared by all external generative models.
+
+    Parameters
+    ----------
+    y : (N, H, W) float [0, 255]
+        Corrupted (masked) images.
+    M : (N, H, W) float {0, 1}
+        Mask where 1=observed, 0=erased.
+    seed : int
+        RNG seed for deterministic output.
+    device : str
+        Torch device string. Pass the sweep's resolved device so the model runs
+        where the rest of the run does.
+
+    Returns
+    -------
+    (N, H, W) float [0, 255]
+        Inpainted images, or None when a required dependency is missing.
+
+    Only a missing dependency (ImportError) returns None, which is the harness's
+    signal to skip the method. Every other failure raises: a download failure or
+    an out-of-memory error must not be reported as "method unavailable", because
+    a long run would then produce nothing and still look like it succeeded.
+    """
+    try:
+        from generative_inpainter import inpaint
+    except ImportError:
+        return None
+
+    # backend auto prefers LaMa and falls back to Stable Diffusion
+    return inpaint(y, M, backend="auto", seed=seed, num_inference_steps=20,
+                   device=str(device))
+
+
 def eval_batch(rec_t, ref_t, y_t, M_t, D, hf, tv_thresh, hf_thresh):
     n = rec_t.shape[0]
     psnrs = [psnr(ref_t[i], rec_t[i]) for i in range(n)]
@@ -219,6 +264,14 @@ def capture_environment() -> dict:
            "torch": torch.__version__, "numpy": np.__version__,
            "scipy": scipy.__version__, "scikit-learn": sklearn.__version__,
            "scikit-image": skimage.__version__, "opencv": cv2.__version__}
+    # capture optional external-prior (generative inpainter) dependencies for auditability
+    try:
+        import diffusers
+        import transformers
+        env["diffusers"] = diffusers.__version__
+        env["transformers"] = transformers.__version__
+    except ImportError:
+        pass
     try:
         import psutil
         env["cpu_count_physical"] = psutil.cpu_count(logical=False)
@@ -242,6 +295,30 @@ def selected_variants(cfg: dict) -> dict:
     if unknown:
         raise ValueError(f"unknown variants: {sorted(unknown)}")
     return {k: CSFR_VARIANTS[k] for k in names}
+
+
+ALL_BASELINES = ["zero_fill", "bilinear", "inpaint_telea", "inpaint_ns",
+                 "dictlearn", "lama"]
+
+
+def selected_baselines(cfg: dict) -> list:
+    """Baseline methods to run for this config.
+
+    Defaults to every baseline. A config may set ``baselines: []`` to run none,
+    which is what the matched-compute sweep wants: no baseline depends on the
+    solver budget, so re-running them at T=2400 would recompute the values the
+    primary sweep already holds. It also keeps the external-prior inpainter out
+    of a run that has no use for it, which otherwise costs hours per cell.
+
+    An explicit empty list means none. A missing key means all.
+    """
+    names = cfg.get("baselines")
+    if names is None:
+        return list(ALL_BASELINES)
+    unknown = set(names) - set(ALL_BASELINES)
+    if unknown:
+        raise ValueError(f"unknown baselines: {sorted(unknown)}")
+    return [b for b in ALL_BASELINES if b in names]
 
 
 def run_cell(patches, fam, lvl, frac, seed, cell_dir, dev, cfg, force):
@@ -301,11 +378,17 @@ def run_cell(patches, fam, lvl, frac, seed, cell_dir, dev, cfg, force):
         "inpaint_telea": lambda: baseline_inpaint_cv(y, M, cv2.INPAINT_TELEA),
         "inpaint_ns": lambda: baseline_inpaint_cv(y, M, cv2.INPAINT_NS),
         "dictlearn": lambda: baseline_dictlearn(y, M, seed),
+        "lama": lambda: baseline_lama(y, M, seed, device=dev),
     }
+    wanted = selected_baselines(cfg)
     for name, fn in baselines.items():
-        if name in out:
+        if name in out or name not in wanted:
             continue
-        out[name] = measure(torch.from_numpy(fn()), D, hf_m)
+        result = fn()
+        if result is None:
+            # method unavailable (e.g., lama weights missing, dependencies not installed)
+            continue
+        out[name] = measure(torch.from_numpy(result), D, hf_m)
         metrics_path.write_text(json.dumps(out, indent=2))
     return out
 
@@ -335,8 +418,7 @@ def main(argv=None) -> int:
              and (args.only_level is None or l == args.only_level)]
 
     seeds = cfg.get("seeds", [cfg.get("seed", 0)])
-    methods = list(selected_variants(cfg)) + ["zero_fill", "bilinear", "inpaint_telea",
-                                     "inpaint_ns", "dictlearn"]
+    methods = list(selected_variants(cfg)) + selected_baselines(cfg)
     metric_keys = ["psnr_db_mean", "psnr_db_std", "ssim_mean", "ssim_std",
                    "hrp_mean", "hrp_std", "cvr_c1", "cvr_c2", "cvr_c3", "cvr_c4"]
 
@@ -376,11 +458,17 @@ def main(argv=None) -> int:
     print(f"[sweep2d] wrote {csv_path}")
 
     # save run metadata for traceability. The exact library versions are
-
     # captured here rather than only in requirements.txt, so that a released
     # result set states the environment that actually produced it.
+    env_data = capture_environment()
+    # add the inpainter backend selection after a run that may have used it
+    try:
+        from generative_inpainter import get_model_info
+        env_data["inpainter"] = get_model_info(device=str(dev))
+    except ImportError:
+        pass
     meta = {"config": cfg, "device": str(dev), "n_cells": len(cells),
-            "environment": capture_environment(),
+            "environment": env_data,
             "patches_sha256": hashlib.sha256(patches.tobytes()).hexdigest()}
     (outdir / "run_metadata.json").write_text(json.dumps(meta, indent=2))
     return 0

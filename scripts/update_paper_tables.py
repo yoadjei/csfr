@@ -10,11 +10,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TEX = ROOT / "paper" / "paper2_reconstruction.tex"
+SUPP = ROOT / "paper" / "paper2_supplementary.tex"
 SUMMARY = ROOT / "results" / "csfr_sweep_2d_v2" / "summary.csv"
 
-METH = ["zero_fill", "bilinear", "inpaint_telea", "inpaint_ns", "dictlearn", "csfr"]
+# lama is the external-prior generative inpainter. it is listed last, after the
+# classical baselines, because it is not comparable on traceability: it carries
+# no per-pixel provenance, so its traceability score is 0 by construction rather
+# than by measurement. it is included because the paper argues against
+# generative restoration and must therefore report one that was actually run.
+METH = ["zero_fill", "bilinear", "inpaint_telea", "inpaint_ns", "dictlearn",
+        "lama", "csfr"]
 LABEL = {"zero_fill": "Zero-fill", "bilinear": "Linear", "inpaint_telea": "Telea",
-         "inpaint_ns": "NS", "dictlearn": "Dict.", "csfr": "CSFR"}
+         "inpaint_ns": "NS", "dictlearn": "Dict.", "lama": "LaMa (ext.)",
+         "csfr": "CSFR"}
 ABL = ["csfr_c1", "csfr_c1c2", "csfr_c1c3", "csfr_c1c4", "csfr"]
 ABL_LABEL = {"csfr_c1": "C1 only", "csfr_c1c2": "C1+C2 (TV)", "csfr_c1c3": "C1+C3 (bounds)",
              "csfr_c1c4": "C1+C4 (freq.)", "csfr": "Full CSFR"}
@@ -96,23 +104,38 @@ def ablation_block(rows):
 
 
 def splice(tex: str, marker: str, content: str) -> str:
+    """Replace a marked block. Returns the text unchanged when the marker is
+    absent, so a caller can try the next document."""
     begin, end = f"% BEGIN AUTO {marker}", f"% END AUTO {marker}"
     block = f"{begin}\n{content}\n{end}"
-    if begin in tex:
-        return re.sub(re.escape(begin) + r".*?" + re.escape(end),
-                      lambda _m: block, tex, flags=re.S)
-    raise SystemExit(f"marker {marker} not found in tex — add markers first")
+    if begin not in tex:
+        return tex
+    return re.sub(re.escape(begin) + r".*?" + re.escape(end),
+                  lambda _m: block, tex, flags=re.S)
 
 
 def main():
     rows = load()
-    tex = TEX.read_text(encoding="utf-8")
-    tex = splice(tex, "PSNR-SSIM", psnr_ssim_block(rows))
-    tex = splice(tex, "HRP", hrp_block(rows))
-    tex = splice(tex, "CVR", cvr_block(rows))
-    tex = splice(tex, "ABLATION", ablation_block(rows))
-    TEX.write_text(tex, encoding="utf-8")
-    print("tables spliced into", TEX.name)
+    blocks = {"PSNR-SSIM": psnr_ssim_block(rows), "HRP": hrp_block(rows),
+              "CVR": cvr_block(rows), "ABLATION": ablation_block(rows)}
+    # the defensive tables live in the supplement, so both documents are
+    # candidates. a marker found in neither is fatal: silently skipping it
+    # would let a released table drift away from the CSV it comes from.
+    placed = {k: False for k in blocks}
+    for path in (TEX, SUPP):
+        if not path.exists():
+            continue
+        tex = path.read_text(encoding="utf-8")
+        for marker, content in blocks.items():
+            new = splice(tex, marker, content)
+            if new != tex or f"% BEGIN AUTO {marker}" in tex:
+                placed[marker] = placed[marker] or (f"% BEGIN AUTO {marker}" in tex)
+            tex = new
+        path.write_text(tex, encoding="utf-8")
+        print("tables spliced into", path.name)
+    missing = [k for k, v in placed.items() if not v]
+    if missing:
+        raise SystemExit(f"markers not found in either document: {missing}")
 
 
 if __name__ == "__main__":
