@@ -103,40 +103,38 @@ statistic is the one reported in the main paper.
 
 \begin{table*}[htbp]
 \centering
-\caption{Bounded-Unknown and abstention rates by cell. The binary Bounded-Unknown flag at threshold 0.5 on isolated-missing-fraction saturates: CF1/CF3/CF4~L1 report zero, CF2/CF3/CF4 from L2 upward report 1.0, making it a family-level indicator rather than a per-patch signal. The continuous isolated-missing-fraction (columns: mean, SD, Q25, median, Q75) is reported for reference and should be preferred for analysis. The signal-covering subset count $n_{\text{sig}}$ (patches with any C3 violation in observed region) is empty for CF1 entirely and for CF3/CF4 at L1--L3, and saturates to 1000 for CF2 from L2 and CF3/CF4 from L4 upward.}
+\caption{Bounded-Unknown and abstention rates by cell. The binary Bounded-Unknown flag at threshold $0.5$ on isolated-missing-fraction saturates: it is zero for every CF1 cell and for CF3/CF4~L1, unity for CF3/CF4 from L2 upward and CF2 from L3 upward, and varies within a cell only at CF2~L1 and L2. It is a family-and-level indicator rather than a per-patch signal. The continuous isolated-missing-fraction (columns: mean, SD, median) is reported beside it and should be preferred for analysis. The signal-covering subset count $n_{\text{sig}}$ is the number of patches in which at least a quarter of the centre box is erased, so that the corruption overlaps the digit; it is defined on the corruption geometry, not on constraint violations. It is empty for CF1 at L1--L2 and for CF3/CF4 at L1--L3, and saturates to 1000 for every family from L4 upward, leaving CF1~L3 and CF2~L1--L3 as the only cells with within-cell variation.}
 \label{tab:downstream-abstain}
 \setlength{\tabcolsep}{3pt}
-{\catcode`\_=12\relax
 \resizebox{0.95\textwidth}{!}{%
-\begin{tabular}{llccccccl}
+\begin{tabular}{llccccc}
 \toprule
-\textbf{Fam.} & \textbf{Lvl} & \textbf{BU Rate} & \textbf{Imf Mean} & \textbf{Imf SD} & \textbf{Imf Median} & \textbf{n\_sig} \\
+\textbf{Fam.} & \textbf{Lvl} & \textbf{BU rate} & \textbf{IMF mean} & \textbf{IMF SD} & \textbf{IMF median} & \textbf{$n_{\text{sig}}$} \\
 \midrule
 % BEGIN AUTO DOWNSTREAM_ABSTAIN
-CF1 & L1 & 0.000 & 0.000 & 0.000 & 0.001 & 0 \\
-CF1 & L2 & 0.000 & 0.001 & 0.000 & 0.003 & 0 \\
-CF1 & L3 & 0.000 & 0.010 & 0.010 & 0.006 & 982 \\
-CF1 & L4 & 0.000 & 0.070 & 0.070 & 0.012 & 1000 \\
-CF1 & L5 & 0.000 & 0.253 & 0.252 & 0.016 & 1000 \\
-CF2 & L1 & 0.880 & 0.612 & 0.619 & 0.091 & 352 \\
-CF2 & L2 & 0.992 & 0.662 & 0.664 & 0.067 & 760 \\
-CF2 & L3 & 1.000 & 0.710 & 0.713 & 0.050 & 991 \\
-CF2 & L4 & 1.000 & 0.778 & 0.781 & 0.036 & 1000 \\
-CF2 & L5 & 1.000 & 0.849 & 0.851 & 0.022 & 1000 \\
-CF3 & L1 & 0.000 & 0.500 & 0.500 & 0.000 & 0 \\
-CF3 & L2 & 1.000 & 0.800 & 0.800 & 0.000 & 0 \\
-CF3 & L3 & 1.000 & 0.900 & 0.900 & 0.000 & 0 \\
-CF3 & L4 & 1.000 & 0.938 & 0.938 & 0.000 & 1000 \\
-CF3 & L5 & 1.000 & 0.955 & 0.955 & 0.000 & 1000 \\
-CF4 & L1 & 0.000 & 0.500 & 0.500 & 0.000 & 0 \\
-CF4 & L2 & 1.000 & 0.800 & 0.800 & 0.000 & 0 \\
-CF4 & L3 & 1.000 & 0.900 & 0.900 & 0.000 & 0 \\
-CF4 & L4 & 1.000 & 0.938 & 0.938 & 0.000 & 1000 \\
-CF4 & L5 & 1.000 & 0.955 & 0.955 & 0.000 & 1000 \\
+CF1 & L1 & 0.000 & 0.000 & 0.001 & 0.000 & 0 \\
+CF1 & L2 & 0.000 & 0.001 & 0.003 & 0.000 & 0 \\
+CF1 & L3 & 0.000 & 0.010 & 0.006 & 0.010 & 982 \\
+CF1 & L4 & 0.000 & 0.070 & 0.012 & 0.070 & 1000 \\
+CF1 & L5 & 0.000 & 0.253 & 0.016 & 0.252 & 1000 \\
+CF2 & L1 & 0.880 & 0.612 & 0.091 & 0.619 & 352 \\
+CF2 & L2 & 0.992 & 0.662 & 0.067 & 0.664 & 760 \\
+CF2 & L3 & 1.000 & 0.710 & 0.050 & 0.713 & 991 \\
+CF2 & L4 & 1.000 & 0.778 & 0.036 & 0.781 & 1000 \\
+CF2 & L5 & 1.000 & 0.849 & 0.022 & 0.851 & 1000 \\
+CF3 & L1 & 0.000 & 0.500 & 0.000 & 0.500 & 0 \\
+CF3 & L2 & 1.000 & 0.800 & 0.000 & 0.800 & 0 \\
+CF3 & L3 & 1.000 & 0.900 & 0.000 & 0.900 & 0 \\
+CF3 & L4 & 1.000 & 0.938 & 0.000 & 0.938 & 1000 \\
+CF3 & L5 & 1.000 & 0.955 & 0.000 & 0.955 & 1000 \\
+CF4 & L1 & 0.000 & 0.500 & 0.000 & 0.500 & 0 \\
+CF4 & L2 & 1.000 & 0.800 & 0.000 & 0.800 & 0 \\
+CF4 & L3 & 1.000 & 0.900 & 0.000 & 0.900 & 0 \\
+CF4 & L4 & 1.000 & 0.938 & 0.000 & 0.938 & 1000 \\
+CF4 & L5 & 1.000 & 0.955 & 0.000 & 0.955 & 1000 \\
 % END AUTO DOWNSTREAM_ABSTAIN
 \bottomrule
 \end{tabular}%
-}%
 }
 \end{table*}
 

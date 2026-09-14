@@ -224,43 +224,61 @@ def downstream_block() -> str:
             best_baseline = max(baseline_accs, key=baseline_accs.get)
             baseline_row = metrics_by[(fam, lvl, best_baseline)]
 
-            # Extract metrics
+            # every quantity is emitted for csfr and for the baseline side by
+            # side. an earlier version emitted only csfr's accuracy and then
+            # the baseline's joint rate under a header that read "conditional",
+            # so the conditional rates the paper discusses were nowhere in the
+            # table that cited them.
             csfr_acc = float(csfr_row["accuracy"])
             csfr_recovery = float(csfr_row["recovery"])
             csfr_conf_joint = float(csfr_row["conf_err_joint"])
             csfr_conf_cond = float(csfr_row["conf_err_cond"])
             csfr_n_conf = int(float(csfr_row["n_confident"]))
-            csfr_n_signal = int(float(csfr_row["signal_n"]))
 
             baseline_acc = float(baseline_row["accuracy"])
             baseline_conf_joint = float(baseline_row["conf_err_joint"])
+            baseline_conf_cond = float(baseline_row["conf_err_cond"])
             baseline_n_conf = int(float(baseline_row["n_confident"]))
 
-            # Check if bootstrap CI excludes zero (indicates significance)
+            # the joint and the conditional difference carry separate bootstrap
+            # intervals and separate markers. they disagree in several cells,
+            # which is the section's whole point, so one shared marker would
+            # hide the finding.
             stats_key = (fam, lvl, best_baseline)
-            ci_marker = ""
-            if stats_key in stats_by:
-                stat_row = stats_by[stats_key]
-                ci_lo_str = stat_row.get("ci_lo_conferr_diff_signal", "")
-                ci_hi_str = stat_row.get("ci_hi_conferr_diff_signal", "")
-                if ci_lo_str and ci_hi_str:
-                    try:
-                        ci_lo = float(ci_lo_str)
-                        ci_hi = float(ci_hi_str)
-                        # CI excludes zero if both same sign
-                        if (ci_lo > 0 and ci_hi > 0) or (ci_lo < 0 and ci_hi < 0):
-                            ci_marker = r"$^{*}$"
-                    except (ValueError, TypeError):
-                        pass
+            stat_row = stats_by.get(stats_key, {})
 
-            # Format: Family Level Baseline CSFR_acc recovery CSFR_conf_joint
-            # CSFR_n_conf Baseline_conf_joint Baseline_n_conf n_signal marker
+            def excludes_zero(lo_key: str, hi_key: str) -> bool:
+                lo_s, hi_s = stat_row.get(lo_key, ""), stat_row.get(hi_key, "")
+                if not (lo_s and hi_s):
+                    return False
+                try:
+                    lo, hi = float(lo_s), float(hi_s)
+                except (ValueError, TypeError):
+                    return False
+                return (lo > 0 and hi > 0) or (lo < 0 and hi < 0)
+
+            ci_marker = r"$^{*}$" if excludes_zero(
+                "ci_lo_conferr_diff_signal", "ci_hi_conferr_diff_signal") else ""
+            cond_marker = r"$^{\dagger}$" if excludes_zero(
+                "ci_lo_conferr_cond_diff_signal",
+                "ci_hi_conferr_cond_diff_signal") else ""
+
+            # bold the higher accuracy of the pair. the confident-error columns
+            # are left unbolded on purpose: several cells rest on fewer than
+            # twenty confident predictions, so marking a winner there would
+            # imply a comparison the sample size does not support.
+            acc_c, acc_b = f"{csfr_acc:.3f}", f"{baseline_acc:.3f}"
+            if csfr_acc > baseline_acc:
+                acc_c = rf"\textbf{{{acc_c}}}"
+            elif baseline_acc > csfr_acc:
+                acc_b = rf"\textbf{{{acc_b}}}"
+
             out.append(
                 f"{fam} & {lvl} & {LABEL.get(best_baseline, best_baseline)} & "
-                f"{csfr_acc:.3f} & {csfr_recovery:+.3f} & "
-                f"{csfr_conf_joint:.3f} ({csfr_n_conf:d}) & "
-                f"{baseline_conf_joint:.3f} ({baseline_n_conf:d}) & "
-                f"n_sig={csfr_n_signal}{ci_marker} \\\\")
+                f"{acc_c} & {acc_b} & {csfr_recovery:+.3f} & "
+                f"{csfr_conf_joint:.3f}{ci_marker} & {baseline_conf_joint:.3f} & "
+                f"{csfr_conf_cond:.3f}{cond_marker} ({csfr_n_conf:d}) & "
+                f"{baseline_conf_cond:.3f} ({baseline_n_conf:d}) \\\\")
 
         if fam != "CF4":
             out.append(r"\midrule")
@@ -293,9 +311,12 @@ def downstream_abstain_block() -> str:
         imf_median = float(r["imf_median"]) if r.get("imf_median") and r["imf_median"] != "" else 0.0
         n_signal = int(float(r["signal_n"])) if r.get("signal_n") else 0
 
+        # emission order must match the header: mean, sd, median. an earlier
+        # version emitted mean, median, sd under that header, so the two right
+        # columns were transposed in every row.
         out.append(
             f"{fam} & {lvl} & {bu_rate:.3f} & "
-            f"{imf_mean:.3f} & {imf_median:.3f} & {imf_sd:.3f} & {n_signal:d} \\\\")
+            f"{imf_mean:.3f} & {imf_sd:.3f} & {imf_median:.3f} & {n_signal:d} \\\\")
 
     return "\n".join(out)
 

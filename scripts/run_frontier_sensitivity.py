@@ -29,7 +29,13 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
-METHODS = ["zero_fill", "bilinear", "inpaint_telea", "inpaint_ns", "dictlearn", "csfr"]
+# the external-prior inpainter belongs in this sweep. the claim under test is
+# that any positive weight on released traceability lifts csfr above methods at
+# TS=0, and lama is the only TS=0-by-construction generative method measured
+# here, so a sweep without it tests the claim against no generative method at
+# all. its hrp and all four cvr columns are in the same summary csv.
+METHODS = ["zero_fill", "bilinear", "inpaint_telea", "inpaint_ns", "dictlearn",
+           "lama", "csfr"]
 TS = {m: (1.0 if m == "csfr" else 0.0) for m in METHODS}
 
 
