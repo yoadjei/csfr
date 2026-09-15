@@ -53,7 +53,12 @@ echo "supplement latex errors: $serrs   $spages"
 # were once five weeks behind the build they were copied from, which is how a
 # manuscript ships with a section the repository had already fixed. refresh
 # them here so a stale copy cannot outlive a green gate.
-echo "== 7. refresh submission copies =="
+cd ..
+echo "== 7. blinding =="
+python scripts/check_blinding.py || fail=1
+cd paper
+
+echo "== 8. refresh submission copies =="
 cp paper2_reconstruction.pdf CSFR_manuscript.pdf || fail=1
 cp paper2_supplementary.pdf  CSFR_supplementary.pdf || fail=1
 echo "CSFR_manuscript.pdf and CSFR_supplementary.pdf refreshed from this build"
