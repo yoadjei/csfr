@@ -74,3 +74,9 @@ tasks/
 IMPLEMENTATION_STATUS_LAMA.md
 # matched-compute sweep: config is released, results were never completed
 results/csfr_sweep_2d_t2400/
+
+# transfer archives from the gpu runs (results themselves are committed lean)
+*.tar.gz
+# submission-named pdf copies; scripts/verify.sh regenerates them from the build
+paper/CSFR_manuscript.pdf
+paper/CSFR_supplementary.pdf

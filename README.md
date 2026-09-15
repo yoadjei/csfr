@@ -15,10 +15,11 @@ perceptual quality.
 bash scripts/verify.sh
 ```
 
-about 35 seconds. runs the test suite, a downstream smoke test into a temporary
-directory, regenerates every table from the released csvs, and builds the
-manuscript. exit 0 only if all of it passes with zero undefined references and
-zero latex errors.
+about three minutes, most of it the test suite. runs the tests, a downstream
+smoke test into a temporary directory, regenerates every table from the
+released csvs, builds the manuscript and the supplement, and refreshes the
+submission-named pdf copies so a stale one cannot be handed out. exit 0 only if
+all of it passes with zero undefined references and zero latex errors.
 
 this checks the released numbers without recomputing them. full recomputation
 takes hours of cpu plus a gpu.
@@ -33,7 +34,7 @@ takes hours of cpu plus a gpu.
 | `data/` | patch corpora with cluster labels and manifests, see `data/README.md` |
 | `results/` | per-cell metrics, statistics, released table bodies |
 | `paper/` | manuscript, supplement, figures |
-| `tests/` | 67 tests, including checks that every number in the paper matches its csv |
+| `tests/` | 78 tests, including checks that every number in the paper matches its csv and that no caption describes a table other than the one under it |
 
 not released, by policy: solver checkpoints, per-seed `x_hat`, `y` and `mask`
 arrays, raw corpora, model weights. all regenerate from the committed patch sets
@@ -59,10 +60,24 @@ each one from the csvs and fails if a claim is missing as well as if it is wrong
 
 ## cpu and gpu
 
-everything except the `lama` method was computed on cpu (windows 11, python
-3.14, torch cpu build). the `lama` results were computed on an nvidia t4
-(python 3.12, torch 2.10.0+cu128). these are separate runs reported separately.
-no table row in the paper mixes devices.
+two environments, and the artefacts record which produced what.
+
+| results | environment | recorded in |
+|---|---|---|
+| primary sweep, downstream | linux, python 3.12.13, torch 2.10.0+cu128, nvidia t4 | `csfr_sweep_2d_v2/run_metadata.json`, `downstream/environment.json` |
+| external validation, runtime bench | windows 11, python 3.14.6, torch 2.13.0+cpu | `csfr_sweep_govdocs1/run_metadata.json`, `bench/environment.json` |
+
+`requirements.txt` pins the cpu environment. the gpu runs used torch
+2.10.0+cu128, scipy 1.16.3, scikit-learn 1.6.1, scikit-image 0.25.2.
+
+within the primary sweep every method reconstructed the same patches in one
+job. csfr and lama are the torch methods and used the gpu; the opencv and
+scikit-learn baselines ran on cpu because those libraries offer no gpu path.
+no method got a separate run. runtime is measured on its own uniform cpu path,
+so the device split does not reach the cost comparison.
+
+`budget_sensitivity/` and the non-lama downstream runs predate environment
+capture and carry no metadata.
 
 ## reproducing from scratch
 
@@ -124,7 +139,7 @@ import second.
 python -m pytest tests/ -q
 ```
 
-67 passed, 4 skipped. the skips are the mnist tests when the cache is absent and
+78 passed, 4 skipped. the skips are the mnist tests when the cache is absent and
 the heavy inpainter tests when model weights are absent. run the heavy ones with:
 
 ```bash
