@@ -1,9 +1,16 @@
 # CSFR reproducibility package — exact versions used for the released results.
 # The sweep harness also records these into each run's run_metadata.json.
 #
-# Note: the primary DFRWS sweep (results/csfr_sweep_2d_v2/) predates automated
-# environment capture; the external-validation sweep and all analysis and
-# figure scripts were run under the versions pinned below.
+# These pins are the Windows CPU environment: the external-validation sweep,
+# the runtime benchmark, and all analysis, table and figure scripts.
+#
+# The primary sweep (results/csfr_sweep_2d_v2/) and the downstream experiment
+# (results/downstream/) ran on Linux with an NVIDIA T4 under a different set:
+# python 3.12.13, torch 2.10.0+cu128, scipy 1.16.3, scikit-learn 1.6.1,
+# scikit-image 0.25.2. Each of those directories records its own environment in
+# run_metadata.json / environment.json, which is the authoritative record.
+# Installing these pins reproduces the CPU results exactly; reproducing the GPU
+# results bit-for-bit needs the versions above.
 numpy==2.5.1
 scipy==1.17.1
 torch==2.13.0

@@ -151,6 +151,71 @@ def test_external_corpus_scope_is_stated(tex):
         "LaMa now has GovDocs1 results; tabulate it and drop this caveat"
 
 
+def test_device_claims_match_what_the_runs_recorded(tex):
+    """The paper said the primary sweep ran on Windows CPU and that only the
+    external prior used a GPU. All 60 per-cell metric files say device=cuda.
+    The claim was not merely wrong, it was inverted: the external prior had no
+    separate run at all. Pin the statement to the artefacts."""
+    devices = set()
+    for f in (RESULTS / "csfr_sweep_2d_v2").glob("*/seed*/metrics.json"):
+        devices.add(json.loads(f.read_text(encoding="utf-8")).get("device"))
+    assert devices == {"cuda"}, f"primary sweep devices are now {devices}"
+
+    meta = json.loads((RESULTS / "csfr_sweep_2d_v2" / "run_metadata.json")
+                      .read_text(encoding="utf-8"))
+    assert meta["environment"]["python"].startswith("3.12")
+    assert "cu128" in meta["environment"]["torch"]
+
+    ext = json.loads((RESULTS / "csfr_sweep_govdocs1" / "run_metadata.json")
+                     .read_text(encoding="utf-8"))
+    assert ext["environment"]["python"].startswith("3.14")
+    assert "cpu" in ext["environment"]["torch"]
+
+    # the withdrawn claims must not reappear, in the paper or the readme.
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    for doc, name in ((tex, "manuscript"), (readme, "README")):
+        assert "no table row mixes devices" not in doc, \
+            f"{name} repeats the withdrawn device claim"
+    assert "not recoverable from the artefacts" not in tex, \
+        "the primary sweep's environment is recorded; it is recoverable"
+
+
+def test_committed_corpora_match_the_hashes_the_runs_recorded(tex):
+    """The strongest reproducibility link in the package: the array each sweep
+    consumed, hashed as the harness hashes it (float32, not the uint8 file)."""
+    import hashlib
+
+    import numpy as np
+
+    pairs = [("data/patches.npy", "csfr_sweep_2d_v2"),
+             ("data/patches_govdocs1.npy", "csfr_sweep_govdocs1")]
+    for corpus, run in pairs:
+        arr = np.load(ROOT / corpus).astype(np.float32)
+        got = hashlib.sha256(arr.tobytes()).hexdigest()
+        rec = json.loads((RESULTS / run / "run_metadata.json")
+                         .read_text(encoding="utf-8"))["patches_sha256"]
+        assert got == rec, f"{corpus} no longer matches the hash {run} recorded"
+
+
+def test_paper_hyperparameters_match_the_config(tex):
+    """Every solver constant the paper states must be the one the config sets."""
+    cfg = (ROOT / "configs" / "csfr_sweep_2d.yaml").read_text(encoding="utf-8")
+
+    def cfg_val(key):
+        m = re.search(rf"^\s*{key}\s*:\s*([0-9.eE+-]+)", cfg, re.M)
+        assert m, f"{key} absent from configs/csfr_sweep_2d.yaml"
+        return float(m.group(1))
+
+    for claim_text, key, value in (
+            (r"\lambda_{\ell_1} = 0.02", "lam_l1", 0.02),
+            (r"\lambda_{\mathrm{TV}} = 0.10", "lam_tv", 0.10),
+            (r"\lambda_{\mathrm{FC}} = 0.005", "lam_fc", 0.005),
+            ("Adam with learning rate $2.0$", "lr", 2.0),
+            ("budget of $600$ iterations", "max_iter", 600)):
+        assert claim_text in tex, f"manuscript no longer states {claim_text!r}"
+        assert cfg_val(key) == value, f"{key} is {cfg_val(key)}, paper says {value}"
+
+
 def test_ethics_statement_names_the_corpora_actually_used(tex):
     sec = section(tex, r"\section*{Ethics Statement}",
                   r"\section*{Declaration of Competing Interest}")
