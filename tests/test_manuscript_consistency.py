@@ -14,10 +14,15 @@ The specific regressions guarded here:
     carried the baseline's *joint* rate, so the conditional rates the prose
     argues from were absent from the table it cites.
   * The frontier sensitivity swept six methods with no generative method among
-    them, while concluding that positive weight on traceability lifts CSFR
+    them, while concluding that positive weight on the audit record lifts CSFR
     above the generative methods.
   * The ethics statement named a corpus that was never executed and omitted
     three that were.
+  * After the first rejection the revision withdrew the over-claiming terms
+    (traceability score, provenance, forensic validity, refusal) and a set of
+    absolute claims. Those must not creep back in through a later edit.
+  * Two scripts rendered the same frontier figure file; the stale one shipped
+    under the current caption.
 """
 from __future__ import annotations
 
@@ -130,8 +135,8 @@ def test_frontier_sensitivity_includes_the_generative_method(tex):
                    .read_text(encoding="utf-8"))
     scores = d["equal_weight_point"]["scores"]
     assert "lama" in scores, (
-        "the sweep excludes the only measured TS=0 generative method, so it "
-        "cannot support the claim made about generative methods")
+        "the sweep excludes the only generative method measured under the "
+        "harness, so it cannot support the claim made about generative methods")
     assert len(scores) == 7
     worst = d["weights_simplex"]["csfr_rank_max"]
     assert re.search(rf"never falls below \w+ of seven", tex), \
@@ -216,6 +221,36 @@ def test_paper_hyperparameters_match_the_config(tex):
         assert cfg_val(key) == value, f"{key} is {cfg_val(key)}, paper says {value}"
 
 
+def test_supplement_title_matches_the_manuscript(tex):
+    """The supplement carried a title from an earlier draft, "Constraint-Driven
+    Sparse Fragment Reconstruction for Digital Forensics", long after the paper
+    had been renamed. Two documents submitted together under different titles
+    read as a packaging error, so pin them to each other."""
+    supp = (ROOT / "paper" / "paper2_supplementary.tex").read_text(encoding="utf-8")
+
+    def title_of(doc: str) -> str:
+        m = re.search(r"\\title\{(.*?)\}", doc, re.S)
+        assert m, "no \\title in document"
+        t = m.group(1).replace(r"\\", " ")
+        t = re.sub(r"Supplementary Material", "", t)
+        return " ".join(t.split())
+
+    assert title_of(supp) == title_of(tex), (
+        f"supplement is titled {title_of(supp)!r}, "
+        f"manuscript is titled {title_of(tex)!r}")
+
+
+def test_supplement_carries_no_author_names(tex):
+    """The supplement has no author block on purpose. If one is ever added it
+    must follow the manuscript's blinding switch, otherwise a blinded
+    submission leaks the authors through the supplementary file."""
+    supp = (ROOT / "paper" / "paper2_supplementary.tex").read_text(encoding="utf-8")
+    if re.search(r"\\author\{", supp):
+        assert r"\ifanonymous" in supp, (
+            "supplement gained an author block without a blinding switch; "
+            "a blinded submission would leak the authors through it")
+
+
 def test_ethics_statement_names_the_corpora_actually_used(tex):
     sec = section(tex, r"\section*{Ethics Statement}",
                   r"\section*{Declaration of Competing Interest}")
@@ -223,6 +258,83 @@ def test_ethics_statement_names_the_corpora_actually_used(tex):
         assert corpus in sec, f"ethics statement omits {corpus}"
     assert "FFT-75" not in sec, \
         "FFT-75 is specified but never executed; it does not belong here"
+
+
+def test_revised_terminology_is_used_throughout(tex):
+    """The post-rejection revision renamed the metric and the record because
+    the old names claimed more than the code delivers. Lock the new names in
+    and the old claims out."""
+    body = tex.split(r"\begin{document}", 1)[1]
+    for phrase in ("Traceability Score", r"\mathrm{TS}", "ForensicValidity",
+                   "Forensic-Validity", "their contribution shares",
+                   "explicitly refuses", "per-pixel provenance record",
+                   "certified by construction", "carries zero traceability",
+                   "yields output with zero traceability"):
+        assert phrase not in body, f"withdrawn wording is back: {phrase!r}"
+    for phrase in ("Audit Record Coverage", "approximate local sensitivity",
+                   "Refusal and warning behaviour", "auditability composite (AC)",
+                   "not as proof of recoverability", "Adoption Scope"):
+        assert phrase in body, f"revised wording missing: {phrase!r}"
+
+
+def test_c3_is_stated_as_the_global_bound(tex):
+    """The solver clips to a global constant. The paper once defined C3 as a
+    neighbourhood-derived bound it never implemented."""
+    sec = section(tex, r"\subsection{Constraint Family C3",
+                  r"\subsection{Constraint Family C4")
+    assert r"[\,0, 255\,]" in sec
+    assert "not implemented or evaluated" in sec
+    src = (ROOT / "src" / "csfr_reconstruct_2d.py").read_text(encoding="utf-8")
+    assert "clamp_(LO, HI)" in src, "the solver no longer clips to the global constants"
+
+
+def test_withdrawn_absolute_claims_stay_withdrawn(tex):
+    """Each pattern is wording the revision replaced with a hedge. This is a
+    regression lock on that pass, not a general style lint."""
+    body = tex.split(r"\begin{document}", 1)[1]
+    for pattern in (r"\bimpossible\b", r"\bunambiguous", r"\bproves\b",
+                    r"real and consistent", r"cannot be traced\b",
+                    r"bit-level reproducibility", r"\binadmissible\b",
+                    r"certified ones", r"core scientific result",
+                    r"the decisive test", r"settles each comparison",
+                    r"No method removes", r"guarantees that",
+                    r"the single most consequential", r"fails Daubert scrutiny"):
+        assert not re.search(pattern, body), f"absolute wording is back: {pattern!r}"
+
+
+def test_ieee_build_derives_cleanly_from_the_source(tex):
+    """The ieee access version is generated, never edited. Its front matter
+    must meet the venue's stated limits: 150 to 250 abstract words, three to
+    ten keywords in alphabetical order, a biography section when named."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "build_ieee", ROOT / "scripts" / "build_ieee.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out, _missing = mod.convert(tex, mod.default_class())
+    assert r"\usepackage{lineno}" not in out
+    kw = re.search(r"\\begin\{(?:IEEE)?keywords\}\n(.*?)\n\\end", out, re.S).group(1)
+    terms = [t.strip() for t in kw.split(",") if t.strip()]
+    assert 3 <= len(terms) <= 10, f"{len(terms)} keywords"
+    assert terms == sorted(terms, key=str.lower), "ieee access wants keywords alphabetical"
+    abstract = re.search(r"\\begin\{abstract\}\n(.*?)\n\\end\{abstract\}", out, re.S).group(1)
+    words = [w for w in re.sub(r"\\[a-zA-Z]+|[${}~\\]", " ", abstract).split()
+             if any(c.isalnum() for c in w)]
+    assert 150 <= len(words) <= 250, f"abstract is {len(words)} words"
+    if re.search(r"^\s*\\anonymousfalse", tex, re.M):
+        assert "Anonymous" not in out
+        assert "IEEEbiography" in out, "named build carries no biography section"
+
+
+def test_frontier_figure_has_one_generator():
+    """A second renderer of the frontier figure once shipped a stale drawing,
+    six methods and a red 'inadmissible' band, under the current caption."""
+    for script in (ROOT / "scripts").glob("*.py"):
+        if script.name == "render_frontier.py":
+            continue
+        assert "paper2_F9_method_frontier" not in script.read_text(encoding="utf-8"), \
+            f"{script.name} also writes the frontier figure"
 
 
 def test_referenced_scripts_exist(tex):

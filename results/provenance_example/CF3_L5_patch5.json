@@ -23,7 +23,8 @@
   "attribution_method": "implicit-function theorem at the returned iterate: dx/dy = (grad^2_xx J)^-1 M, solved per queried pixel by conjugate gradients with autograd Hessian-vector products",
   "caveats": [
     "Weights describe the stationarity condition of the solver objective; the fixed iteration budget is not certified to have reached a stationary point.",
-    "Weights are normalised to sum to one in absolute value over their support and are contribution shares, not probabilities."
+    "Weights are normalised to sum to one in absolute value over their support. They are signed approximate local sensitivities, not contribution shares and not probabilities, and need not sum to the reconstructed value.",
+    "The record establishes that the audit artefact was produced for the declared queries; it does not establish that the weights are exact, causally complete or unique."
   ],
   "queries": [
     {

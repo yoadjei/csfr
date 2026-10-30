@@ -5,7 +5,10 @@ M1: PSNR                 — Peak Signal-to-Noise Ratio on corrupted pixels
 M2: SSIM                 — Structural Similarity (full image)
 M3: CVR                  — Constraint Violation Rate (C1–C4)
 M4: HRP                  — Hallucination Risk Proxy
-M5: TS                   — Traceability Score (1.0 by construction for CSFR)
+M5: ARC                  — Audit Record Coverage. Measured by
+                           src/provenance.py; the constant here is the
+                           by-construction value for a solver whose audit
+                           stage ran to completion on every declared query.
 """
 from __future__ import annotations
 
@@ -88,18 +91,28 @@ def hallucination_risk_proxy(
     return float(np.mean(np.abs(z)))
 
 
-# ── M5: Traceability Score ────────────────────────────────────────────
-def traceability_score() -> float:
-    """CSFR is deterministic: every output pixel traceable to inputs."""
+# ── M5: Audit Record Coverage ─────────────────────────────────────────
+def audit_record_coverage() -> float:
+    """By-construction ARC for a solver whose audit stage emitted a record for
+    every declared query. The measured value comes from
+    provenance.measured_audit_record_coverage; this constant is the value the
+    sweep harness records when that stage is not re-run per patch. The paper
+    called this the Traceability Score in an earlier draft."""
     return 1.0
 
 
-# ── Provenance ────────────────────────────────────────────────────────
+# earlier name, kept so released scripts and notebooks keep importing.
+traceability_score = audit_record_coverage
+
+
+# ── Solver-configuration summary ──────────────────────────────────────
 def build_provenance(
     rec: np.ndarray, y: np.ndarray, M: np.ndarray,
     lam_l1: float, lam_tv: float, lam_fc: float,
 ) -> dict:
-    """Per-imputed-pixel attribution weights."""
+    """Summary of the constraint configuration and index sets behind one
+    reconstruction. This is bookkeeping, not the per-pixel sensitivity record;
+    that is provenance.write_manifest."""
     weights_sum = lam_l1 + lam_tv + lam_fc + 1e-12
     base = {
         "C2_spatial": lam_tv / weights_sum,

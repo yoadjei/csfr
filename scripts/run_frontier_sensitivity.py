@@ -1,19 +1,20 @@
-"""Sensitivity of the forensic-validity frontier to its free parameters
+"""Sensitivity of the exploratory auditability composite to its free parameters
 (pre-submission review §4.8: "provide sensitivity analysis for their thresholds
 and weights").
 
-The validity composite combines three study-defined indicators with equal
-weight:  V = w1(1-CVR) + w2(1-HRP_norm) + w3 TS,  w = (1/3,1/3,1/3). Two choices
-are arbitrary and are stressed here:
+The composite combines three study-defined indicators with equal weight:
+V = w1(1-CVR) + w2(1-HRP_norm) + w3 ARC,  w = (1/3,1/3,1/3), where ARC is
+audit record coverage. Two choices are arbitrary and are stressed here:
 
   * the weights w1,w2,w3 -- swept over the probability simplex;
   * the HRP normaliser -- HRP has no natural upper bound, so it is rescaled;
     we vary the normalising constant.
 
-The reported quantity is CSFR's rank on the validity axis. If the qualitative
-frontier claim ("DL off the frontier; CSFR the only certified point") depends on
-the exact weights, it is not a real finding; if CSFR's standing is stable across
-the simplex, it is.
+The reported quantity is CSFR's rank on the composite. If CSFR's standing
+depends on the exact weights, the ranking is not a finding; if it is stable
+across the simplex, the ranking is robust to the composite's free parameters.
+Either way the composite describes the evaluated software artefacts, not a
+forensic-validity scale.
 
 Output: results/sensitivity/frontier_sensitivity.json
 """
@@ -29,14 +30,16 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
-# the external-prior inpainter belongs in this sweep. the claim under test is
-# that any positive weight on released traceability lifts csfr above methods at
-# TS=0, and lama is the only TS=0-by-construction generative method measured
-# here, so a sweep without it tests the claim against no generative method at
-# all. its hrp and all four cvr columns are in the same summary csv.
+# the external-prior inpainter belongs in this sweep. the ranking under test
+# includes every method the paper measured, and lama is the only generative
+# method run under the harness, so a sweep without it tests the ranking against
+# no generative method at all. its hrp and all four cvr columns are in the same
+# summary csv.
 METHODS = ["zero_fill", "bilinear", "inpaint_telea", "inpaint_ns", "dictlearn",
            "lama", "csfr"]
-TS = {m: (1.0 if m == "csfr" else 0.0) for m in METHODS}
+# only the csfr implementation emitted an audit record; the composite needs a
+# number where the paper reports "not available", so the others enter as 0.
+ARC = {m: (1.0 if m == "csfr" else 0.0) for m in METHODS}
 
 
 def load(summary: Path) -> dict:
@@ -56,7 +59,7 @@ def load(summary: Path) -> dict:
 
 def validity(stats: dict, w, hrp_norm: float) -> dict:
     w1, w2, w3 = w
-    return {m: w1 * (1 - s["cvr"]) + w2 * (1 - s["hrp"] / hrp_norm) + w3 * TS[m]
+    return {m: w1 * (1 - s["cvr"]) + w2 * (1 - s["hrp"] / hrp_norm) + w3 * ARC[m]
             for m, s in stats.items()}
 
 
@@ -103,16 +106,18 @@ def main(argv=None) -> int:
             "csfr_rank_min": int(ranks.min()),
             "csfr_rank_max": int(ranks.max()),
             "fraction_csfr_rank1": float((ranks == 1).mean()),
-            "note": "CSFR rank on the validity axis over the full weight simplex"},
+            "note": "CSFR rank on the exploratory auditability composite over the full weight simplex"},
         "hrp_normaliser": hrp_variants,
         "equal_weight_point": {
             "csfr_rank": rank_of(base, "csfr"),
             "scores": {m: round(v, 4) for m, v in base.items()}},
         "interpretation": (
-            "TS is the only axis on which CSFR is uniquely maximal, so wherever "
-            "w3>0 CSFR cannot be beaten on validity by a TS=0 method unless that "
-            "method's CVR/HRP advantage outweighs the TS gap. The rank range "
-            "records exactly where that happens."),
+            "ARC is the only component on which CSFR is uniquely maximal, "
+            "because only its implementation emitted an audit record in this "
+            "study. Wherever w3>0 that component lifts CSFR unless another "
+            "method's CVR/HRP advantage outweighs it; the rank range records "
+            "where that happens. The composite describes the evaluated software "
+            "artefacts and is not a forensic-validity scale."),
     }
     out = ROOT / args.out
     out.parent.mkdir(parents=True, exist_ok=True)

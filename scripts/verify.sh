@@ -49,11 +49,14 @@ spages=$(grep -oE "Output written on .* \([0-9]+ pages" paper2_supplementary.log
 echo "supplement latex errors: $serrs   $spages"
 [ "$serrs" -eq 0 ] || fail=1
 
+cd ..
+echo "== 6b. ieee access build (same source, venue shell only) =="
+python scripts/build_ieee.py --build || fail=1
+
 # the files handed to a venue carry submission names, not build names. they
 # were once five weeks behind the build they were copied from, which is how a
 # manuscript ships with a section the repository had already fixed. refresh
 # them here so a stale copy cannot outlive a green gate.
-cd ..
 echo "== 7. blinding =="
 python scripts/check_blinding.py || fail=1
 cd paper

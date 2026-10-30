@@ -6,7 +6,7 @@
 \renewcommand{\thefigure}{S\arabic{figure}}
 
 \title{Supplementary Material\\
-Constraint-Driven Sparse Fragment Reconstruction for Digital Forensics}
+Constraint-Driven Forensic Image Reconstruction Using Auditable Compressed Sensing}
 \date{}
 
 \begin{document}
@@ -16,10 +16,15 @@ This supplement holds evidence that supports the main paper without carrying a
 headline claim. Every table is generated from the released CSVs by
 \texttt{scripts/render\_stats\_tables.py} and
 \texttt{scripts/update\_paper\_tables.py}, the same generators that populate the
-main paper, so the numbers here cannot drift from the artefacts they come from.
+main paper, so the numbers here are tied to the artefacts they come from.
+Throughout, C3 denotes global $[0,255]$ clipping, and Audit Record Coverage
+measures whether the evaluated implementation produced a finite, non-empty
+approximate local sensitivity record for the declared queries; it is not a
+measure of legal admissibility or intrinsic algorithmic traceability.
 
 \section{Constraint ablation}
-The contribution of each constraint family, averaged over all 20 cells.
+The contribution of each implemented component, averaged over all 20 cells. C3
+denotes global 8-bit intensity clipping, not neighbourhood-derived bounds.
 
 
 \begin{table*}[htbp]
@@ -45,12 +50,15 @@ Full CSFR & 25.68 & 0.757 & 1.73 & 1.46 & 0.00 & 1.85 \\
 \end{table*}
 
 \section{Runtime and memory}
-Wall-clock and peak memory per patch, measured on the CPU reference machine.
+Wall-clock time and Python-tracked peak allocation per patch, measured on the
+CPU reference machine. The \texttt{tracemalloc} values exclude some native
+allocations and should not be interpreted as complete process-memory
+measurements.
 
 
 \begin{table}[htbp]
 \centering
-\caption{Per-patch runtime and peak memory, CPU, $64\times64$ patches. ms/patch and per-batch mean$\pm$SD over five repeats of a 32-patch batch; peak is \texttt{tracemalloc} peak allocation. Full environment in \texttt{results/bench/environment.json}.}
+\caption{Per-patch runtime and peak memory, CPU, $64\times64$ patches. ms/patch and per-batch mean$\pm$SD over five repeats of a 32-patch batch; peak is Python allocation recorded by \texttt{tracemalloc} and excludes some native library allocations. Full environment in \texttt{results/bench/environment.json}.}
 \label{tab:bench}
 \setlength{\tabcolsep}{5pt}
 \begin{tabular}{lccccc}
@@ -70,14 +78,16 @@ CSFR (proposed) & 44.35 & 1.419 & 0.105 & 1.435 & 1.0 \\
 \end{table}
 
 \section{Iteration-budget sensitivity}
-CSFR PSNR against solver budget on a 100-patch, seed-0 subset. The gap column
-compares against the strongest baseline's full-cell value, so it slightly
-understates CSFR where the subset is easier than the full cell.
+CSFR PSNR is shown across four solver budgets on a 100-patch, seed-0 subset.
+The Gap@4800 column compares that subset with a baseline value computed on a
+different 300-patch sample. It is descriptive and not a paired estimate. A
+controlled comparison requires all methods to be rerun on the identical subset
+and masks.
 
 
 \begin{table}[htbp]
 \centering
-\caption{Iteration-budget sensitivity. CSFR PSNR (dB) is recomputed on a 100-patch, seed-0 subset at each budget; the ``Gap@4800'' column is CSFR at $T{=}4800$ minus the strongest baseline's full-cell (300-patch, seed-0) PSNR in that cell, so it slightly understates CSFR where the subset is easier than the full cell. Extending the budget closes most of the CF3/CF4 deficit and reverses the CF2 deficit, establishing that the reported 600-iteration losses on these families are substantially an under-convergence effect.}
+\caption{Iteration-budget sensitivity. CSFR PSNR (dB) is recomputed on a 100-patch, seed-0 subset at each budget; the ``Gap@4800'' column is CSFR at $T{=}4800$ minus the strongest baseline's full-cell (300-patch, seed-0) PSNR in that cell, so it slightly understates CSFR where the subset is easier than the full cell. Extending the budget closes most of the CF3/CF4 deficit and reverses the CF2 deficit, indicating that under-convergence contributes to the reported 600-iteration losses. Because the baseline and CSFR values use different samples, this table does not establish a paired advantage.}
 \label{tab:budget}
 \setlength{\tabcolsep}{5pt}
 \begin{tabular}{lccccc}
@@ -97,8 +107,10 @@ CF4~L5 & 11.03 & 12.14 & 14.39 & 17.62 & -0.61 \\
 
 \section{Bounded-Unknown and the signal-covering subset}
 Abstention rates and the continuous isolated-missing-fraction per cell. The
-binary flag saturates by family and level, which is why the continuous
-statistic is the one reported in the main paper.
+binary Bounded-Unknown diagnostic saturates by family and level, so the
+continuous statistic is more informative and is the one reported in the main
+paper. The diagnostic flags a reconstruction for review; it does not mean that
+the solver withheld the numerical output or proved the region irrecoverable.
 
 
 \begin{table*}[htbp]

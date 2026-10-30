@@ -1,5 +1,7 @@
-"""Render the measured method-frontier figure (F9): PSNR vs forensic-validity
-composite for the six same-harness methods, from the v2 summary CSV."""
+"""Render the exploratory comparison figure (F9): mean PSNR against the
+study-defined auditability composite for the seven evaluated methods, from the
+v2 summary CSV. This is the only generator of paper2_F9_method_frontier.png;
+scripts/render_figures.py no longer draws its own copy."""
 from __future__ import annotations
 
 import csv
@@ -43,9 +45,11 @@ LABEL_OFFSET = {"inpaint_telea": (-56, -30), "inpaint_ns": (-16, 42),
                 "bilinear": (10, -18), "zero_fill": (10, 8)}
 # methods whose label needs a leader line back to its marker
 LEADERED = {"inpaint_telea", "inpaint_ns", "lama"}
-# Traceability score by method. CSFR provides per-pixel provenance; others do not.
-# Generative methods (lama) are by construction non-auditable: TS = 0.
-TS = {"csfr": 1.0, "lama": 0.0}
+# audit record coverage by method. only the csfr implementation was instrumented
+# to emit a sensitivity record; the composite needs a number where the paper
+# reports "not available", so the others enter as 0. that is a statement about
+# the evaluated software, not about what the algorithms could be made to log.
+ARC = {"csfr": 1.0}
 
 rows = collections.defaultdict(lambda: collections.defaultdict(list))
 with SUMMARY.open(encoding="utf-8") as f:
@@ -62,7 +66,7 @@ for m, (label, color, marker) in METH.items():
     psnr = sum(v["psnr_db_mean"]) / len(v["psnr_db_mean"])
     cvr = sum(sum(v[f"cvr_c{i}"]) / len(v[f"cvr_c{i}"]) for i in range(1, 5)) / 4
     hrp = sum(v["hrp_mean"]) / len(v["hrp_mean"])
-    validity = ((1 - cvr) + (1 - hrp / hrp_max) + TS.get(m, 0.0)) / 3
+    validity = ((1 - cvr) + (1 - hrp / hrp_max) + ARC.get(m, 0.0)) / 3
     kw = {} if marker == "x" else {"edgecolor": "black", "linewidth": 0.6}
     ax.scatter(psnr, validity, s=110, color=color, marker=marker, zorder=3, **kw)
     arrow = (dict(arrowstyle="-", color=color, linewidth=0.7,
@@ -71,26 +75,26 @@ for m, (label, color, marker) in METH.items():
                 textcoords="offset points", fontsize=10, color=color,
                 fontweight="bold", arrowprops=arrow)
 
-# the composite is ((1 - cvr) + (1 - hrp/hrp_max) + TS)/3, so a method with
-# TS = 0 cannot exceed 2/3 however good its reconstruction is. that ceiling is
-# the honest structural claim: the region above it is reachable only with a
-# per-pixel provenance record.
+# the composite is ((1 - cvr) + (1 - hrp/hrp_max) + ARC)/3, so a method entered
+# at ARC = 0 cannot exceed 2/3 however good its reconstruction is. that ceiling
+# is a property of the composite, and the region above it is reachable only by
+# an implementation that released an audit record.
 #
-# the earlier version shaded the bottom third and called it "the TS = 0 region,
+# an earlier version shaded the bottom third and called it "the TS = 0 region,
 # inadmissible for forensic use". that was wrong three ways: six of the seven
-# methods have TS = 0 and five of them plot above the band; the only point in
-# the band was zero-fill, which is not an external-prior method; and asserting
-# inadmissibility contradicts this paper's own position that admissibility is a
-# determination for a court.
-TS_CEILING = 2 / 3
-ax.axhspan(TS_CEILING, 1.0, color="#003366", alpha=0.06)
-ax.axhline(TS_CEILING, color="#003366", linewidth=0.8, linestyle="--", alpha=0.5)
+# methods sit at 0 on this axis and five of them plot above the band; the only
+# point in the band was zero-fill, which is not an external-prior method; and
+# asserting inadmissibility contradicts this paper's own position that
+# admissibility is a determination for a court.
+ARC_CEILING = 2 / 3
+ax.axhspan(ARC_CEILING, 1.0, color="#003366", alpha=0.06)
+ax.axhline(ARC_CEILING, color="#003366", linewidth=0.8, linestyle="--", alpha=0.5)
 ax.text(14.3, 0.94,
-        "Unreachable without per-pixel provenance: with TS = 0 the composite\n"
+        "Above 2/3 only with a released audit record: at ARC = 0 the composite\n"
         "cannot exceed 2/3, whatever the reconstruction quality",
         fontsize=8.5, color="#003366", style="italic")
 ax.set_xlabel("Mean PSNR over 20-cell sweep (dB)")
-ax.set_ylabel("Forensic validity composite")
+ax.set_ylabel("Auditability composite (exploratory, study-defined)")
 ax.set_ylim(0, 1.0)
 ax.grid(alpha=0.25, linestyle=":")
 ax.spines["top"].set_visible(False)

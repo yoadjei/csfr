@@ -1,8 +1,9 @@
 """Tests for src/generative_inpainter.py: the external-prior inpainting baseline.
 
-The inpainter is an external-prior method (traceability score = 0 by
-construction), included as an empirical baseline so the paper's argument about
-generative priors is tested rather than only asserted.
+The inpainter is an external-prior method whose wrapper emits no audit record
+(audit record coverage "not available"), included as an empirical baseline so
+the paper's argument about generative priors is tested rather than only
+asserted.
 
 Nothing here downloads or runs the diffusion model by default. The weights are
 several gb and `scripts/verify.sh` runs this suite, so a download in the default

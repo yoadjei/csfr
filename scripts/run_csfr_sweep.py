@@ -180,9 +180,10 @@ def baseline_lama(y: np.ndarray, M: np.ndarray, seed: int,
                   device: str = "cpu") -> Optional[np.ndarray]:
     """External-prior generative inpainting: LaMa (preferred) or Stable Diffusion.
 
-    Note: this method carries NO per-pixel provenance (traceability score = 0 by
-    construction). It is included as an empirical baseline to test the paper's
-    argument that generative priors are problematic in forensic settings.
+    Note: this implementation emits no audit record, so audit record coverage
+    is "not available" for it rather than measured. It is included as an
+    empirical baseline so the paper's argument about external priors in
+    evidential use is tested rather than only asserted.
 
     Methodological caveat: native input is 32x32 or 64x64 grayscale; the model
     expects 512x512 RGB. We resize, replicate channels, run inference, then resize

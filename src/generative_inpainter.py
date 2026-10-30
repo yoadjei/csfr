@@ -5,7 +5,8 @@ purpose-built for inpainting rather than repurposed text-to-image, needs no
 prompt, and is roughly two orders of magnitude faster, which is the difference
 between a full grid that fits in one GPU session and one that does not. Stable
 Diffusion remains as the fallback. Either way the model is external-prior and
-carries no provenance, so its traceability score is 0 by construction.
+this wrapper emits no audit record, so audit record coverage is "not available"
+for it rather than measured.
 
 The interface handles:
   - Input: (N, H, W) grayscale float [0, 255]

@@ -1,11 +1,15 @@
-"""Per-pixel provenance for CSFR reconstructions (Stage 6 of the framework).
+"""Approximate local sensitivity for CSFR reconstructions (Stage 6 of the
+framework). The paper's earlier drafts called this the provenance record; the
+module name is kept so released manifests and scripts keep resolving.
 
 What this computes
 ------------------
-For a reconstructed pixel :math:`\\hat{x}_i`, provenance is the question "which
-observed pixels determine this value, and how strongly?". Formally that is the
-row :math:`\\partial \\hat{x}_i / \\partial y` of the solution's Jacobian with
-respect to the observation.
+For a reconstructed pixel :math:`\\hat{x}_i`, the audit asks "how would a small
+change in each observed pixel change this value, under the objective the
+solver targets?". Formally that is the row
+:math:`\\partial \\hat{x}_i / \\partial y` of the solution's Jacobian with
+respect to the observation. It is a sensitivity, not a decomposition of the
+pixel value and not a causal attribution.
 
 Differentiating through the 600 Adam steps that produce :math:`\\hat{x}` would
 require unrolling the whole optimisation, which is intractable and would in any
@@ -39,9 +43,10 @@ Honest limits
 * For observed pixels the terminal C1 projection makes the answer exact and
   trivial: :math:`\\hat{x}_i = y_i`, so the row is the indicator of :math:`i`.
 
-This module is what makes the Traceability Score a *measurement* rather than a
-constant: a pixel counts as traceable when this computation returns a non-empty
-contributing set with finite weights.
+This module is what makes Audit Record Coverage (ARC) a *measurement* rather
+than a constant: a query is covered when this computation returns a non-empty
+set of non-negligible weights with a finite residual. ARC says the artefact was
+produced; it does not say the weights are exact, causally complete or unique.
 """
 from __future__ import annotations
 
@@ -80,12 +85,14 @@ def provenance_row(x_hat: Tensor, y: Tensor, M: Tensor, pixel: tuple[int, int],
                    enable_tv: bool = True, enable_fc: bool = True,
                    cg_iters: int = 200, tol: float = 1e-8,
                    damping: float = 1e-6) -> tuple[np.ndarray, dict]:
-    """Attribution weights of one reconstructed pixel over the observed pixels.
+    """Approximate local sensitivity of one reconstructed pixel to the observed
+    pixels.
 
     Returns ``(weights, info)`` where ``weights`` has the patch shape, is zero
-    off the observed set, and sums to one over its support (so it reads as a
-    contribution share). ``info`` records the solve diagnostics that make the
-    number auditable rather than asserted.
+    off the observed set, and is normalised to unit absolute sum over its
+    support. The weights are signed sensitivities of the solver's stationarity
+    condition, not contribution shares. ``info`` records the solve diagnostics
+    that make the number auditable rather than asserted.
     """
     r, c = pixel
     dev = x_hat.device
@@ -143,17 +150,18 @@ def provenance_row(x_hat: Tensor, y: Tensor, M: Tensor, pixel: tuple[int, int],
 def measured_traceability(x_hat: Tensor, y: Tensor, M: Tensor, *,
                           lam_l1: float, lam_tv: float, lam_fc: float,
                           n_probe: int = 16, seed: int = 0, **kw) -> dict:
-    """Traceability Score, measured rather than assumed.
+    """Audit Record Coverage, measured rather than assumed.
 
-    A pixel is traceable when the attribution computation returns a non-empty
-    contributing set with finite weights. Observed pixels satisfy this trivially.
-    Imputed pixels are sampled, since a full evaluation would mean one linear
-    solve per pixel.
+    A query is covered when the sensitivity computation returns a non-empty
+    set of non-negligible weights with a finite residual. Observed pixels
+    satisfy this trivially. Imputed pixels are sampled, since a full evaluation
+    would mean one linear solve per pixel. The returned dict carries the value
+    under both ``arc`` and the earlier key ``ts``.
     """
     rng = np.random.default_rng(seed)
     holes = np.argwhere(M.cpu().numpy() == 0)
     if len(holes) == 0:
-        return {"ts": 1.0, "n_probed": 0, "n_traceable": 0,
+        return {"arc": 1.0, "ts": 1.0, "n_probed": 0, "n_traceable": 0,
                 "note": "no imputed pixels in this patch"}
     idx = rng.choice(len(holes), min(n_probe, len(holes)), replace=False)
     traceable = 0
@@ -165,20 +173,25 @@ def measured_traceability(x_hat: Tensor, y: Tensor, M: Tensor, *,
         supports.append(info["support"])
         if info["support"] > 0 and np.isfinite(info["residual"]):
             traceable += 1
-    return {"ts": traceable / len(idx), "n_probed": int(len(idx)),
+    covered = traceable / len(idx)
+    return {"arc": covered, "ts": covered, "n_probed": int(len(idx)),
             "n_traceable": int(traceable),
             "mean_support": float(np.mean(supports)),
             "median_support": float(np.median(supports))}
 
 
+# the name the paper now uses; the earlier name stays for released callers.
+measured_audit_record_coverage = measured_traceability
+
+
 def write_manifest(path: Path, *, x_hat: Tensor, y: Tensor, M: Tensor,
                    solver: dict, queries: list[tuple[int, int]],
                    patch_id: str, top_k: int = 12) -> dict:
-    """Emit the auditable provenance manifest for one reconstruction.
+    """Emit the audit manifest for one reconstruction.
 
     The manifest is the artefact an opposing expert would be handed: what was
     observed, what configuration processed it, and for each queried pixel the
-    observed pixels that determine it with their contribution shares.
+    observed pixels with the largest approximate local sensitivity weights.
     """
     obs = M.cpu().numpy() == 1
     entries = []
@@ -233,7 +246,12 @@ def write_manifest(path: Path, *, x_hat: Tensor, y: Tensor, M: Tensor,
             "the fixed iteration budget is not certified to have reached a "
             "stationary point.",
             "Weights are normalised to sum to one in absolute value over their "
-            "support and are contribution shares, not probabilities.",
+            "support. They are signed approximate local sensitivities, not "
+            "contribution shares and not probabilities, and need not sum to the "
+            "reconstructed value.",
+            "The record establishes that the audit artefact was produced for the "
+            "declared queries; it does not establish that the weights are exact, "
+            "causally complete or unique.",
         ],
         "queries": entries,
     }

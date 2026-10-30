@@ -274,9 +274,10 @@ def baseline_lama(
     """External-prior generative inpainting: LaMa (preferred) or Stable Diffusion.
 
     This is a Phase-2 baseline that tests the paper's argument about hallucination
-    in generative priors. The method carries NO per-pixel provenance (TS=0 by
-    construction). It is included empirically to show it outperforms CSFR on PSNR
-    for severe corruption, but produces confident errors on ambiguous regions.
+    in generative priors. The implementation emits no audit record, so audit
+    record coverage is "not available" for it. It is included empirically; on
+    severe corruption it reaches higher PSNR and accuracy than CSFR, and the
+    confident-error comparison is what the downstream tables report.
 
     Parameters
     ----------

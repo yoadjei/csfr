@@ -3,11 +3,13 @@
 reproducibility package for the paper *constraint-driven forensic image
 reconstruction using auditable compressed sensing*
 
-csfr reconstructs corrupted image fragments as a regularised inverse problem
-under four forensic constraints. it preserves observed pixels exactly, carries a
-conditional recovery bound, and emits a per-pixel provenance record saying which
-observed pixels determined each imputed one. the claim is auditability, not
-perceptual quality.
+csfr reconstructs corrupted image fragments in the decoded pixel domain by
+minimising a penalised objective under four constraint families. it preserves
+observed pixels exactly in the released output, runs deterministically without
+a learned prior, and emits an approximate local sensitivity record for sampled
+imputed pixels. an idealised estimator carries a conditional recovery bound; the
+fixed-budget implementation does not. the claim is auditability of the
+evaluated implementation, not perceptual quality and not admissibility.
 
 ## verify the released work
 
@@ -17,9 +19,41 @@ bash scripts/verify.sh
 
 about three minutes, most of it the test suite. runs the tests, a downstream
 smoke test into a temporary directory, regenerates every table from the
-released csvs, builds the manuscript and the supplement, and refreshes the
-submission-named pdf copies so a stale one cannot be handed out. exit 0 only if
-all of it passes with zero undefined references and zero latex errors.
+released csvs, builds the manuscript, the supplement and the ieee access
+version of the same source, and refreshes the submission-named pdf copies so a
+stale one cannot be handed out. exit 0 only if all of it passes with zero
+undefined references and zero latex errors.
+
+## terminology
+
+the paper was revised after review to name things by what the code does. the
+code keeps its earlier identifiers so released manifests and scripts resolve.
+
+| paper | code | meaning |
+|---|---|---|
+| audit record coverage (arc), metric m5 | `provenance.measured_audit_record_coverage` (alias of `measured_traceability`); `metrics.audit_record_coverage`; json key `arc` beside `ts` | fraction of declared queries for which the implementation produced a finite, non-empty sensitivity record. says the artefact exists, not that it is exact or causal |
+| approximate local sensitivity record | `src/provenance.py`, `provenance_row`, `write_manifest`, `results/provenance_example/` | signed jacobian row of the solver's stationarity condition, normalised to unit absolute sum. not contribution shares |
+| exploratory auditability composite | `render_frontier.py`, `run_frontier_sensitivity.py` (`ARC` dict) | equal-weight combination of cvr, normalised hrp and arc. describes the evaluated software, not forensic validity |
+| c3, global intensity bounds | `clamp_(LO, HI)` in `csfr_reconstruct_2d.py` | clipping to [0, 255] every step. neighbourhood bounds are not implemented |
+
+## ieee access build
+
+`scripts/build_ieee.py` derives `paper/paper2_ieeeaccess.tex` from the
+elsarticle source: class, front matter, alphabetical keywords, ieee headings,
+`IEEEtran` bibliography style and biographies from `paper/authors_ieee.json`.
+it uses the journal's `ieeeaccess.cls` when the template is unzipped into
+`paper/ieeeaccess/` (not committed; download it from the ieee access author
+page) and falls back to `IEEEtran` otherwise. `--build` compiles it.
+`scripts/build_ieee_docx.py` turns the generated tex into the word manuscript
+the journal accepts for submission: pandoc with the ieee citation style,
+the official word template (`Access-Template-2024.docx`, also in
+`paper/ieeeaccess/`) as the reference document, and a python-docx pass for
+ieee heading numbering, equation numbers, numbered captions and table
+borders. it compares every number in every table with the tex and, with
+`--pdf`, prints the file through word for a visual check.
+`scripts/render_graphical_abstract.py` draws the 660 x 295 graphical abstract
+the journal asks for, live from the released solver on one cf1 patch, into
+the gitignored `submission/` folder.
 
 this checks the released numbers without recomputing them. full recomputation
 takes hours of cpu plus a gpu.
@@ -28,13 +62,13 @@ takes hours of cpu plus a gpu.
 
 | path | what |
 |---|---|
-| `src/` | solver, provenance, downstream classifier, external-prior inpainter |
+| `src/` | solver, sensitivity audit, downstream classifier, external-prior inpainter |
 | `scripts/` | sweep, downstream, statistics, figure and table generators |
 | `configs/` | experiment configurations |
 | `data/` | patch corpora with cluster labels and manifests, see `data/README.md` |
 | `results/` | per-cell metrics, statistics, released table bodies |
 | `paper/` | manuscript, supplement, figures |
-| `tests/` | 78 tests, including checks that every number in the paper matches its csv and that no caption describes a table other than the one under it |
+| `tests/` | 92 tests, including checks that every number in the paper matches its csv, that no caption describes a table other than the one under it, and that wording withdrawn after review does not return |
 
 not released, by policy: solver checkpoints, per-seed `x_hat`, `y` and `mask`
 arrays, raw corpora, model weights. all regenerate from the committed patch sets
@@ -52,8 +86,8 @@ every table in the paper is generated, never typed.
 | paired inference | `render_stats_tables.py` | `results/paired_stats/` |
 | runtime, external, budget | `render_stats_tables.py` | `results/bench/`, `csfr_sweep_govdocs1/`, `budget_sensitivity/` |
 | downstream, abstention | `render_stats_tables.py` | `results/downstream/` |
-| f9 frontier | `render_frontier.py` | `results/csfr_sweep_2d_v2/summary.csv` |
-| f12 provenance | `render_provenance_walkthrough.py` | `results/provenance_example/` |
+| f9 exploratory composite | `render_frontier.py` (the only generator of that file) | `results/csfr_sweep_2d_v2/summary.csv` |
+| f12 sensitivity queries | `render_provenance_walkthrough.py` | `results/csfr_sweep_2d_v2/CF3_L5/seed0/`, `results/provenance_example/` |
 
 prose numbers are hand-written. `tests/test_manuscript_numbers.py` recomputes
 each one from the csvs and fails if a claim is missing as well as if it is wrong.
@@ -139,7 +173,7 @@ import second.
 python -m pytest tests/ -q
 ```
 
-78 passed, 4 skipped. the skips are the mnist tests when the cache is absent and
+88 passed, 4 skipped. the skips are the mnist tests when the cache is absent and
 the heavy inpainter tests when model weights are absent. run the heavy ones with:
 
 ```bash

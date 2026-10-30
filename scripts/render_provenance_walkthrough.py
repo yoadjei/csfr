@@ -1,13 +1,16 @@
-"""Provenance walkthrough figure (Phase 4): contrast attribution in two regimes.
+"""Approximate local sensitivity figure (F12): two queries at different depths.
 
 Band corruption (CF3_L5_patch5) compared at two depths: a pixel one row from
-the observed boundary (row 44) shows concentrated support in immediate
-neighbours. The same patch, 22 rows deeper inside (row 22), shows distributed
-support across all observed pixels. The contrast shows how provenance regime
-shifts with depth: evidence concentrates when observed data is adjacent,
-disperses when the pixel is deep inside a missing region.
+the observed boundary (row 44) shows sensitivity concentrated in immediate
+neighbours. The same patch, 22 rows deeper inside (row 22), shows sensitivity
+spread across the observed region. The contrast shows how the sensitivity
+pattern shifts with depth: it concentrates when observed data is adjacent and
+disperses when the pixel is deep inside a missing region. The weights are
+derivatives of the locally approximated target solution, not causal
+contribution shares.
 
-Output: paper/figures/paper2_F12_provenance.png
+Output: paper/figures/paper2_F12_provenance.png (file name kept so the
+manuscript's include path and the release manifest stay valid)
 """
 from __future__ import annotations
 
@@ -165,10 +168,10 @@ def main() -> int:
         ax.plot(pixel_c, pixel_r, "r+", markersize=12, markeredgewidth=2)
         ax.set_xticks([])
         ax.set_yticks([])
-        ax.set_title(f"({chr(66 + row_idx*3)}) Attribution (limit: +/- {w_abs_max:.3g})",
+        ax.set_title(f"({chr(66 + row_idx*3)}) Sensitivity weights (limit: +/- {w_abs_max:.3g})",
                      fontsize=9, loc="left")
         cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        cbar.set_label("weight", fontsize=7)
+        cbar.set_label("signed sensitivity weight", fontsize=7)
 
         # Column 3: Compact stats
         ax = fig.add_subplot(gs[row_idx, 2])
@@ -199,12 +202,13 @@ def main() -> int:
 
     # Footer with constraints
     fig.text(0.5, 0.01,
-             "Constraints: C1 hard (consistency), C2 soft (λ_TV=0.1), "
-             "C3 hard (bounds), C4 soft (λ_FC=0.005). "
-             "Weights describe stationarity condition at 600 iterations.",
+             "Constraints: C1 hard (terminal projection), C2 soft (λ_TV=0.1), "
+             "C3 hard (global [0,255] clipping), C4 soft (λ_FC=0.005). "
+             "Weights are approximate local sensitivities of the stationarity "
+             "condition at 600 iterations, not contribution shares.",
              ha="center", fontsize=7, style="italic")
 
-    fig.suptitle("Provenance: attribution depth dependence (CF3_L5_patch5, band corruption)",
+    fig.suptitle("Approximate local sensitivity at two depths (CF3_L5_patch5, band corruption)",
                  fontsize=11, y=0.98)
 
     out = ROOT / "paper" / "figures" / "paper2_F12_provenance.png"

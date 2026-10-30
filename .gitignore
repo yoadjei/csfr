@@ -80,3 +80,17 @@ results/csfr_sweep_2d_t2400/
 # submission-named pdf copies; scripts/verify.sh regenerates them from the build
 paper/CSFR_manuscript.pdf
 paper/CSFR_supplementary.pdf
+
+# staged submission package: every file in it is rebuilt from the repository,
+# and the cover letter names the authors
+submission/
+/submission.zip
+
+# ieee access class and its bundled commercial fonts, downloaded from the
+# journal's author page. scripts/build_ieee.py falls back to ieeetran when
+# absent, so the gate stays green without them.
+paper/ieeeaccess/
+paper/paper2_ieeeaccess.tex
+paper/paper2_ieeeaccess.pdf
+paper/paper2_ieeeaccess.docx
+paper/.docx_build/

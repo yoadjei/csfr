@@ -4,7 +4,8 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from metrics import psnr, ssim, constraint_violation_rates, hallucination_risk_proxy, traceability_score
+from metrics import (psnr, ssim, constraint_violation_rates, hallucination_risk_proxy,
+                     audit_record_coverage, traceability_score)
 
 
 def test_psnr_identical():
@@ -36,7 +37,8 @@ def test_hrp_all_known():
 
 
 def test_traceability():
-    assert traceability_score() == 1.0
+    assert audit_record_coverage() == 1.0
+    assert traceability_score is audit_record_coverage, "earlier name must stay importable"
 
 
 if __name__ == "__main__":

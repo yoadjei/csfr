@@ -4,21 +4,23 @@
     "lam_tv": 0.1,
     "lam_fc": 0.005
   },
-  "note": "Measured TS via implicit-function attribution (src/provenance.py). ts=1 means every probed imputed pixel returned a non-empty finite-weight contributing set.",
+  "note": "Measured Audit Record Coverage (ARC) via implicit-function sensitivity (src/provenance.py). arc=1 means every probed imputed pixel returned a non-empty finite-weight sensitivity set. The key 'ts' is the earlier name of the same value and is kept for released readers.",
   "cells": {
     "CF1_L3": {
       "ts": 1.0,
       "n_probed": 16,
       "n_traceable": 16,
       "mean_support": 2867.0,
-      "median_support": 2867.0
+      "median_support": 2867.0,
+      "arc": 1.0
     },
     "CF3_L5": {
       "ts": 1.0,
       "n_probed": 16,
       "n_traceable": 16,
       "mean_support": 1216.0,
-      "median_support": 1216.0
+      "median_support": 1216.0,
+      "arc": 1.0
     }
   }
 }

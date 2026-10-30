@@ -14,10 +14,10 @@ SUPP = ROOT / "paper" / "paper2_supplementary.tex"
 SUMMARY = ROOT / "results" / "csfr_sweep_2d_v2" / "summary.csv"
 
 # lama is the external-prior generative inpainter. it is listed last, after the
-# classical baselines, because it is not comparable on traceability: it carries
-# no per-pixel provenance, so its traceability score is 0 by construction rather
-# than by measurement. it is included because the paper argues against
-# generative restoration and must therefore report one that was actually run.
+# classical baselines, because its evaluated implementation emitted no audit
+# record, so audit record coverage is "not available" for it rather than
+# measured. it is included because the paper argues against generative
+# restoration in evidential use and must therefore report one that was run.
 METH = ["zero_fill", "bilinear", "inpaint_telea", "inpaint_ns", "dictlearn",
         "lama", "csfr"]
 LABEL = {"zero_fill": "Zero-fill", "bilinear": "Linear", "inpaint_telea": "Telea",

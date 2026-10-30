@@ -29,8 +29,8 @@ DOWNSTREAM_STATS = ROOT / "results" / "downstream" / "stats.csv"
 LABEL = {"zero_fill": "Zero-fill", "bilinear": "Linear", "inpaint_telea": "Telea",
          "inpaint_ns": "NS", "dictlearn": "Dict.", "csfr": "CSFR",
          # downstream harness names for the opencv methods, plus the
-         # external-prior inpainter. LaMa carries no provenance, so its
-         # traceability score is 0 by construction rather than by measurement.
+         # external-prior inpainter. its evaluated implementation emitted no
+         # audit record, so audit record coverage is "not available" for it.
          "telea": "Telea", "ns": "NS", "lama": "LaMa (ext.)"}
 
 

@@ -1,9 +1,9 @@
-"""Render the manuscript figures (F1, F2, F8, F9) from scratch.
+"""Render the manuscript figures (F1, F2, F8) from scratch.
 
 F6, a traceability schematic, was removed: it drew hardcoded attribution
-weights as though they were measured, which contradicts the per-pixel
-provenance the paper computes. See paper2_F12_provenance.png for the
-measured version.
+weights as though they were measured, which contradicts the approximate local
+sensitivity the paper computes. See paper2_F12_provenance.png for the measured
+version. F9 lives in scripts/render_frontier.py.
 
 Design rules (ResearchOS figure standards):
 - designed at final print width (7.5 in full text width), fonts >= 8 pt
@@ -216,52 +216,11 @@ def render_f8(out, csv_path):
 
 
 # ------------------------------------------------------------------ F9
-F9_METH = {"zero_fill": ("Zero-fill", GREY, "o", (10, 8)),
-           "bilinear": ("Bilinear", "#4477AA", "s", (10, -18)),
-           "inpaint_telea": ("Telea", GREEN, "^", (-16, -24)),
-           "inpaint_ns": ("Navier–Stokes", ORANGE, "v", (10, 12)),
-           "dictlearn": ("Dict. learning", PURPLE, "x", (10, 10)),
-           "csfr": ("CSFR (proposed)", "#003366", "D", (12, 4))}
-
-
-def render_f9(out, csv_path):
-    rows = collections.defaultdict(lambda: collections.defaultdict(list))
-    with Path(csv_path).open(encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            if r["method"] in F9_METH:
-                for k in ("psnr_db_mean", "hrp_mean",
-                          "cvr_c1", "cvr_c2", "cvr_c3", "cvr_c4"):
-                    rows[r["method"]][k].append(float(r[k]))
-    hrp_max = max(sum(v["hrp_mean"]) / len(v["hrp_mean"]) for v in rows.values())
-
-    fig, ax = plt.subplots(figsize=(7.5, 4.8), dpi=DPI)
-    for m, (label, color, marker, off) in F9_METH.items():
-        v = rows[m]
-        psnr = sum(v["psnr_db_mean"]) / len(v["psnr_db_mean"])
-        cvr = sum(sum(v[f"cvr_c{i}"]) / len(v[f"cvr_c{i}"]) for i in range(1, 5)) / 4
-        hrp = sum(v["hrp_mean"]) / len(v["hrp_mean"])
-        validity = ((1 - cvr) + (1 - hrp / hrp_max) + (1.0 if m == "csfr" else 0.0)) / 3
-        kw = {} if marker == "x" else {"edgecolor": "black", "linewidth": 0.6}
-        ax.scatter(psnr, validity, s=130, color=color, marker=marker, zorder=3, **kw)
-        ax.annotate(label, (psnr, validity), xytext=off,
-                    textcoords="offset points", fontsize=10, color=color,
-                    fontweight="bold")
-    ax.axhspan(0, 1 / 3, color="#d32f2f", alpha=0.08)
-    ax.text(0.02, 0.05,
-            "TS = 0 region (DL methods, cited): inadmissible regardless of PSNR",
-            transform=ax.transAxes, fontsize=9, color="#b71c1c", style="italic")
-    ax.set_xlabel("Mean PSNR over 20-cell sweep (dB)", fontsize=10)
-    ax.set_ylabel("Forensic validity composite", fontsize=10)
-    ax.set_ylim(0, 1.0)
-    ax.tick_params(labelsize=9)
-    ax.grid(alpha=0.25, linestyle=":")
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    fig.tight_layout()
-    fig.savefig(out / "paper2_F9_method_frontier.png", dpi=DPI,
-                bbox_inches="tight", pad_inches=0.05, facecolor=WHITE)
-    plt.close(fig)
-    print("[F9] done")
+# f9 is rendered by scripts/render_frontier.py and nowhere else. this file used
+# to carry a second, older renderer of the same file name: six methods, no
+# external prior, and a red band captioned "inadmissible regardless of psnr".
+# running the two scripts in the wrong order shipped that stale drawing under
+# the current caption. one generator per figure.
 
 
 def main():
@@ -275,7 +234,7 @@ def main():
     render_f1(out)
     render_f2(out, args.patches)
     render_f8(out, args.csfr_csv)
-    render_f9(out, args.csfr_csv)
+    print("[F9] rendered by scripts/render_frontier.py, not here")
 
 
 if __name__ == "__main__":
