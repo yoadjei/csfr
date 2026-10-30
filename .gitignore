@@ -94,3 +94,9 @@ paper/paper2_ieeeaccess.tex
 paper/paper2_ieeeaccess.pdf
 paper/paper2_ieeeaccess.docx
 paper/.docx_build/
+
+# round-2 additions
+.venv-lama/
+data/kodak/*.png
+data/jpeg_corruption/src/
+data/ocr/
