@@ -42,7 +42,12 @@ from csfr_solver import Certificate, SolverConfig, solve
 class RecordConfig:
     cg_rtol: float = 1e-10        # relative residual of the CG solve
     cg_max_iter: int = 5000
-    damping_rel: float = 1e-6     # gamma = damping_rel * Lipschitz constant
+    # gamma = damping_rel * Lipschitz constant. Zero: H_FF is positive definite
+    # (the Hessian's null space is the constants, which vanish on F when Omega is
+    # non-empty), and any damping biases the record. 1e-6 shifted the row sums
+    # of deep hole pixels at L5 by up to 3.4 percent with no saving in CG
+    # iterations; tests/test_sensitivity.py locks the unbiased identity.
+    damping_rel: float = 0.0
     bound_margin: float = 1e-6    # pixels within this of 0 or 255 count as at the bound
     top_k: int = 12
     support_rel: float = 1e-6     # support = |w| above this fraction of max |w|
@@ -101,18 +106,27 @@ def reduced_hessian(obj: Objective, x_hat: Tensor, free: Tensor, gamma: float):
 
 def sensitivity_row(x_hat: Tensor, y: Tensor, Mb: Tensor, pixel: tuple[int, int],
                     cfg: SolverConfig, rc: RecordConfig) -> tuple[Tensor, dict]:
-    """d x_hat[pixel] / d y over Omega (zero off Omega), raw units, float64."""
+    """d x_hat[pixel] / d y over Omega (zero off Omega), raw units, float64.
+
+    info["affine_defect"] is 1 - sum(row) when no hole pixel is at a bound, where
+    the exact row sums to one (J is invariant under adding a constant, so the
+    Hessian annihilates constants), and None otherwise. It is a free check on the
+    numerical accuracy of every imputed row.
+    """
     x_hat, y = _f64(x_hat, y)
     r, c = pixel
     if bool(Mb[r, c]):
         w = torch.zeros_like(x_hat)
         w[r, c] = 1.0
-        return w, {"kind": "observed", "cg_iters": 0, "cg_residual": 0.0, "support": 1}
+        return w, {"kind": "observed", "cg_iters": 0, "cg_residual": 0.0, "support": 1,
+                   "n_hole_at_bound": None, "affine_defect": 0.0}
     obj = _objective_for(x_hat, cfg)
     free = free_set(x_hat, Mb, rc.bound_margin)
+    n_at_bound = int(((~Mb) & ~free).sum())
     if not bool(free[r, c]):
         return torch.zeros_like(x_hat), {"kind": "at_bound", "cg_iters": 0,
-                                         "cg_residual": 0.0, "support": 0}
+                                         "cg_residual": 0.0, "support": 0,
+                                         "n_hole_at_bound": n_at_bound, "affine_defect": None}
     gamma = rc.damping_rel * obj.lipschitz()
     e = torch.zeros_like(x_hat)
     e[r, c] = 1.0
@@ -122,7 +136,8 @@ def sensitivity_row(x_hat: Tensor, y: Tensor, Mb: Tensor, pixel: tuple[int, int]
     peak = float(row.abs().max())
     thresh = rc.support_rel * peak if peak > 0 else 0.0
     info.update({"kind": "imputed", "support": int((row.abs() > thresh).sum()),
-                 "damping": gamma})
+                 "damping": gamma, "n_hole_at_bound": n_at_bound,
+                 "affine_defect": 1.0 - float(row.sum()) if n_at_bound == 0 else None})
     return row, info
 
 
@@ -258,6 +273,8 @@ def write_manifest(path: Path, *, x_hat: Tensor, y: Tensor, Mb: Tensor, solver_c
         entries.append({"pixel": [int(r), int(c)], "reconstructed_value": float(x64[r, c]),
                         "status": info["kind"], "support": info["support"],
                         "abs_weight_sum_raw": total, "signed_weight_sum_raw": float(row.sum()),
+                        "n_hole_at_bound": info["n_hole_at_bound"],
+                        "affine_defect": info["affine_defect"],
                         "top_contributors": contributors,
                         "solve": {"cg_iterations": info["cg_iters"],
                                   "cg_relative_residual": info["cg_residual"]},

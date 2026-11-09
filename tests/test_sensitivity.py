@@ -58,6 +58,37 @@ def test_weights_live_on_observed_pixels_only():
     assert info["support"] > 0
 
 
+def test_rows_sum_to_one_when_no_hole_pixel_is_at_a_bound():
+    """J is invariant under X -> X + c (DC excluded, TV uses differences), so the
+    Hessian annihilates constants and, with no hole pixel at a bound, every row
+    of -H_FF^-1 H_F,Omega sums to one. Any damping of H_FF breaks this, which is
+    why the record is undamped by default."""
+    x, y, Mb, cfg, _ = _solved()
+    i, _ = _pick(Mb)
+    row, info = sensitivity_row(x, y, Mb, i, cfg, RecordConfig())
+    assert info["n_hole_at_bound"] == 0
+    assert abs(float(row.sum()) - 1.0) < 1e-8
+    assert abs(info["affine_defect"]) < 1e-8
+    damped, dinfo = sensitivity_row(x, y, Mb, i, cfg, RecordConfig(damping_rel=1e-4))
+    assert abs(float(damped.sum()) - 1.0) > 1e-6, "damping no longer biases the row; revisit the test"
+    assert dinfo["affine_defect"] == 1.0 - float(damped.sum())
+
+
+def test_affine_identity_is_not_claimed_when_a_bound_is_active():
+    x, y, Mb, cfg, _ = _solved()
+    i, _ = _pick(Mb)
+    x = x.clone()
+    hole = np.argwhere(~Mb.numpy())
+    other = next(tuple(map(int, p)) for p in hole if tuple(map(int, p)) != i)
+    x[other] = 0.0  # a hole pixel at the lower bound
+    _, info = sensitivity_row(x, y, Mb, i, cfg, RecordConfig())
+    assert info["n_hole_at_bound"] == 1 and info["affine_defect"] is None
+
+
+def test_record_is_undamped_by_default():
+    assert RecordConfig().damping_rel == 0.0
+
+
 def test_column_is_zero_off_the_free_set():
     x, y, Mb, cfg, _ = _solved()
     _, k = _pick(Mb)
@@ -104,7 +135,9 @@ def test_manifest_is_json_and_carries_parameters(tmp_path):
     m = write_manifest(tmp_path / "m.json", x_hat=x, y=y, Mb=Mb, solver_cfg=cfg,
                        certificate=cert, queries=[i], patch_id="toy", rc=RecordConfig())
     assert (tmp_path / "m.json").exists()
-    assert m["record_parameters"]["damping_rel"] == 1e-6
+    assert m["record_parameters"]["damping_rel"] == 0.0
     assert m["queries"][0]["status"] == "imputed"
+    assert m["queries"][0]["n_hole_at_bound"] == 0
+    assert abs(m["queries"][0]["affine_defect"]) < 1e-8
     assert m["solver_configuration"]["tol"] == 5e-12
     assert "objective" in m and m["objective"]["dc_excluded_from_l1"] is True

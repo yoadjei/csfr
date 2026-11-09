@@ -42,46 +42,72 @@ def config_macros() -> dict[str, str]:
         "csfrTol": _sci(s.tol), "csfrMaxIter": f"{s.max_iter:,}".replace(",", "\\,"),
         "csfrCheckEvery": f"{s.check_every}",
         "recCGrtol": _sci(r.cg_rtol), "recCGmax": f"{r.cg_max_iter:,}".replace(",", "\\,"),
-        "recDamping": _sci(r.damping_rel), "recBoundMargin": _sci(r.bound_margin),
+        "recBoundMargin": _sci(r.bound_margin),
         "recSupport": _sci(r.support_rel), "recTopK": f"{r.top_k}", "recRefTol": _sci(r.ref_tol),
     }
 
 
-def _rows(path: Path) -> list[dict] | None:
-    return list(csv.DictReader(path.open(encoding="utf-8"))) if path.exists() else None
+CALIB = ROOT / "results" / "solver_calibration"
+
+
+def _rows(path: Path) -> list[dict]:
+    with path.open(encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def _pending(*names: str) -> dict[str, str]:
+    """Macros whose source result does not exist yet: a visible placeholder, so
+    the manuscript compiles and the gap shows in the PDF."""
+    return dict.fromkeys(names, PLACEHOLDER)
+
+
+def _cell(name: str) -> str:
+    return name.replace("_", "~")
 
 
 def calibration_macros() -> dict[str, str]:
-    rows = _rows(ROOT / "results/solver_calibration/tolerance.csv")
-    if not rows:
-        return {}
+    """From the committed calibration of the stopping rule. These files are part
+    of the release, so a missing one is an error, not a pending result."""
+    rows = _rows(CALIB / "tolerance.csv")
     tol = SolverConfig().tol
     at = [r for r in rows if float(r["tol"]) == tol]
-    looser = sorted({float(r["tol"]) for r in rows if float(r["tol"]) > tol})
-    nxt = looser[0] if looser else None
-    fail = [r for r in rows if nxt is not None and float(r["tol"]) == nxt and float(r["max_err_p99"]) >= 0.01]
-    lb = _rows(ROOT / "results/solver_calibration/lbfgsb.csv") or []
-    out = {
+    nxt = min(float(r["tol"]) for r in rows if float(r["tol"]) > tol)
+    fail = [r for r in rows if float(r["tol"]) == nxt and float(r["max_err_p99"]) >= 0.01]
+    lb = _rows(CALIB / "lbfgsb.csv")
+    init = _rows(CALIB / "init.csv")
+    # the rejected projected-step rule, at the threshold it was proposed with
+    rej = next(r for r in _rows(CALIB / "projected_step_rule_rejected.csv")
+               if r["cell"] == "CF3_L5" and float(r["tol"]) == 0.01)
+    ref = next(r for r in rows if r["cell"] == "CF3_L5" and float(r["tol"]) == tol)
+    return {
         "calibP99Max": _sci(max(float(r["max_err_p99"]) for r in at), 1),
         "calibPsnrDiffMax": _sci(max(float(r["psnr_abs_diff_max"]) for r in at), 1),
         "calibNcells": str(len(at)), "calibNpatches": str(int(at[0]["n"])),
+        "calibCells": ", ".join(_cell(r["cell"]) for r in at),
         "calibCapped": str(sum(int(r["n_capped"]) for r in rows)),
+        "calibItersMin": str(min(int(r["iters_median"]) for r in at)),
+        "calibItersMax": str(max(int(r["iters_median"]) for r in at)),
         "calibGridLoose": _sci(max(float(r["tol"]) for r in rows)),
         "calibGridTight": _sci(min(float(r["tol"]) for r in rows)),
-        "calibNextTol": _sci(nxt) if nxt else PLACEHOLDER,
-        "calibNextFailCells": ", ".join(r["cell"].replace("_", "~") for r in fail) or PLACEHOLDER,
+        "calibNextTol": _sci(nxt),
+        "calibNextFailCells": ", ".join(_cell(r["cell"]) for r in fail),
+        "calibLbfgsbN": str(int(lb[0]["n"])),
+        "calibLbfgsbMaxDiff": _sci(max(float(r["max_abs_diff_max"]) for r in lb), 1),
+        "calibInitTol": _sci(float(init[0]["tol"])),
+        "calibInitMaxDiff": _sci(max(float(r["max_abs_diff_max"]) for r in init), 1),
+        "calibRejStepThresh": _sci(float(rej["tol"])),
+        "calibRejStepPsnr": f"{float(rej['psnr_hole']):.2f}",
+        "calibRejRefPsnr": f"{float(ref['psnr_hole_ref']):.2f}",
     }
-    if lb:
-        out["calibLbfgsbMaxDiff"] = _sci(max(float(r["max_abs_diff_max"]) for r in lb), 1)
-    return out
 
 
 def coherence_macros() -> dict[str, str]:
     p = ROOT / "results/oracle_diagnostic/coherence.json"
     if not p.exists():
-        return {}
-    c = json.loads(p.read_text())
-    return {"oracleCoherence": f"{c['mutual_coherence']:.4f}", "oracleCoherenceScaled": f"{c['sqrt_N_times_mu']:.2f}"}
+        return _pending("oracleCoherence", "oracleCoherenceScaled")
+    c = json.loads(p.read_text(encoding="utf-8"))
+    return {"oracleCoherence": f"{c['mutual_coherence']:.4f}",
+            "oracleCoherenceScaled": f"{c['sqrt_N_times_mu']:.2f}"}
 
 
 def render() -> str:
@@ -93,9 +119,11 @@ def render() -> str:
     return "\n".join(lines) + "\n"
 
 
-def main(argv=None) -> int:
-    OUT.write_text(render(), encoding="utf-8")
-    print(f"[numbers] wrote {OUT}")
+def main() -> int:
+    text = render()
+    OUT.write_text(text, encoding="utf-8")
+    pending = text.count(PLACEHOLDER)
+    print(f"[numbers] wrote {OUT}; {pending} macro(s) pending a result")
     return 0
 
 
