@@ -46,7 +46,12 @@ class SolverConfig:
     lam_fc: float = 0.005
     eps: float = 1.0
     clip: bool = True
-    tol: float = 1e-10         # Frank-Wolfe gap in objective units: G(x) <= tol
+    # Frank-Wolfe gap in objective units, G(x) <= tol. Calibrated
+    # (scripts/calibrate_solver.py, results/solver_calibration/tolerance.csv): the
+    # loosest tolerance of the grid 1e-3 ... 1e-11 whose 99th-percentile per-patch
+    # maximum error against a 5e-12 reference is below 0.01 grey levels on
+    # CF1 L3, CF2 L3, CF2 L5 and CF3 L5 (1e-5 fails on CF2 L3 and CF3 L5).
+    tol: float = 1e-6
     max_iter: int = 20000
     check_every: int = 10
     log_every: int = 100

@@ -15,6 +15,9 @@ Also records the outcome of the earlier projected-step rule, which stopped far
 from the optimum on large holes, so the reason for the rule is in the artefact.
 
 Writes results/solver_calibration/{tolerance.csv, init.csv, lbfgsb.csv}.
+--extend runs only the tolerance study for the given --tols and merges the rows
+into the existing tolerance.csv (used to add looser tolerances, so that the
+selected value is not simply the loosest value of the grid).
 """
 from __future__ import annotations
 
@@ -83,6 +86,9 @@ def main(argv=None) -> int:
     ap.add_argument("--n-lbfgsb", type=int, default=20)
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--out", default="results/solver_calibration")
+    ap.add_argument("--extend", action="store_true",
+                    help="tolerance study only, merged into the existing tolerance.csv "
+                         "(rows with the same cell and tol are replaced)")
     args = ap.parse_args(argv)
 
     torch.set_num_threads(args.threads)
@@ -91,6 +97,14 @@ def main(argv=None) -> int:
     ref_all = np.load(ROOT / "data/patches.npy").astype(np.float64)
     base = SolverConfig(max_iter=args.max_iter)
     tol_rows, init_rows, lb_rows = [], [], []
+
+    def args_order(cell: str) -> int:
+        return args.cells.index(cell) if cell in args.cells else len(args.cells)
+
+    if args.extend and (out / "tolerance.csv").exists():
+        new = {(c, float(t)) for c in args.cells for t in args.tols}
+        with (out / "tolerance.csv").open(encoding="utf-8") as f:
+            tol_rows = [r for r in csv.DictReader(f) if (r["cell"], float(r["tol"])) not in new]
     for cell in args.cells:
         d = ROOT / "results/csfr_sweep_2d_v2" / cell / "seed0"
         y = torch.from_numpy(np.load(d / "y.npy"))
@@ -122,7 +136,10 @@ def main(argv=None) -> int:
                              "seconds": dt, "ref_seconds": t_ref,
                              "ref_capped": int((~c_ref.converged).sum())})
             print(f"[calib] {tol_rows[-1]}", flush=True)
+            tol_rows.sort(key=lambda r: (args_order(r["cell"]), -float(r["tol"])))
             _write(out / "tolerance.csv", tol_rows)
+        if args.extend:
+            continue
 
         x_ns, c_ns = solve(y, M, replace(base, init="ns"))
         x_z, c_z = solve(y, M, base)
