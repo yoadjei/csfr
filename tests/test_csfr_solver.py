@@ -88,3 +88,13 @@ def test_variants_registry():
     assert VARIANTS["csfr_dct_only"].lam_tv == 0.0
     assert VARIANTS["csfr_no_fc"].lam_fc == 0.0
     assert VARIANTS["csfr_no_clip"].clip is False
+
+
+def test_float64_solve_returns_float64_and_agrees_with_float32():
+    ref, y, M = _toy()
+    x32, _ = solve(y, M, SolverConfig(tol=1e-3, max_iter=20000))
+    x64, c64 = solve(y, M, SolverConfig(tol=1e-6, max_iter=40000, dtype="float64"))
+    assert x32.dtype == torch.float32 and x64.dtype == torch.float64
+    assert bool(c64.converged.all())
+    assert float((x64 - x32.double()).abs().max()) < 0.05
+    assert torch.equal(x64[M.bool()], y.double()[M.bool()])

@@ -36,6 +36,7 @@ class SolverConfig:
     log_every: int = 100
     restart: bool = True
     init: str = "zero"         # "zero" | "mean" | "ns"
+    dtype: str = "float32"     # "float32" for sweeps; "float64" for reference re-solves
 
 
 VARIANTS: dict[str, SolverConfig] = {
@@ -104,7 +105,7 @@ def solve(y: Tensor, M: Tensor, cfg: SolverConfig = SolverConfig(),
     x_hat with the observed pixels exactly equal to y.
     """
     dev = torch.device(device)
-    y = y.to(dev, torch.float32)
+    y = y.to(dev, getattr(torch, cfg.dtype))
     Mb = M.to(dev).bool()
     B, H, W = y.shape
     obj = Objective(H, W, cfg.lam_l1, cfg.lam_tv, cfg.lam_fc, cfg.eps, dev, y.dtype)
