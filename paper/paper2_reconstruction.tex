@@ -361,7 +361,7 @@ The constraint ablation removes one part of CSFR at a time. Besides TV-only, it 
 
 Quality is scored over the hole only. Every method reproduces the observed pixels, so scoring them would add the same near-zero error to every method.
 \begin{itemize}
-  \item \textbf{Hole PSNR}: the mean squared error over $\Omega^{c}$ with peak 255, capped at 100\,dB. Exactly reconstructed patches reach the cap, and their number is reported beside each mean so that the cap cannot move an average unnoticed.
+  \item \textbf{Hole PSNR}: the mean squared error over $\Omega^{c}$ with peak 255, capped at 100\,dB. A patch reconstructed exactly, or to within the cap, enters a mean at 100\,dB. In a cell of $n$ patches with mean $\bar{p}$, it raises the mean by $(100 - \bar{p})/n$\,dB more than a patch at the mean would, which is a quarter of a decibel for $n = 300$ and $\bar{p} = 25$\,dB. Methods differ in how often they reach the cap. Every quality table therefore reports the number of patch-runs at the cap, and every hole-PSNR comparison is repeated without them (Section~\ref{sec:experiments:stats}).
   \item \textbf{Hole SSIM}~\cite{wang2004image}: the mean of the SSIM map over $\Omega^{c}$, with window 7 and data range 255.
   \item \textbf{GMSD}~\cite{xue2014gradient}: the standard deviation over $\Omega^{c}$ of the gradient-magnitude similarity map (Prewitt gradients, $c = 170$). It measures edge fidelity on the structured masks; lower is better.
 \end{itemize}
@@ -378,6 +378,8 @@ The analysis plan is written to the results directory before any statistic is co
   \item 95\% percentile bootstrap intervals with \statsBoot\ resamples, resampling patches and, separately, source images, which respects the clustering.
 \end{itemize}
 Per source image, we report the mean difference, the fraction of images in which CSFR leads, and an image-level interval and test. The strongest competitor in a cell is the method with the best mean on the metric in question. It is identified after the fact, so the comparison with it is labelled as such and is not a pre-specified test.
+
+\paragraph{Cap sensitivity.} Every hole-PSNR comparison, and the choice of the strongest competitor, is repeated on the cap-free subset of each cell: the patches on which no method, the floor included, reaches the 100\,dB cap at any seed. The primary analysis is unchanged. This sensitivity analysis was added after the first seed of the secondary corpus showed that methods differ in how often they reach the cap, and before the primary corpus was run.
 
 \subsection{Reproducibility}
 \label{sec:protocol}

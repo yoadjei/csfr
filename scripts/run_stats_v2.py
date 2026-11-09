@@ -13,7 +13,8 @@ run_metadata.json (configuration and cluster labels), and writes under
   per_image.csv               per cell, method, metric and source image: the mean
                               difference and the number of patches
   summary_ci.csv              per cell, method and metric: mean with patch and
-                              cluster bootstrap intervals
+                              cluster bootstrap intervals; for hole PSNR also the
+                              number of patches at the cap and the cap-free mean
 
 Analysis plan. The unit is the patch; each per-patch metric is averaged over the
 seeds at which the method ran, before pairing. Differences are signed so that a
@@ -28,6 +29,13 @@ configured method except CSFR, zero-fill (the floor, not a baseline) and the
 ablation arms; an external method enters once its outputs have been scored.
 The functions are those of scripts/run_paired_stats.py, which produced the
 released round-1 intervals.
+
+Cap sensitivity. Hole PSNR is capped (quality.CAP). A patch at the cap enters a
+mean at the cap value, so a handful of them can move a cell mean by tenths of a
+dB, and methods differ in how often they reach it. Every hole-PSNR comparison
+and the strongest-baseline choice are therefore repeated on the cap-free subset:
+the patches on which no method of the cell (CSFR, the comparison family and the
+floor) reaches the cap at any seed. The primary analysis is unchanged.
 """
 from __future__ import annotations
 
@@ -53,7 +61,11 @@ cluster_bootstrap_ci = _paired.cluster_bootstrap_ci
 cluster_level_test = _paired.cluster_level_test
 holm_bonferroni = _paired.holm_bonferroni
 
+sys.path.insert(0, str(ROOT / "src"))
+from quality import CAP  # noqa: E402
+
 METRICS = {"psnr_hole": +1, "ssim_hole": +1, "gmsd_hole": -1}   # +1: higher is better
+CAPPED = "psnr_hole"
 FLOOR = {"zero_fill"}
 RNG_ROOT = 2026
 
@@ -83,8 +95,29 @@ def load(sweep: Path, cell: str, seeds: list[int], method: str) -> dict | None:
             runs.append({k: z[k] for k in z.files})
     out = {m: np.mean([r[m] for r in runs], axis=0) for m in METRICS}
     out["exact_any"] = np.any([r["exact"] for r in runs], axis=0)
+    out["at_cap_any"] = np.any([r[CAPPED] >= CAP for r in runs], axis=0)
     out["n_seeds"] = len(seeds)
     return out
+
+
+def cap_free_comparison(a: dict, b: dict, keep: np.ndarray, clusters: np.ndarray,
+                        n_boot: int, key: tuple) -> dict:
+    """The hole-PSNR comparison of CSFR (a) and one method (b) on the cap-free
+    subset `keep`, with its cluster interval."""
+    out = {"n_cap_csfr": int(a["at_cap_any"].sum()), "n_cap_method": int(b["at_cap_any"].sum()),
+           "n_capfree": int(keep.sum())}
+    if not keep.any():
+        return out
+    diff = a[CAPPED][keep] - b[CAPPED][keep]
+    lo, hi = cluster_bootstrap_ci(diff, clusters[keep], n_boot, _rng(*key, "cluster_capfree"))
+    return {**out, "csfr_mean_capfree": float(a[CAPPED][keep].mean()),
+            "method_mean_capfree": float(b[CAPPED][keep].mean()),
+            "diff_mean_capfree": float(diff.mean()),
+            "ci_cluster_lo_capfree": lo, "ci_cluster_hi_capfree": hi}
+
+
+def _verdict(lo: float, hi: float) -> str:
+    return "csfr_better" if lo > 0 else "baseline_better" if hi < 0 else "inconclusive"
 
 
 def compare(a: dict, b: dict, metric: str, clusters: np.ndarray, n_boot: int, key: tuple) -> dict:
@@ -138,6 +171,10 @@ def analysis_plan(cfg: dict, family: list[str], n_boot: int) -> dict:
             "per_image": "mean difference per source image; fraction of images with CSFR ahead; "
                          "image-level Wilcoxon",
             "strongest_baseline": "per cell and metric, the comparison-family method with the best mean",
+            "cap_sensitivity": f"{CAPPED} is capped at {CAP:g} dB; its comparisons and the "
+                               "strongest-baseline choice are repeated on the patches on which no "
+                               "method of the cell (CSFR, comparison family, floor) reaches the cap "
+                               "at any seed; the primary analysis is unchanged",
             "seeds": cfg["seeds"]}
 
 
@@ -173,11 +210,16 @@ def main(argv=None) -> int:
             if csfr is None:
                 continue
             present = {m: d for m in family if (d := load(sweep, cell, seeds, m)) is not None}
+            floor = [d for m in sorted(FLOOR) if (d := load(sweep, cell, seeds, m)) is not None]
+            keep = ~np.any([d["at_cap_any"] for d in [csfr, *present.values(), *floor]], axis=0)
             for metric in METRICS:
                 for m, d in present.items():
                     key = (tag, cell, m, metric)
-                    paired.append({"sweep": tag, "family": fam, "level": lvl, "metric": metric,
-                                   "method": m, **compare(csfr, d, metric, clusters, args.bootstrap, key)})
+                    row = {"sweep": tag, "family": fam, "level": lvl, "metric": metric,
+                           "method": m, **compare(csfr, d, metric, clusters, args.bootstrap, key)}
+                    if metric == CAPPED:
+                        row.update(cap_free_comparison(csfr, d, keep, clusters, args.bootstrap, key))
+                    paired.append(row)
                     diff = METRICS[metric] * (csfr[metric] - d[metric])
                     for c in np.unique(clusters):
                         sel = clusters == c
@@ -204,11 +246,15 @@ def main(argv=None) -> int:
                     lo, hi = bootstrap_ci(x, args.bootstrap, _rng(tag, cell, m, metric, "mean"))
                     clo, chi = cluster_bootstrap_ci(x, clusters, args.bootstrap,
                                                     _rng(tag, cell, m, metric, "mean_cluster"))
-                    summary.append({"sweep": tag, "family": fam, "level": lvl, "method": m,
-                                    "metric": metric, "n": int(x.size), "n_seeds": d["n_seeds"],
-                                    "mean": float(x.mean()), "ci_patch_lo": lo, "ci_patch_hi": hi,
-                                    "ci_cluster_lo": clo, "ci_cluster_hi": chi,
-                                    "n_exact": int(d["exact_any"].sum())})
+                    row = {"sweep": tag, "family": fam, "level": lvl, "method": m,
+                           "metric": metric, "n": int(x.size), "n_seeds": d["n_seeds"],
+                           "mean": float(x.mean()), "ci_patch_lo": lo, "ci_patch_hi": hi,
+                           "ci_cluster_lo": clo, "ci_cluster_hi": chi,
+                           "n_exact": int(d["exact_any"].sum())}
+                    if metric == CAPPED:
+                        row.update(n_at_cap=int(d["at_cap_any"].sum()), n_capfree=int(keep.sum()),
+                                   mean_capfree=float(x[keep].mean()) if keep.any() else "")
+                    summary.append(row)
             print(f"[stats_v2] {tag} {cell}: {len(present)} methods compared", flush=True)
     _holm(paired)
     _holm(abl)
@@ -220,17 +266,27 @@ def main(argv=None) -> int:
                     continue
                 best = max(rows, key=lambda r: sign * r["method_mean"])
                 excl = best["ci_cluster_lo"] > 0 or best["ci_cluster_hi"] < 0
-                verdict = ("csfr_better" if best["ci_cluster_lo"] > 0 else
-                           "baseline_better" if best["ci_cluster_hi"] < 0 else "inconclusive")
-                strongest.append({"sweep": tag, "family": fam, "level": lvl, "metric": metric,
-                                  "method": best["method"], "method_mean": best["method_mean"],
-                                  "csfr_mean": best["csfr_mean"], "diff_mean": best["diff_mean"],
-                                  "ci_cluster_lo": best["ci_cluster_lo"], "ci_cluster_hi": best["ci_cluster_hi"],
-                                  "p_holm": best["p_holm"],
-                                  "frac_images_csfr_leads": best["frac_images_csfr_leads"],
-                                  "cluster_ci_excludes_zero": excl, "verdict": verdict,
-                                  "methods_compared": " ".join(r["method"] for r in rows),
-                                  "lama_included": any(r["method"] == "lama" for r in rows)})
+                row = {"sweep": tag, "family": fam, "level": lvl, "metric": metric,
+                       "method": best["method"], "method_mean": best["method_mean"],
+                       "csfr_mean": best["csfr_mean"], "diff_mean": best["diff_mean"],
+                       "ci_cluster_lo": best["ci_cluster_lo"], "ci_cluster_hi": best["ci_cluster_hi"],
+                       "p_holm": best["p_holm"],
+                       "frac_images_csfr_leads": best["frac_images_csfr_leads"],
+                       "cluster_ci_excludes_zero": excl,
+                       "verdict": _verdict(best["ci_cluster_lo"], best["ci_cluster_hi"]),
+                       "methods_compared": " ".join(r["method"] for r in rows),
+                       "lama_included": any(r["method"] == "lama" for r in rows)}
+                if metric == CAPPED and "method_mean_capfree" in rows[0]:
+                    cf = max(rows, key=lambda r: r["method_mean_capfree"])
+                    row.update(n_capfree=cf["n_capfree"], method_capfree=cf["method"],
+                               method_mean_capfree=cf["method_mean_capfree"],
+                               csfr_mean_capfree=cf["csfr_mean_capfree"],
+                               diff_mean_capfree=cf["diff_mean_capfree"],
+                               ci_cluster_lo_capfree=cf["ci_cluster_lo_capfree"],
+                               ci_cluster_hi_capfree=cf["ci_cluster_hi_capfree"],
+                               verdict_capfree=_verdict(cf["ci_cluster_lo_capfree"],
+                                                        cf["ci_cluster_hi_capfree"]))
+                strongest.append(row)
     _write(outdir / "paired_tests.csv", paired)
     _write(outdir / "paired_tests_ablation.csv", abl)
     _write(outdir / "strongest_baseline.csv", strongest)

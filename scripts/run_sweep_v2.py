@@ -59,7 +59,7 @@ from baselines import BASELINES, limit_threads, run_chunk  # noqa: E402
 from csfr_objective import Objective  # noqa: E402
 from csfr_solver import STOPPING_RULE, VARIANTS, solve  # noqa: E402
 from masks import make_mask  # noqa: E402
-from quality import patch_metrics  # noqa: E402
+from quality import CAP, patch_metrics  # noqa: E402
 
 SCHEMA = "csfr-sweep-v2"
 EXTERNAL = {"lama"}
@@ -318,6 +318,9 @@ def write_summary(cfg: dict, outdir: Path) -> Path:
                 row["psnr_hole_sd"] = float(np.mean([np.std(r[1]["psnr_hole"]) for r in runs]))
                 row["psnr_hole_median"] = float(np.median(np.concatenate([r[1]["psnr_hole"] for r in runs])))
                 row["n_exact"] = int(sum(r[1]["exact"].sum() for r in runs))
+                # at the hole-PSNR cap: every exact patch, and patches an iterative
+                # method reconstructs to within the cap without being bit-exact
+                row["n_at_cap"] = int(sum((r[1]["psnr_hole"] >= CAP).sum() for r in runs))
                 csfr = all("converged" in r[1] for r in runs)
                 row["n_converged"] = int(sum(r[1]["converged"].sum() for r in runs)) if csfr else ""
                 row["iters_median"] = (float(np.median(np.concatenate([r[1]["iterations"] for r in runs])))

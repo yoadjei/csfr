@@ -65,8 +65,10 @@ def test_summary_and_metadata(tiny):
     assert methods == {"csfr", "csfr_tv_only", "zero_fill", "bilinear", "inpaint_ns"}
     r = next(r for r in rows if r["method"] == "csfr")
     for k in ["psnr_hole_mean", "psnr_hole_seedsd", "ssim_hole_mean", "gmsd_hole_mean", "hrp_mean",
-              "n_exact", "n_converged", "iters_median", "runtime_s"]:
+              "n_exact", "n_at_cap", "n_converged", "iters_median", "runtime_s"]:
         assert k in r
+    for r in rows:   # every exact patch is at the cap
+        assert int(r["n_exact"]) <= int(r["n_at_cap"]) <= int(r["n_patches"])
     meta = json.loads((out / "run_metadata.json").read_text())
     for k in ["environment", "patches_sha256", "config", "git_commit", "objective"]:
         assert k in meta

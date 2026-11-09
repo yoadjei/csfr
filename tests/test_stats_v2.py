@@ -28,7 +28,9 @@ def _pp(psnr, ssim, gmsd):
     return d
 
 
-def _sweep(tmp_path):
+def _sweep(tmp_path, bilinear_at_cap=0):
+    """Toy sweep; bilinear_at_cap puts the first patches of bilinear at the
+    hole-PSNR cap in every seed."""
     n = 40
     rng = np.random.default_rng(0)
     clusters = np.repeat(np.arange(8), 5)
@@ -46,7 +48,9 @@ def _sweep(tmp_path):
         jitter = 0.01 * s
         np.savez(cell / "per_patch_csfr.npz", **_pp(base + 2 + jitter, np.full(n, 0.8), np.full(n, 0.10)))
         np.savez(cell / "per_patch_csfr_tv_only.npz", **_pp(base + 1, np.full(n, 0.7), np.full(n, 0.12)))
-        np.savez(cell / "per_patch_bilinear.npz", **_pp(base + 1.5, np.full(n, 0.75), np.full(n, 0.11)))
+        bil = base + 1.5
+        bil[:bilinear_at_cap] = 100.0
+        np.savez(cell / "per_patch_bilinear.npz", **_pp(bil, np.full(n, 0.75), np.full(n, 0.11)))
         np.savez(cell / "per_patch_inpaint_ns.npz", **_pp(base, np.full(n, 0.6), np.full(n, 0.20)))
         np.savez(cell / "per_patch_zero_fill.npz", **_pp(base - 20, np.full(n, 0.1), np.full(n, 0.5)))
         if s == 0:
@@ -88,6 +92,36 @@ def test_strongest_baseline_and_ablation(tmp_path):
     ab = _rows(out / "stats" / "paired_tests_ablation.csv")
     assert {r["method"] for r in ab} == {"csfr_no_fc"}
     assert all(int(r["n_seeds"]) == 1 for r in ab)
+
+
+def test_cap_sensitivity_repeats_hole_psnr_on_the_cap_free_patches(tmp_path):
+    out = _sweep(tmp_path, bilinear_at_cap=4)
+    _mod().main(["--sweep-dir", str(out), "--bootstrap", "500"])
+    # four capped patches lift bilinear above CSFR in the primary analysis ...
+    sb = next(r for r in _rows(out / "stats" / "strongest_baseline.csv") if r["metric"] == "psnr_hole")
+    assert sb["method"] == "bilinear" and float(sb["diff_mean"]) < 0
+    # ... and on the 36 patches no method caps, CSFR leads it by the true margin
+    assert sb["method_capfree"] == "bilinear" and int(sb["n_capfree"]) == 36
+    assert abs(float(sb["diff_mean_capfree"]) - 0.505) < 1e-9
+    assert sb["verdict_capfree"] == "csfr_better"
+    p = next(r for r in _rows(out / "stats" / "paired_tests.csv")
+             if r["metric"] == "psnr_hole" and r["method"] == "bilinear")
+    assert int(p["n_cap_method"]) == 4 and int(p["n_cap_csfr"]) == 0
+    s = next(r for r in _rows(out / "stats" / "summary_ci.csv")
+             if r["metric"] == "psnr_hole" and r["method"] == "bilinear")
+    assert int(s["n_at_cap"]) == 4 and int(s["n_capfree"]) == 36
+    # SSIM and GMSD are not capped and carry no cap-free columns
+    g = next(r for r in _rows(out / "stats" / "paired_tests.csv") if r["metric"] == "gmsd_hole")
+    assert g["diff_mean_capfree"] == ""
+
+
+def test_without_capped_patches_the_sensitivity_equals_the_primary(tmp_path):
+    out = _sweep(tmp_path)
+    _mod().main(["--sweep-dir", str(out), "--bootstrap", "500"])
+    for r in _rows(out / "stats" / "paired_tests.csv"):
+        if r["metric"] == "psnr_hole":
+            assert int(r["n_capfree"]) == int(r["n"])
+            assert float(r["diff_mean_capfree"]) == float(r["diff_mean"])
 
 
 def test_analysis_plan_and_summary(tmp_path):
