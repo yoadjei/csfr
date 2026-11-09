@@ -443,6 +443,89 @@ def records_cmp(d: Path = FIDELITY_DIR) -> str | None:
     return tabular(r"@{}l*{8}{r}@{}", header, body)
 
 
+ORACLE_DIR = ROOT / "results" / "oracle_diagnostic"
+ORACLE_CORPORA = [("govdocs1_v2", "GovDocs1"), ("dfrws2006", "DFRWS 2006")]
+
+
+def sci_compact(x: float) -> str:
+    """Plain below 1000, else one-decimal mantissa times a power of ten."""
+    if x < 1000:
+        return f"{x:.0f}"
+    m, e = f"{x:.1e}".split("e")
+    return rf"${m}{{\times}}10^{{{int(e)}}}$"
+
+
+def oracle(d: Path = ORACLE_DIR) -> str | None:
+    """Per cell and corpus: median oracle hole PSNR, the median and 90th
+    percentile condition number of the observed rows of the oracle basis, and
+    the share of patches above 10^3."""
+    rows = _csv(d / "oracle.csv")
+    if rows is None:
+        return None
+    by = {(r["corpus"], r["family"], r["level"]): r for r in rows}
+    body = []
+    for fam in FAMILIES:
+        if body:
+            body.append(r"\midrule")
+        for lv in MAIN_LEVELS:
+            out = [f"{fam}~{lv}"]
+            for corpus, _ in ORACLE_CORPORA:
+                r = by.get((corpus, fam, lv))
+                if r is None:
+                    raise ValueError(f"oracle: no row for {corpus} {fam} {lv}")
+                out += [f"{float(r['oracle_psnr_hole_median']):.1f}", sci_compact(float(r["cond_median"])),
+                        sci_compact(float(r["cond_p90"])), f"{100 * float(r['frac_cond_above_1e3']):.0f}"]
+            body.append(" & ".join(out) + r" \\")
+    header = [" & " + " & ".join(rf"\multicolumn{{4}}{{c}}{{{n}}}" for _, n in ORACLE_CORPORA) + r" \\",
+              r"\cmidrule(lr){2-5}\cmidrule(l){6-9}",
+              "Cell" + r" & PSNR & $\kappa_{50}$ & $\kappa_{90}$ & $>10^{3}$ (\%)" * len(ORACLE_CORPORA) + r" \\"]
+    return tabular(r"@{}l*{8}{r}@{}", header, body)
+
+
+BU_DIR = ROOT / "results" / "bu_evaluation"
+BU_PREDICTORS = [("isolated_missing_frac", "Isolated-missing fraction (Bounded-Unknown)"),
+                 ("mean_hole_distance", "Mean distance to an observed pixel"),
+                 ("hole_frac", "Hole fraction")]
+
+
+def bu(d: Path = BU_DIR) -> str | None:
+    """Per outcome threshold and predictor: AUROC pooled over cells, per family,
+    and the median within cells with outcome variance; then the decision of the
+    pre-specified rule per threshold."""
+    import json
+    rows = _csv(d / "auroc.csv")
+    dec_path = d / "decision.json"
+    if rows is None or not dec_path.exists():
+        return None
+    decision = json.loads(dec_path.read_text(encoding="utf-8"))["by_threshold"]
+    fmt = lambda a: "--" if a in ("", None) else f"{float(a):.2f}"  # noqa: E731
+    body = []
+    for thr in sorted({float(r["threshold_db"]) for r in rows}):
+        if body:
+            body.append(r"\midrule")
+        body.append(rf"\multicolumn{{7}}{{@{{}}l}}{{\emph{{Outcome: CSFR hole PSNR below {thr:g}\,dB}}}} \\")
+        at = [r for r in rows if float(r["threshold_db"]) == thr]
+        for key, name in BU_PREDICTORS:
+            pr = [r for r in at if r["predictor"] == key]
+            pooled = next(r["auroc"] for r in pr if r["scope"] == "pooled")
+            fam = [next((r["auroc"] for r in pr if r["scope"] == "family" and r["group"] == f), "")
+                   for f in FAMILIES]
+            within = [float(r["auroc"]) for r in pr if r["scope"] == "cell" and r["auroc"] != ""]
+            body.append(" & ".join([name, fmt(pooled), *map(fmt, fam),
+                                    f"{np.median(within):.2f}" if within else "--"]) + r" \\")
+    notes = []
+    for thr, dd in decision.items():
+        verdict = "kept as a contribution" if dd["keep_as_contribution"] else "reported as a diagnostic"
+        best = dict(BU_PREDICTORS).get(dd["best_predictor"], "none")
+        notes.append(rf"Below {thr.replace('dB', r'\,dB')}: best predictor {best.lower()}; "
+                     rf"{100 * dd['fraction_cells_within_auroc_above_min']:.0f}\% of "
+                     rf"{dd['cells_with_outcome_variance']} cells above the within-cell minimum; {verdict}.")
+    body += [r"\midrule", *(_note(t, 7) for t in notes)]
+    header = [r" & & \multicolumn{4}{c}{By family} & \\", r"\cmidrule(lr){3-6}",
+              "Predictor & Pooled & " + " & ".join(FAMILIES) + r" & Within (median) \\"]
+    return tabular(r"@{}l*{6}{r}@{}", header, body)
+
+
 def quality() -> str | None:
     return method_by_cell_table(SWEEP, "psnr_hole", higher_is_better=True, digits=2, with_cap_note=True)
 
@@ -453,7 +536,7 @@ def gmsd_table() -> str | None:
 
 TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_V2": paired_v2,
           "EXTERNAL_V2": external_v2, "ABLATION_V2": ablation_v2, "SOLVER_CMP": solver_cmp,
-          "FIDELITY": fidelity, "RECORDS_CMP": records_cmp}
+          "FIDELITY": fidelity, "RECORDS_CMP": records_cmp, "ORACLE": oracle, "BU": bu}
 
 
 def main() -> int:

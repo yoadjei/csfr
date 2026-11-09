@@ -300,6 +300,48 @@ def test_records_cmp_dashes_an_empty_record_and_pools_family_groups(tmp_path):
     assert lines[2].endswith(r"& 0.00 \\") and lines[4].endswith(r"& 0.75 \\")
 
 
+def test_sci_compact():
+    m = _mod()
+    assert m.sci_compact(812.4) == "812"
+    assert m.sci_compact(1.234e16) == r"$1.2{\times}10^{16}$"
+
+
+def test_oracle_has_a_column_group_per_corpus(tmp_path):
+    m = _mod()
+    rows = [{"corpus": c, "family": f, "level": lv, "oracle_psnr_hole_median": 41.26, "cond_median": 12.0,
+             "cond_p90": 3.4e5, "frac_cond_above_1e3": 0.25}
+            for c, _ in m.ORACLE_CORPORA for f in m.FAMILIES for lv in m.MAIN_LEVELS]
+    _write_csv(tmp_path / "oracle.csv", rows)
+    lines = _body(m.oracle(tmp_path))
+    assert lines[0] == (r"CF1~L1 & 41.3 & 12 & $3.4{\times}10^{5}$ & 25 & 41.3 & 12 & $3.4{\times}10^{5}$ & 25 \\")
+
+
+def test_bu_reports_auroc_per_scope_and_the_rule_decision(tmp_path):
+    import json
+    m = _mod()
+    rows = []
+    for thr in (20.0, 25.0):
+        for key, _ in m.BU_PREDICTORS:
+            a = 0.9 if key == "mean_hole_distance" else 0.6
+            rows.append({"threshold_db": thr, "scope": "pooled", "group": "all", "predictor": key, "auroc": a})
+            rows += [{"threshold_db": thr, "scope": "family", "group": f, "predictor": key, "auroc": a}
+                     for f in m.FAMILIES]
+            rows += [{"threshold_db": thr, "scope": "cell", "group": f"s:CF1_L{i}", "predictor": key,
+                      "auroc": v} for i, v in enumerate((0.5, 0.7, ""))]          # one cell without variance
+    _write_csv(tmp_path / "auroc.csv", rows)
+    dec = {"by_threshold": {f"{t:g}dB": {"best_predictor": "mean_hole_distance", "pooled_auroc": 0.9,
+                                         "cells_with_outcome_variance": 2,
+                                         "fraction_cells_within_auroc_above_min": 0.5,
+                                         "keep_as_contribution": t == 25.0} for t in (20.0, 25.0)}}
+    (tmp_path / "decision.json").write_text(json.dumps(dec))
+    lines = _body(m.bu(tmp_path))
+    assert lines[0].startswith(r"\multicolumn{7}{@{}l}{\emph{Outcome: CSFR hole PSNR below 20\,dB}}")
+    assert lines[2] == r"Mean distance to an observed pixel & 0.90 & 0.90 & 0.90 & 0.90 & 0.90 & 0.60 \\"
+    assert "Below 20\\,dB: best predictor mean distance to an observed pixel; 50\\% of 2 cells" in lines[-2]
+    assert lines[-2].rstrip(" \\").endswith("reported as a diagnostic.}")
+    assert lines[-1].rstrip(" \\").endswith("kept as a contribution.}")
+
+
 def test_committed_tables_are_current():
     m = _mod()
     for tag, fn in m.TABLES.items():
