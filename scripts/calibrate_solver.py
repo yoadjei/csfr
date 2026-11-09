@@ -2,8 +2,8 @@
 
 On the four probe cells of the released DFRWS sweep (seed 0, released masks):
 
-1. a reference solve to relative Frank-Wolfe gap 1e-13 (the float64 floor);
-2. solves at tol in {1e-6, 1e-8, 1e-10, 1e-12}, each compared pixel by pixel
+1. a reference solve to Frank-Wolfe gap 5e-12 objective units (near the float64 floor);
+2. solves at tol in {1e-6, ..., 1e-11}, each compared pixel by pixel
    with the reference: the tolerance used everywhere is the loosest one whose
    99th-percentile per-patch maximum error is below 0.01 grey levels;
 3. initialisation independence at the default tolerance (zero fill against
@@ -77,8 +77,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cells", nargs="+", default=["CF1_L3", "CF2_L3", "CF2_L5", "CF3_L5"])
-    ap.add_argument("--tols", nargs="+", type=float, default=[1e-6, 1e-8, 1e-10, 1e-12])
-    ap.add_argument("--ref-tol", type=float, default=1e-13)
+    ap.add_argument("--tols", nargs="+", type=float, default=[1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11])
+    ap.add_argument("--ref-tol", type=float, default=5e-12)
     ap.add_argument("--max-iter", type=int, default=40000)
     ap.add_argument("--n-lbfgsb", type=int, default=20)
     ap.add_argument("--threads", type=int, default=8)

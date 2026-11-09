@@ -36,14 +36,15 @@ def test_observed_pixels_are_exact_and_in_range():
 
 def test_certificate_bounds_the_objective_gap():
     """The returned point satisfies the stated rule: the Frank-Wolfe gap, an upper
-    bound on J(x) - J*, is at most tol * J(x)."""
+    bound on J(x) - J*, is at most tol."""
     ref, y, M = _toy()
     cfg = SolverConfig(max_iter=20000)
     x, cert = solve(y, M, cfg)
     assert bool(cert.converged.all())
     obj = Objective(16, 16, cfg.lam_l1, cfg.lam_tv, cfg.lam_fc, cfg.eps, dtype=x.dtype)
     gap = frank_wolfe_gap(obj.grad(x), x, ~M.bool(), 0.0, 255.0)
-    assert bool((gap <= cfg.tol * obj.value(x)).all())
+    assert bool((gap <= cfg.tol).all())
+    assert torch.allclose(cert.gap, gap, rtol=1e-6, atol=1e-18)
     assert torch.allclose(cert.rel_gap, gap / obj.value(x), rtol=1e-6, atol=1e-18)
     assert "Frank-Wolfe" in cert.to_json()["stopping_rule"]
 

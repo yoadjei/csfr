@@ -22,7 +22,7 @@ def _solved(n=12, seed=1):
     M[0].reshape(-1)[rng.choice(n * n, n * n // 3, replace=False)] = 0
     y = torch.from_numpy(ref * M)
     Mt = torch.from_numpy(M)
-    cfg = SolverConfig(tol=1e-13, max_iter=100000)
+    cfg = SolverConfig(tol=5e-12, max_iter=100000)
     x, cert = solve(y, Mt, cfg)
     return x[0], y[0].double(), Mt[0].bool(), cfg, cert
 
@@ -89,5 +89,5 @@ def test_manifest_is_json_and_carries_parameters(tmp_path):
     assert (tmp_path / "m.json").exists()
     assert m["record_parameters"]["damping_rel"] == 1e-6
     assert m["queries"][0]["status"] == "imputed"
-    assert m["solver_configuration"]["tol"] == 1e-13
+    assert m["solver_configuration"]["tol"] == 5e-12
     assert "objective" in m and m["objective"]["dc_excluded_from_l1"] is True
