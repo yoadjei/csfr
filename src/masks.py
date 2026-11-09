@@ -61,3 +61,37 @@ def describe_families(h: int = 64, w: int = 64) -> dict[str, str]:
         "CF3": "half-image overwrite: the top round(f*H) rows erased",
         "CF4": "truncation: the bottom round(f*H) rows erased",
     }
+
+
+def perturb_mask(M: np.ndarray, kind: str, amount, rng: np.random.Generator) -> np.ndarray:
+    """A wrong mask, for the mask-error robustness experiment (E10).
+
+    M: (B, H, W), 1 = observed. kind:
+      "erode"  Omega eroded by `amount` pixels (8-connected): observed pixels next
+               to the hole are marked missing (false negatives only);
+      "dilate" Omega dilated by `amount` pixels: hole pixels next to the boundary
+               are marked observed (false positives only; they keep the corrupted
+               value of the input);
+      "flip"   `amount` (a fraction) of the pixels of every patch flipped, chosen
+               uniformly without replacement.
+    The patch border is not a hole: erosion treats pixels outside the patch as
+    observed.
+    """
+    from scipy.ndimage import binary_dilation, binary_erosion
+    obs = np.asarray(M) == 1
+    out = np.empty_like(obs)
+    st = np.ones((3, 3), bool)
+    for i in range(obs.shape[0]):
+        if kind == "erode":
+            out[i] = binary_erosion(obs[i], st, iterations=int(amount), border_value=1)
+        elif kind == "dilate":
+            out[i] = binary_dilation(obs[i], st, iterations=int(amount))
+        elif kind == "flip":
+            n = int(round(float(amount) * obs[i].size))
+            idx = rng.choice(obs[i].size, n, replace=False)
+            f = obs[i].copy().reshape(-1)
+            f[idx] = ~f[idx]
+            out[i] = f.reshape(obs[i].shape)
+        else:
+            raise ValueError(f"unknown perturbation {kind}")
+    return out.astype(np.asarray(M).dtype)

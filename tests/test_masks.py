@@ -54,3 +54,37 @@ def test_severity_table_is_complete():
     fams = describe_families()
     assert set(fams) == {"CF1", "CF2", "CF3", "CF4"}
     assert "4" in fams["CF2"] and "31" in fams["CF2"]
+
+
+def _block_mask():
+    M = np.ones((1, 32, 32), np.float32)
+    M[0, 10:20, 10:20] = 0
+    return M
+
+
+def test_erosion_marks_observed_pixels_next_to_the_hole_missing():
+    from masks import perturb_mask
+    M = _block_mask()
+    E1 = perturb_mask(M, "erode", 1, np.random.default_rng(0))
+    assert ((E1 == 1) <= (M == 1)).all()                       # only false negatives
+    assert (M - E1).sum() == 12 * 12 - 10 * 10                 # a one-pixel ring
+    assert E1[0, 0, 0] == 1                                     # the patch border is not a hole
+    E2 = perturb_mask(M, "erode", 2, np.random.default_rng(0))
+    assert (M - E2).sum() == 14 * 14 - 10 * 10
+
+
+def test_dilation_marks_hole_pixels_next_to_the_boundary_observed():
+    from masks import perturb_mask
+    M = _block_mask()
+    D1 = perturb_mask(M, "dilate", 1, np.random.default_rng(0))
+    assert ((D1 == 1) >= (M == 1)).all()                       # only false positives
+    assert (D1 - M).sum() == 10 * 10 - 8 * 8
+
+
+def test_random_flips_change_the_stated_fraction():
+    from masks import perturb_mask
+    M = np.ones((3, 64, 64), np.float32)
+    F = perturb_mask(M, "flip", 0.05, np.random.default_rng(0))
+    changed = (F != M).reshape(3, -1).sum(1)
+    assert (changed == round(0.05 * 64 * 64)).all()
+    assert np.array_equal(perturb_mask(M, "flip", 0.05, np.random.default_rng(0)), F)
