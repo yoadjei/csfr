@@ -1,0 +1,1061 @@
+{
+  "selection": {
+    "govdocs_n": 100,
+    "min_side": 256,
+    "max_side": 2048,
+    "jpeg": "baseline sequential (SOF0/SOF1)",
+    "order": "archive then member name, sorted"
+  },
+  "files": [
+    {
+      "file": "govdocs_000.jpg",
+      "source": "000.zip:000/000108.jpg",
+      "sha256": "89b8f3767cef1641dd0c0635a162b21067a4fe6e651313986fcb1a7f5ab5e6a0",
+      "bytes": 137413,
+      "width": 520,
+      "height": 330,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_001.jpg",
+      "source": "000.zip:000/000110.jpg",
+      "sha256": "3d7c13469e3f1447e0e4bdef0d52986aeeb9ae659a80ea3eb8c70147a78ed68d",
+      "bytes": 92856,
+      "width": 500,
+      "height": 330,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_002.jpg",
+      "source": "000.zip:000/000232.jpg",
+      "sha256": "77f9a3949a7bc90934fd8a733197029b272e4024778d8c915d7e73efcd38fe43",
+      "bytes": 78199,
+      "width": 600,
+      "height": 404,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_003.jpg",
+      "source": "000.zip:000/000243.jpg",
+      "sha256": "3f96be92b8c20ae11b73bdfdf228700b2d2d8b81e534617468001782abf36f0b",
+      "bytes": 56683,
+      "width": 600,
+      "height": 470,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_004.jpg",
+      "source": "000.zip:000/000244.jpg",
+      "sha256": "0bec6bacb589f7398bf1dc2c261e4728d822f794202c05afff43a7a5d70eb267",
+      "bytes": 30640,
+      "width": 400,
+      "height": 313,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_005.jpg",
+      "source": "000.zip:000/000246.jpg",
+      "sha256": "cf220cc23662250d957c800cf21e87ad672bd5d66863f6edf91f1825b643112f",
+      "bytes": 24618,
+      "width": 345,
+      "height": 338,
+      "mode": "L",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_006.jpg",
+      "source": "000.zip:000/000397.jpg",
+      "sha256": "ebdf27dd908151399341e99d05011185e77f9ee368229f666c771009729a3330",
+      "bytes": 122105,
+      "width": 648,
+      "height": 465,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_007.jpg",
+      "source": "000.zip:000/000400.jpg",
+      "sha256": "e904763028cb3a990485a0375db4375dbc09d6ed35a795a75243eb1457995929",
+      "bytes": 71472,
+      "width": 432,
+      "height": 338,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_008.jpg",
+      "source": "000.zip:000/000404.jpg",
+      "sha256": "4a1256b9f629ae4e14d21a59dbe4e992d5103e8866124be1f58564655863a24d",
+      "bytes": 38353,
+      "width": 348,
+      "height": 345,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_009.jpg",
+      "source": "000.zip:000/000417.jpg",
+      "sha256": "d29e9b13761b235fd6b40e7d64c1f0a2c9aff2765a05ebbdcfd91fb2173405d7",
+      "bytes": 21599,
+      "width": 288,
+      "height": 314,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_010.jpg",
+      "source": "000.zip:000/000419.jpg",
+      "sha256": "addeb34766cba872bcd082ef9d9640ce2d945767a2e3752125318bb679475e3f",
+      "bytes": 49109,
+      "width": 504,
+      "height": 308,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_011.jpg",
+      "source": "000.zip:000/000432.jpg",
+      "sha256": "15adbb508e2082f5607936761e99cafb1bf3716184e6b4207f47bd3415ed834e",
+      "bytes": 22823,
+      "width": 442,
+      "height": 292,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_012.jpg",
+      "source": "000.zip:000/000469.jpg",
+      "sha256": "f93dcf30914c94653bf561061df3c1f441935e78c05646ed13548e77679e4ac7",
+      "bytes": 77691,
+      "width": 446,
+      "height": 300,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_013.jpg",
+      "source": "000.zip:000/000506.jpg",
+      "sha256": "de3c299018be1912edcedb4c01b014296bc7d1fb0817ab65c7a37ac4831b8f6b",
+      "bytes": 117029,
+      "width": 500,
+      "height": 645,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_014.jpg",
+      "source": "000.zip:000/000507.jpg",
+      "sha256": "ba6a2cebe4fdf783c4ee42c7fd844c0bb2474a1a5f85ad8810e1d9fb5c2d1026",
+      "bytes": 101029,
+      "width": 500,
+      "height": 645,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_015.jpg",
+      "source": "000.zip:000/000509.jpg",
+      "sha256": "00faa0c2964711303e969c26ddc3c61556825150bf30d3e5c617ad63ca58bf46",
+      "bytes": 1688344,
+      "width": 1200,
+      "height": 1500,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_016.jpg",
+      "source": "000.zip:000/000510.jpg",
+      "sha256": "522c24cab24bb70fd9f4b8e47919a013df0aeaa361fdf5d44b80b177b7a8f43b",
+      "bytes": 94790,
+      "width": 680,
+      "height": 510,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_017.jpg",
+      "source": "000.zip:000/000512.jpg",
+      "sha256": "9cc5f7f5dd70a5d7ee2fbfafc5ecd31895ce02f69c0522ce9b324ba31947e223",
+      "bytes": 195311,
+      "width": 1308,
+      "height": 661,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_018.jpg",
+      "source": "000.zip:000/000516.jpg",
+      "sha256": "acb808bb0606391d4636a4c8910d6ec103a8d515ee92d1886ec73be6e12d5ca1",
+      "bytes": 86609,
+      "width": 1100,
+      "height": 796,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_019.jpg",
+      "source": "000.zip:000/000531.jpg",
+      "sha256": "2eedd1d171e56dd2a56667a5377c70c1acfd599d40962ab4a247eb24c0d3d12a",
+      "bytes": 40823,
+      "width": 600,
+      "height": 279,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_020.jpg",
+      "source": "000.zip:000/000532.jpg",
+      "sha256": "571163f678f53a865d3e2b9a1765bc2964e0c5e157e0929b0be71787ad000424",
+      "bytes": 37776,
+      "width": 500,
+      "height": 500,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_021.jpg",
+      "source": "000.zip:000/000535.jpg",
+      "sha256": "773048e93de48d8668e0d3f0229549ec7a56d53539d10dce8c4b9e23c1e8f4d3",
+      "bytes": 25675,
+      "width": 500,
+      "height": 500,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_022.jpg",
+      "source": "000.zip:000/000549.jpg",
+      "sha256": "7d61cf2f2384d992c036686946b216acee0fee42eb2010d239d73835cfe76ba5",
+      "bytes": 72512,
+      "width": 429,
+      "height": 354,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_023.jpg",
+      "source": "000.zip:000/000681.jpg",
+      "sha256": "d263732038738252b68bceebafed549b51dd909297c050982289ee26aac20c19",
+      "bytes": 111869,
+      "width": 640,
+      "height": 427,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_024.jpg",
+      "source": "000.zip:000/000682.jpg",
+      "sha256": "3b25bc14ce986a42420dcec61d6cf7cefed60d3cc67be5ee8877c1a6971fe4f8",
+      "bytes": 125365,
+      "width": 640,
+      "height": 427,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_025.jpg",
+      "source": "000.zip:000/000684.jpg",
+      "sha256": "3fcf5d6b8e4960cb55f63999323a2c2a7d7187771c26824932aef2548e69cc9e",
+      "bytes": 84403,
+      "width": 320,
+      "height": 480,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_026.jpg",
+      "source": "000.zip:000/000868.jpg",
+      "sha256": "76da32f406da6e111e7351f643f40729ccb75b6dd2f4fa2a65e49acd8dc77fe7",
+      "bytes": 25831,
+      "width": 444,
+      "height": 336,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_027.jpg",
+      "source": "000.zip:000/000870.jpg",
+      "sha256": "319c46d67de4689e8325e6e31bebf2f4d2cb4ed14bbbdeef349340660ad9db03",
+      "bytes": 145826,
+      "width": 640,
+      "height": 425,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_028.jpg",
+      "source": "000.zip:000/000872.jpg",
+      "sha256": "efe7bfee6ea98e784e8ac0ba3056468a9f85523c348d37b7b9590000e0b13189",
+      "bytes": 73959,
+      "width": 535,
+      "height": 536,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_029.jpg",
+      "source": "000.zip:000/000873.jpg",
+      "sha256": "624b9e936b2a0bdf761208b469255394c5ff049f92fcad8dd2c0ba03125883d2",
+      "bytes": 34755,
+      "width": 406,
+      "height": 350,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_030.jpg",
+      "source": "000.zip:000/000880.jpg",
+      "sha256": "3ff8a3338a4c8f77003e7646d6895e1e6d47dd755b9c7d382efccb7320a0dc6e",
+      "bytes": 109152,
+      "width": 600,
+      "height": 399,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_031.jpg",
+      "source": "000.zip:000/000884.jpg",
+      "sha256": "322ddf7066ee961f0a814490dbaebaeff55106493aa8c1bbe082418d9652282d",
+      "bytes": 103940,
+      "width": 700,
+      "height": 463,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_032.jpg",
+      "source": "000.zip:000/000889.jpg",
+      "sha256": "8da69935a2735fdd647dd70b94e299e28522c8dac9559c4ef6b3ceaaa4d20aed",
+      "bytes": 48406,
+      "width": 410,
+      "height": 262,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_033.jpg",
+      "source": "000.zip:000/000896.jpg",
+      "sha256": "4162fc3ece8cfd0e0f4a3098bc97fbc0b8f880478b36eedfb5b78a09eae67036",
+      "bytes": 24174,
+      "width": 300,
+      "height": 311,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_034.jpg",
+      "source": "000.zip:000/000906.jpg",
+      "sha256": "b9cfeb6c379e1e7d66feb835b80818858c6b5dbdfc366be90c3a0b486ecc02b0",
+      "bytes": 17571,
+      "width": 300,
+      "height": 260,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_035.jpg",
+      "source": "000.zip:000/000962.jpg",
+      "sha256": "00eb751a27464f1fdf2892b42169a7ee8acf869b870ceeaa8d12d0de7d13fed1",
+      "bytes": 209546,
+      "width": 1607,
+      "height": 364,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_036.jpg",
+      "source": "001.zip:001/001208.jpg",
+      "sha256": "d95425f6d8f365c7ab02bcd8453462b4f336b1dc6cf5948b0a7f78a64e1f8329",
+      "bytes": 23072,
+      "width": 440,
+      "height": 300,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_037.jpg",
+      "source": "001.zip:001/001209.jpg",
+      "sha256": "1012bd18ca3c0327b44436cef71417c24f84f2c1abccd91567c8459934286c77",
+      "bytes": 21338,
+      "width": 405,
+      "height": 265,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_038.jpg",
+      "source": "001.zip:001/001210.jpg",
+      "sha256": "7b88c9894f1abd621436cbafc4f84c29b03fe5cd575fc5d7c74505b98ded369f",
+      "bytes": 23235,
+      "width": 450,
+      "height": 270,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_039.jpg",
+      "source": "001.zip:001/001211.jpg",
+      "sha256": "ddf49e7454aa8e6235d66be56e966900ba69aa882a1d27314854334bdd9860b5",
+      "bytes": 22189,
+      "width": 420,
+      "height": 270,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_040.jpg",
+      "source": "001.zip:001/001212.jpg",
+      "sha256": "7dad1909a1f3caf536ec0783b8cf4e2a7e5e970e3ab84b0346572c578217cfec",
+      "bytes": 20099,
+      "width": 405,
+      "height": 280,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_041.jpg",
+      "source": "001.zip:001/001231.jpg",
+      "sha256": "be274ddb434bfa5e59ffea1c2986c9940298c6c129dc38440dd844120ba2819f",
+      "bytes": 86702,
+      "width": 554,
+      "height": 325,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_042.jpg",
+      "source": "001.zip:001/001240.jpg",
+      "sha256": "1dfccef9ce0eb1305218d812ada81cc33a29e3fce3441b9b8b0dc116d605dfa1",
+      "bytes": 35069,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_043.jpg",
+      "source": "001.zip:001/001241.jpg",
+      "sha256": "a367683028f319a8dcd3e64bc5b4122205628ce1c85c4087e89963c1d2c2589a",
+      "bytes": 55589,
+      "width": 450,
+      "height": 450,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_044.jpg",
+      "source": "001.zip:001/001242.jpg",
+      "sha256": "e358fb631fa1283e2ac74ccfdf54abad3bfac983caaab044a3a7b8038fdcf60a",
+      "bytes": 32050,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_045.jpg",
+      "source": "001.zip:001/001243.jpg",
+      "sha256": "d33363b40b2ad11de98a5462aa2a71718072a3f920743677c9fc24b69c7d209a",
+      "bytes": 45441,
+      "width": 585,
+      "height": 1045,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_046.jpg",
+      "source": "001.zip:001/001244.jpg",
+      "sha256": "e24ec3acad973376d257f1b40ee3eb030ff1917d41e3450b80745426d308a70b",
+      "bytes": 21891,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_047.jpg",
+      "source": "001.zip:001/001245.jpg",
+      "sha256": "4549d56b1f4b0ed42844ce96bf1d2dc796c33c0a457bd52f58ae705ad408f2b8",
+      "bytes": 25410,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_048.jpg",
+      "source": "001.zip:001/001246.jpg",
+      "sha256": "d10fe189944a79ea56589c32a4018e07905a74938601640ab519786cf47dea28",
+      "bytes": 31683,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_049.jpg",
+      "source": "001.zip:001/001247.jpg",
+      "sha256": "3382cc15738c7815dcbe45894b9a16faae400b374d4594c655f8d38275ee919a",
+      "bytes": 22248,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_050.jpg",
+      "source": "001.zip:001/001248.jpg",
+      "sha256": "c8d088d86168df5ad0e1381cdf8a29cda108e5e9b72442256b643104eb94f9e6",
+      "bytes": 34345,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_051.jpg",
+      "source": "001.zip:001/001249.jpg",
+      "sha256": "ede4faf5fa63b682e8e98e73cae55238d54c4fb93800fd708055c25427b43efe",
+      "bytes": 27921,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_052.jpg",
+      "source": "001.zip:001/001250.jpg",
+      "sha256": "00caca8b8601fa318df77dc98fb1e7edcd41b324fa6f9987e9b53a84069ec9fc",
+      "bytes": 27255,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_053.jpg",
+      "source": "001.zip:001/001252.jpg",
+      "sha256": "3d8b22ae46cc1046a62108dcb73d4b0462b57160166088cab746e79b8e9491d6",
+      "bytes": 19521,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_054.jpg",
+      "source": "001.zip:001/001253.jpg",
+      "sha256": "6aa790d6bea5728299ff4b2067657f01a74c7e249904321b4d60a42ac2fffec8",
+      "bytes": 20459,
+      "width": 721,
+      "height": 505,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_055.jpg",
+      "source": "001.zip:001/001354.jpg",
+      "sha256": "06d985cfff8003606442a675e59822f0e4adc2eb659fd66b0ab1ba991fc8afff",
+      "bytes": 91431,
+      "width": 600,
+      "height": 297,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_056.jpg",
+      "source": "001.zip:001/001357.jpg",
+      "sha256": "580ae6e0b4e370d0ac06fc8c39209192bc930bff0958297570e7fa37e6e0a059",
+      "bytes": 142032,
+      "width": 560,
+      "height": 406,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_057.jpg",
+      "source": "002.zip:002/002091.jpg",
+      "sha256": "4f11cc50398d7db31c64ec767152a00a8157931c4e81f411f9d0f28847194991",
+      "bytes": 52160,
+      "width": 650,
+      "height": 432,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_058.jpg",
+      "source": "002.zip:002/002092.jpg",
+      "sha256": "97426b86c78fc912927acdd3a38dc56eef103acf976dbe7fc202f136c52a65d3",
+      "bytes": 200219,
+      "width": 723,
+      "height": 477,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_059.jpg",
+      "source": "002.zip:002/002093.jpg",
+      "sha256": "7d0a79c922ec7c144fec5602e66d1a3362053a86d7933692271267b7798c5ce6",
+      "bytes": 42977,
+      "width": 384,
+      "height": 488,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_060.jpg",
+      "source": "002.zip:002/002094.jpg",
+      "sha256": "7d5abbd585da058c78de161bdf1b22b5253c900a45f481f068cf213215386836",
+      "bytes": 135742,
+      "width": 600,
+      "height": 675,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_061.jpg",
+      "source": "002.zip:002/002095.jpg",
+      "sha256": "3a3f5ba19e9ceb7e9c48248ca76b6cb8d45c465c7cbb33a72a2c527d05f00da5",
+      "bytes": 173530,
+      "width": 500,
+      "height": 325,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_062.jpg",
+      "source": "002.zip:002/002097.jpg",
+      "sha256": "d4e8ac7028a6976676cc4693c091386c8123232097973ec75a6ba8b201189af6",
+      "bytes": 365978,
+      "width": 1388,
+      "height": 1105,
+      "mode": "L",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_063.jpg",
+      "source": "002.zip:002/002098.jpg",
+      "sha256": "bd4db93ed3fee8358ad26f910f6e8b0a61dc4e50a82d19ca85fb77fd0cf00f13",
+      "bytes": 115561,
+      "width": 600,
+      "height": 675,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_064.jpg",
+      "source": "002.zip:002/002100.jpg",
+      "sha256": "7227d5253917512a83bcc39bbfc4b9a77725d82f3da12aee2643a191cedb64be",
+      "bytes": 38440,
+      "width": 400,
+      "height": 318,
+      "mode": "L",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_065.jpg",
+      "source": "002.zip:002/002108.jpg",
+      "sha256": "2fce59e0aaacac2640d2dbf78e214824cf33c9728aafbce9b25a7ce5c5b1edba",
+      "bytes": 260889,
+      "width": 450,
+      "height": 600,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_066.jpg",
+      "source": "002.zip:002/002113.jpg",
+      "sha256": "16cacacc11abc23c0765d843c3806ff0d4a7df9e208089d20be34cfeb2b5177b",
+      "bytes": 40581,
+      "width": 400,
+      "height": 322,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_067.jpg",
+      "source": "002.zip:002/002115.jpg",
+      "sha256": "7390f58b1d54fe32db5f3d4554621fe1382f17cf8747d4500568c74f3a443586",
+      "bytes": 125724,
+      "width": 749,
+      "height": 1162,
+      "mode": "L",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_068.jpg",
+      "source": "002.zip:002/002117.jpg",
+      "sha256": "d08ffc6effb8b659704d60f84bcdc3afa4ee44c2a2fbe822cba0c0f29d281ad3",
+      "bytes": 51893,
+      "width": 290,
+      "height": 435,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_069.jpg",
+      "source": "002.zip:002/002122.jpg",
+      "sha256": "74381775312f6163e0753f999551a7c6adf491378f45977e921762b299829128",
+      "bytes": 36342,
+      "width": 415,
+      "height": 259,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_070.jpg",
+      "source": "002.zip:002/002127.jpg",
+      "sha256": "d5af36924d718beed047f64a029fc97d2b8dada175c3c7bb64936569406611a5",
+      "bytes": 40796,
+      "width": 478,
+      "height": 480,
+      "mode": "L",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_071.jpg",
+      "source": "002.zip:002/002129.jpg",
+      "sha256": "5e980f0a05cdd65979c3ca550a0b798ddf676985f5225bba89616e75e94e70a0",
+      "bytes": 131871,
+      "width": 1800,
+      "height": 1196,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_072.jpg",
+      "source": "002.zip:002/002139.jpg",
+      "sha256": "44798e5baac88ab032290867f3b1e148c31aa5974b10cd6c7cf6a69d2cfb7ca2",
+      "bytes": 40381,
+      "width": 515,
+      "height": 423,
+      "mode": "L",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_073.jpg",
+      "source": "002.zip:002/002140.jpg",
+      "sha256": "ac7ca5bde1b3eedfc286aa5a309b71fbaf859a93584ca170cac09dc12c2c3892",
+      "bytes": 30743,
+      "width": 515,
+      "height": 351,
+      "mode": "L",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_074.jpg",
+      "source": "002.zip:002/002309.jpg",
+      "sha256": "22a4d71a111232b7446abd74861ac240958cbca11334a1811addd63a0bc20604",
+      "bytes": 38437,
+      "width": 640,
+      "height": 451,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_075.jpg",
+      "source": "002.zip:002/002618.jpg",
+      "sha256": "1537b50f74eb311390bf5347b8f32a1a493988267a9e53956015c98030ce9831",
+      "bytes": 28799,
+      "width": 368,
+      "height": 286,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_076.jpg",
+      "source": "002.zip:002/002621.jpg",
+      "sha256": "d974578f46bbb610084b04e5981b531664b5748739eb72ede1da1e25ae0e5e23",
+      "bytes": 135139,
+      "width": 445,
+      "height": 640,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_077.jpg",
+      "source": "002.zip:002/002622.jpg",
+      "sha256": "7828cc2630917f96339b040b7d2478d994c9c30b36c3e3d341be3429c648a181",
+      "bytes": 160333,
+      "width": 640,
+      "height": 919,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_078.jpg",
+      "source": "002.zip:002/002623.jpg",
+      "sha256": "b72bdf3d4b99be1dab267846dfa6e9e87a56bc777dcec9d2152a0b58564316ae",
+      "bytes": 75292,
+      "width": 493,
+      "height": 640,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_079.jpg",
+      "source": "002.zip:002/002626.jpg",
+      "sha256": "a75989119ed4b39dd39e36796e356082021dbb383a4e8e67bad63c3d6cb67e79",
+      "bytes": 55703,
+      "width": 640,
+      "height": 307,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_080.jpg",
+      "source": "002.zip:002/002630.jpg",
+      "sha256": "d303314bfd98abd88081e578da7d6be7093d50d72d831c602ef9c68be9f01281",
+      "bytes": 459587,
+      "width": 799,
+      "height": 486,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_081.jpg",
+      "source": "002.zip:002/002631.jpg",
+      "sha256": "6a827dadc0b09508f89621adb5639972a255786675ebc35e5bd9802fc1d84083",
+      "bytes": 147256,
+      "width": 800,
+      "height": 547,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_082.jpg",
+      "source": "002.zip:002/002632.jpg",
+      "sha256": "9bc6f6a43a30a462a00423c5761ce9e5a3e519ea4d704c6780e585d3b7d0914d",
+      "bytes": 53360,
+      "width": 448,
+      "height": 336,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_083.jpg",
+      "source": "002.zip:002/002639.jpg",
+      "sha256": "8fc73068c459baf9fd294eebc57388ea50bffd83f0da553325931b6ef458dff8",
+      "bytes": 541199,
+      "width": 1513,
+      "height": 1590,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_084.jpg",
+      "source": "002.zip:002/002640.jpg",
+      "sha256": "14d39b65c9e7e5821961b99dfb11ebe32b7dc6cb14ff1cc4c4748d83e7104310",
+      "bytes": 1441534,
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_085.jpg",
+      "source": "002.zip:002/002641.jpg",
+      "sha256": "976d66f624d9f101128bb71163be1f2f43cb70c66a9241926c617ce4a91b312a",
+      "bytes": 375545,
+      "width": 900,
+      "height": 1251,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_086.jpg",
+      "source": "002.zip:002/002642.jpg",
+      "sha256": "2ee24290e2f6ad588dd067689e305df08ad27e827e510ede5e8ad1cf73df94c3",
+      "bytes": 2940277,
+      "width": 1661,
+      "height": 1400,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_087.jpg",
+      "source": "002.zip:002/002643.jpg",
+      "sha256": "9adf66b7be90c8f5d79164a57d7d615bbf406df75f879bddec4f89bb8cffc79c",
+      "bytes": 340306,
+      "width": 1024,
+      "height": 863,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_088.jpg",
+      "source": "002.zip:002/002645.jpg",
+      "sha256": "6f3987cad1de591b61a6aa0dd45a5dbcad8ac07e3cbc2c1bfaf4a4bf0d0db8c7",
+      "bytes": 157447,
+      "width": 640,
+      "height": 926,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_089.jpg",
+      "source": "002.zip:002/002647.jpg",
+      "sha256": "f4799cb2178c09bc328e0e079634735926b41660ee9bd8489234ed921718cef6",
+      "bytes": 62181,
+      "width": 464,
+      "height": 718,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_090.jpg",
+      "source": "002.zip:002/002648.jpg",
+      "sha256": "b97864a3c2830392b02e525b46516d01bb117ec83767199c8d3de17241d4349f",
+      "bytes": 142420,
+      "width": 650,
+      "height": 487,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_091.jpg",
+      "source": "002.zip:002/002650.jpg",
+      "sha256": "26adea3b9bcb9adec4778416f6dc4fb13ad4abc88c89a59c830eccfc9c73affb",
+      "bytes": 83200,
+      "width": 800,
+      "height": 608,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_092.jpg",
+      "source": "002.zip:002/002651.jpg",
+      "sha256": "f36d86d074806d84d72400c628ca64e7b1b4519dc30113e668f779c1d548f7a6",
+      "bytes": 61285,
+      "width": 534,
+      "height": 400,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_093.jpg",
+      "source": "002.zip:002/002653.jpg",
+      "sha256": "cc20acc73eb520837e62cac40cad11cbfe9d568b4af210ac77837440f1c34902",
+      "bytes": 77992,
+      "width": 640,
+      "height": 552,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_094.jpg",
+      "source": "002.zip:002/002654.jpg",
+      "sha256": "87ef46c637cdb0118e27146824777008929357010bf3a45ad8b0eb2f72664d91",
+      "bytes": 82984,
+      "width": 640,
+      "height": 821,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_095.jpg",
+      "source": "002.zip:002/002655.jpg",
+      "sha256": "eb0efc99e63c2200951dcea725ed2c77804be69e67925da990fae761696df449",
+      "bytes": 105118,
+      "width": 640,
+      "height": 859,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_096.jpg",
+      "source": "002.zip:002/002656.jpg",
+      "sha256": "c3b879cdd2cad201fdb05dc0e058f8708ae044b1bdd7bc33b08219fad25941f6",
+      "bytes": 142846,
+      "width": 640,
+      "height": 849,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_097.jpg",
+      "source": "002.zip:002/002657.jpg",
+      "sha256": "44fc78aa976644ad6b72d86c0471d2127525ce7fd8495daf3bd5b8ef7ea74672",
+      "bytes": 414836,
+      "width": 1059,
+      "height": 480,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_098.jpg",
+      "source": "002.zip:002/002658.jpg",
+      "sha256": "0d7d57502d528bc6aa170b032268e4bd4a1a6b6f0e9bd379676a28f17036ff0b",
+      "bytes": 83141,
+      "width": 529,
+      "height": 640,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "govdocs_099.jpg",
+      "source": "002.zip:002/002659.jpg",
+      "sha256": "85f4ed25d7865db969a1a7b7010477927160768dfd321c4f219de7c1dd438205",
+      "bytes": 122732,
+      "width": 500,
+      "height": 853,
+      "mode": "RGB",
+      "corpus": "govdocs1"
+    },
+    {
+      "file": "mikus_11-carve-fat_0.jpg",
+      "source": "11-carve-fat.dd#carved0168",
+      "sha256": "040a2e0836d0e79778a7b3af4a7d7f11ef2bbe954db1180bca8327886bc842de",
+      "bytes": 29885,
+      "width": 396,
+      "height": 461,
+      "mode": "L",
+      "corpus": "nick_mikus_dftt"
+    },
+    {
+      "file": "mikus_11-carve-fat_1.jpg",
+      "source": "11-carve-fat.dd#carved0170",
+      "sha256": "a0c689498ad46d9cad70c52a2c952977f8888f8fd8d7a2fbdb2d2294583c4efd",
+      "bytes": 4102,
+      "width": 160,
+      "height": 120,
+      "mode": "RGB",
+      "corpus": "nick_mikus_dftt"
+    },
+    {
+      "file": "mikus_11-carve-fat_2.jpg",
+      "source": "11-carve-fat.dd#carved0172",
+      "sha256": "df429bde3695716ffdc00fdb1206a6796d54c820cf9537cb4109d69908f1b925",
+      "bytes": 2655,
+      "width": 160,
+      "height": 100,
+      "mode": "RGB",
+      "corpus": "nick_mikus_dftt"
+    },
+    {
+      "file": "mikus_12-carve-ext2_0.jpg",
+      "source": "12-carve-ext2.dd#carved0000",
+      "sha256": "181fc4c940527f2c191ebbea6a6407ba5210f728f9519b95f3e697c9fb5e965e",
+      "bytes": 29973,
+      "width": 346,
+      "height": 333,
+      "mode": "RGB",
+      "corpus": "nick_mikus_dftt"
+    },
+    {
+      "file": "mikus_12-carve-ext2_1.jpg",
+      "source": "12-carve-ext2.dd#carved0017",
+      "sha256": "f9e9b16f809f751e600e9268142c0b2f270ceb752950a4099c41bd8ea15beab9",
+      "bytes": 4905,
+      "width": 196,
+      "height": 146,
+      "mode": "RGB",
+      "corpus": "nick_mikus_dftt"
+    }
+  ]
+}
