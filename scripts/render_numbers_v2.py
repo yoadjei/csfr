@@ -80,7 +80,7 @@ def calibration_macros() -> dict[str, str]:
                if r["cell"] == "CF3_L5" and float(r["tol"]) == 0.01)
     ref = next(r for r in rows if r["cell"] == "CF3_L5" and float(r["tol"]) == tol)
     return {
-        "calibP99Max": _sci(max(float(r["max_err_p99"]) for r in at), 1),
+        "calibPctlErrMax": _sci(max(float(r["max_err_p99"]) for r in at), 1),
         "calibPsnrDiffMax": _sci(max(float(r["psnr_abs_diff_max"]) for r in at), 1),
         "calibNcells": str(len(at)), "calibNpatches": str(int(at[0]["n"])),
         "calibCells": ", ".join(_cell(r["cell"]) for r in at),

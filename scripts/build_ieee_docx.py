@@ -254,7 +254,22 @@ def biographies_as_text(tex: str) -> str:
     return tex
 
 
+INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
+
+
+def inline_inputs(tex: str) -> str:
+    """pandoc resolves \\input against its working directory, not the paper
+    directory, and drops a file it cannot find with only a warning: the number
+    macros of paper/numbers_v2.tex would vanish from the docx. Inline every
+    \\input from paper/; a missing file is an error here."""
+    def repl(m: re.Match) -> str:
+        name = m.group(1)
+        return (PAPER / (name if name.endswith(".tex") else name + ".tex")).read_text(encoding="utf-8")
+    return INPUT_RE.sub(repl, tex)
+
+
 def prepare(tex: str, labels: dict[str, str]) -> str:
+    tex = inline_inputs(tex)
     tex = resolve_anonymous(tex)
     tex = bake_refs(tex, labels)
     tex = number_equations(tex, labels)

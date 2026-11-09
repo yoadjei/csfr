@@ -18,6 +18,10 @@
 \usepackage{algpseudocode}
 \usepackage{lineno}
 
+%% Every number stated in running text (generated; see scripts/render_numbers_v2.py).
+\input{numbers_v2}
+\newtheorem{proposition}{Proposition}
+
 %% Allow emergency stretch to prevent overfull hboxes
 \emergencystretch=2em
 
@@ -134,160 +138,174 @@ Daubert~\cite{daubert1993} and SWGDE guidance~\cite{swgde2023} emphasise testabi
 \section{Problem Formulation}
 \label{sec:problem}
 
-\subsection{Notation}
+\subsection{Observation model and scope}
 
-Let $X \in \mathbb{R}^{H \times W}$ denote a ground-truth image with $H$ rows and $W$ columns, vectorised as $x \in \mathbb{R}^{N}$ with $N = HW$. Let $\Omega \subseteq \{1, \ldots, N\}$ denote the set of observed (intact) pixel indices, and $\Omega^{c} = \{1, \ldots, N\} \setminus \Omega$ the set of corrupted or missing pixel indices. The observed (corrupted) image $y \in \mathbb{R}^{N}$ satisfies $y_{i} = x_{i}$ for $i \in \Omega$ and is undefined (or arbitrarily set to zero) for $i \in \Omega^{c}$. Let $\Psi \in \mathbb{R}^{N \times N}$ denote a sparsifying basis (e.g., the two-dimensional Discrete Cosine Transform (DCT), or a wavelet basis) such that the coefficient vector $\alpha = \Psi^{\top} x$ is approximately $\kappa$-sparse with $\kappa \ll N$. We use the vectorised form $x \in \mathbb{R}^{N}$ for the analysis and the equivalent patch form $\mathrm{mat}(x) \in \mathbb{R}^{H \times W}$ for the solver; the two are related by $x = \mathrm{vec}(\mathrm{mat}(x))$. For the separable 2-D DCT, $\Psi^{\top} x = \mathrm{vec}(D\,\mathrm{mat}(x)\,D^{\top})$ where $D \in \mathbb{R}^{H \times H}$ (with $H=W$ for square patches) is the 1-D orthonormal DCT matrix, i.e.\ $\Psi = D \otimes D$; the algorithm of Section~\ref{sec:framework} works in the patch form with $D$, and the analysis here works in the vectorised form with $\Psi$.
+A grey-level patch $X \in [0,255]^{H \times W}$ with $N = HW$ pixels is observed on a set $\Omega$ of positions, recorded as a binary mask $\mathbf{M}$ with $\mathbf{M}_{rc} = 1$ on $\Omega$. The observed values $Y_{\Omega} = X_{\Omega}$ are known exactly; the remaining pixels, the hole $\Omega^{c}$, are unknown. Observation is noiseless on $\Omega$ by assumption, because an observed pixel is evidence and is reproduced rather than denoised. What happens when $\Omega$ itself is wrong is measured in Section~\ref{sec:results:maskerr}.
 
-Let $M \in \{0,1\}^{N \times N}$ denote the diagonal sampling mask with $M_{ii} = 1$ for $i \in \Omega$ and $M_{ii} = 0$ otherwise. The forward (corruption) model is:
+\textbf{Domain of reconstruction.} CSFR operates on decoded pixel arrays and does not recover the encoded bitstream. Locating, ordering and decoding fragments is the work of the carver and decoder that precede it, and re-encoding a repaired file is outside the method. The experiments use two kinds of input: synthetic masks applied to decoded images (Section~\ref{sec:experiments}), and JPEG files whose bytes were corrupted and then decoded by a standard decoder, with three ways of obtaining the mask (Section~\ref{sec:results:jpeg}). Every statement about the record refers to the pixel-domain map from $(Y_{\Omega}, \mathbf{M})$ to the output.
+
+\subsection{Objective and constraints}
+\label{sec:problem:objective}
+
+Let $A = D_{H} X D_{W}^{\top}$ be the orthonormal two-dimensional DCT-II coefficients of $X$, where $D_{n}$ is the $n \times n$ DCT-II matrix, and let
 \begin{equation}
-\label{eq:forward}
-y = Mx + \eta
+\phi_{\varepsilon}(z) = \sqrt{z^{2} + \varepsilon^{2}} - \varepsilon
 \end{equation}
-where $\eta \in \mathbb{R}^{N}$ is bounded noise with $\|\eta\|_{2} \le \varepsilon$.
-
-\textbf{Domain of reconstruction.} CSFR operates on decoded pixel arrays and does not recover the original encoded bitstream. The present experiments begin with decoded images and apply synthetic pixel-domain masks. They therefore evaluate reconstruction after decoding, not storage-level fragment alignment, JPEG minimum-coded-unit recovery or byte-perfect file repair. Those stages remain outside the validated scope of this study, and the audit claims made here refer to the pixel-domain transformation chain only.
-
-\subsection{Reconstruction Objective}
-
-The constraint-driven reconstruction objective is:
+be the pseudo-Huber penalty~\cite{charbonnier1997deterministic}, which is smooth, strictly convex, quadratic for $|z| \ll \varepsilon$ and close to $|z| - \varepsilon$ for $|z| \gg \varepsilon$. Forward differences $(\nabla_{v} X)_{rc} = X_{r+1,c} - X_{rc}$ and $(\nabla_{h} X)_{rc} = X_{r,c+1} - X_{rc}$ are taken only between pixels inside the patch (Neumann boundary); there are $N_{v} = (H-1)W$ and $N_{h} = H(W-1)$ of them. The high-frequency index set is $\mathcal{H} = \{(k,l) : k/(H-1) + l/(W-1) \ge \csfrHFcut\}$. CSFR computes
 \begin{equation}
 \label{eq:objective}
+X^{\star} = \arg\min_{X}\; J(X) \quad \text{s.t.} \quad X_{\Omega} = Y_{\Omega}, \quad 0 \le X \le 255,
+\end{equation}
+\begin{equation}
+\label{eq:J}
 \begin{aligned}
-\hat{x}_{\mathrm{ideal}} \;=\; \arg\min_{x \in \mathbb{R}^{N}} \;\; & \|\Psi^{\top} x\|_{1} \\
-\text{s.t.} \quad & Mx = My, \quad \|M(x - y)\|_{2} \le \varepsilon_{\mathrm{noise}}, \\
-& x \in \mathcal{F}_{\mathrm{ideal}}
+J(X) = {} & \frac{\lambda_{\ell_1}}{N} \sum_{(k,l) \neq (0,0)} \phi_{\varepsilon}(A_{kl})
+\;+\; \frac{\lambda_{\mathrm{FC}}}{N} \sum_{(k,l) \in \mathcal{H}} A_{kl}^{2} \\
+& +\; \lambda_{\mathrm{TV}} \Bigl[ \frac{1}{N_{v}} \sum_{r,c} \phi_{\varepsilon}\bigl((\nabla_{v} X)_{rc}\bigr) + \frac{1}{N_{h}} \sum_{r,c} \phi_{\varepsilon}\bigl((\nabla_{h} X)_{rc}\bigr) \Bigr],
 \end{aligned}
 \end{equation}
-where $\mathcal{F}_{\mathrm{ideal}}$ is the feasibility set induced by the four constraint families below. Equation~\eqref{eq:objective} defines an idealised constrained estimator used to motivate the method. The equality on $\Omega$ represents exact preservation of accepted observations, while $\varepsilon_{\mathrm{noise}}$ applies only when the observation model explicitly includes bounded measurement noise; in the noiseless case the two conditions coincide. The $\ell_{1}$ term promotes sparsity in $\Psi$ and the feasibility set encodes the forensic constraints. The experimental solver does not solve Eq.~\eqref{eq:objective} directly; it minimises the penalised surrogate of Eq.~\eqref{eq:surrogate} and applies a terminal projection on $\Omega$ (Section~\ref{sec:framework}).
+with $\lambda_{\ell_1} = \csfrLamLone$, $\lambda_{\mathrm{TV}} = \csfrLamTV$, $\lambda_{\mathrm{FC}} = \csfrLamFC$ and $\varepsilon = \csfrEps$ grey level for every patch, corpus and corruption family. Equation~\eqref{eq:objective} is the problem the released code solves; there is no separate idealised programme and no penalised surrogate. Four choices in it are deliberate.
+\begin{enumerate}
+  \item Each term is a mean over its index set rather than a sum, so one set of weights applies to every patch size, including the full-resolution images of Section~\ref{sec:results:fullres}.
+  \item The DC coefficient is excluded from the sparsity term. It carries the mean intensity, which is not sparse, and penalising it would pull the mean of the hole toward zero.
+  \item There is no data-fidelity term. Fragment consistency is a constraint, not a penalty, so the observed pixels are never traded against smoothness.
+  \item The weights are those of the released configuration (\texttt{configs/\allowbreak csfr\allowbreak\_sweep\allowbreak\_2d.yaml}). They were fixed before the GovDocs1 and Kodak corpora of this paper were assembled, and no weight was changed for any experiment reported here.
+\end{enumerate}
 
-\subsection{Constraint Family C1: Fragment Consistency (Hard)}
+Table~\ref{tab:constraints} maps the four constraint families of the method onto Eq.~\eqref{eq:objective}. C1 and C3 are hard constraints that every iterate satisfies; C2 and C4 are penalty terms of Eq.~\eqref{eq:J}, so a reconstruction can have any amount of variation or high-frequency energy at a cost. For that reason constraint-violation rates are reported only within the CSFR ablation (Section~\ref{sec:results:ablation}) and never as a comparison across methods, which would reward CSFR for the terms it optimises.
 
-\textbf{Definition.} For all observed indices $i \in \Omega$, $\hat{x}_{i} = y_{i}$.
+\begin{table}[htbp]
+\centering
+\caption{The four constraint families as implemented in Eq.~\eqref{eq:objective}. Hard constraints hold exactly at every iteration; penalties are terms of Eq.~\eqref{eq:J}.}
+\label{tab:constraints}
+\begin{tabularx}{\linewidth}{@{}l X l@{}}
+\toprule
+ & Family and implemented form & Type \\
+\midrule
+C1 & fragment consistency: $X_{\Omega} = Y_{\Omega}$ & hard \\
+C2 & spatial continuity: pseudo-Huber anisotropic TV, weight $\lambda_{\mathrm{TV}}$ & penalty \\
+C3 & intensity range: $0 \le X \le 255$, the global 8-bit range & hard \\
+C4 & frequency coherence: quadratic penalty on $\mathcal{H}$, weight $\lambda_{\mathrm{FC}}$ & penalty \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-\textbf{Forensic interpretation.} Reconstructions should not alter observed pixels. This is the central constraint of the design: observed bytes are evidence and are treated as immutable. CSFR enforces this constraint as a hard equality on the released output (not a penalised soft constraint) so that the data-fidelity tolerance $\varepsilon_{\mathrm{noise}}$ applies only to noise on the observation channel and not to alteration of intact pixels in the released output.
-
-\subsection{Constraint Family C2: Spatial Continuity}
-
-\textbf{Definition.} For all interior pixels $i$, the local total variation is bounded:
-\begin{equation}
-\mathrm{TV}_{\mathrm{local}}(\hat{x}, i) \;=\; \sum_{j \in \mathcal{N}(i)} |\hat{x}_{i} - \hat{x}_{j}| \;\le\; \tau_{\mathrm{TV}}(i)
-\end{equation}
-where $\mathcal{N}(i)$ is the 4-neighbourhood of $i$ and $\tau_{\mathrm{TV}}(i)$ is a position-dependent bound estimated from the local statistics of $\Omega \cap \mathcal{N}(i)$.
-
-\textbf{Forensic interpretation.} Real-world images exhibit piecewise smoothness. Reconstructions that introduce high-frequency discontinuities at the $\Omega$/$\Omega^{c}$ boundary are implausible and signal unbounded inference.
-
-\subsection{Constraint Family C3: Global Intensity Bounds}
 \label{sec:problem:c3}
+C3 is the global dynamic range of an 8-bit image. Bounds derived from the observed neighbourhood of each pixel would be a stronger constraint, but they are not implemented or evaluated in this paper, and C3 should not be read as a local plausibility check.
 
-\textbf{Definition.} For all reconstructed pixels $i \in \Omega^{c}$,
-\begin{equation}
-\hat{x}_{i} \in [\,0, 255\,].
-\end{equation}
-The implemented constraint is the global dynamic range of an 8-bit image. Neighbourhood-derived bounds $[\ell_{i}, u_{i}]$, taken from the observed pixels around $i$, would impose a stronger local constraint, but they are not implemented or evaluated in the present solver.
+\begin{proposition}[unique minimiser]
+\label{prop:unique}
+Let $\Omega \neq \emptyset$ and $\lambda_{\ell_1} > 0$ or $\lambda_{\mathrm{TV}} > 0$. For every patch $X$ and every set $F \subseteq \Omega^{c}$ of hole pixels the Hessian block $\nabla^{2}_{FF} J(X)$ is positive definite, and Eq.~\eqref{eq:objective} has exactly one minimiser.
+\end{proposition}
+\textit{Proof.} Since $\phi_{\varepsilon}'' > 0$, each term of $J$ has a positive semidefinite Hessian. The DCT is orthonormal, so the Hessian of the sparsity term vanishes only on directions whose DCT is zero outside the DC coefficient, which are the constant patches; the Hessian of the TV term vanishes only on directions with zero differences, which on the connected pixel grid are again the constants. A constant direction supported on $F$ is zero, because it vanishes on $\Omega \neq \emptyset$. Hence $\nabla^{2}_{FF} J \succ 0$ and $J$ is strictly convex on the feasible set, which is non-empty, convex and compact, so the minimiser exists and is unique.~$\square$
 
-\textbf{Forensic interpretation.} Global clipping prevents invalid 8-bit intensities. It does not show that an imputed value is locally plausible, and it should not be interpreted as a neighbourhood-based hallucination control.
+The reconstruction is therefore a property of $(Y_{\Omega}, \mathbf{M})$ and the fixed constants. The initialisation, the solver and the iteration count affect only how closely it is approximated, and Section~\ref{sec:framework:solver} bounds that approximation for every patch.
 
-\subsection{Constraint Family C4: Frequency Coherence}
+\subsection{What the observed pixels can determine}
+\label{sec:problem:oracle}
 
-\textbf{Definition.} The high-frequency tail of $\Psi^{\top} \hat{x}$ is bounded:
-\begin{equation}
-\sum_{h \in \mathcal{H}} (\Psi^{\top} \hat{x})_{h}^{2} \;\le\; \rho \, \|\Psi^{\top} \hat{x}\|_{2}^{2}
-\end{equation}
-where $\mathcal{H}$ indexes the high-frequency basis coefficients and $\rho \in (0,1)$ is a coherence parameter.
+The formulation is motivated by sparse recovery: natural patches are approximately sparse in the DCT, and convex $\ell_{1}$ minimisation subject to the observations recovers a sparse signal from few incoherent samples~\cite{candes2006robust,donoho2006compressed}. The pixel and DCT bases are highly incoherent (scaled mutual coherence $\sqrt{N}\mu = \oracleCoherenceScaled$ on a scale from $1$ to $\sqrt{N}$~\cite{candes2007sparsity}), but the recovery results built on incoherence assume that the observed positions are drawn uniformly at random. That describes scattered loss and not bursts, overwrites or truncation, and no recovery condition of this kind can be verified for an individual mask.
 
-\textbf{Forensic interpretation.} Natural images concentrate energy in low-frequency basis components. Reconstructions with anomalously high high-frequency energy signal either noise amplification or imagined structure.
-
-\subsection{Recovery Conditions}
-
-For the idealised basis-pursuit denoising estimator, a standard compressed-sensing result applies when $M\Psi$ satisfies an appropriate Restricted Isometry Property (RIP) at sparsity level $\kappa$~\cite{candes2008restricted}; related RIP-based analyses give convergence rates for iterative thresholding solvers~\cite{wang2015linear} and error clamping for adaptive measurement designs~\cite{qiu2024adacs}. Under those assumptions, the idealised estimator satisfies a bound of the form
-\begin{equation}
-\label{eq:recovery}
-\|\hat{x}_{\mathrm{ideal}} - x^{\star}\|_{2} \;\le\; K_{0}\, \varepsilon_{\mathrm{noise}} \,+\, K_{1}\, \frac{\|\alpha^{\star} - \alpha^{\star}_{\kappa}\|_{1}}{\sqrt{\kappa}}
-\end{equation}
-where $\alpha^{\star} = \Psi^{\top} x^{\star}$, $\alpha^{\star}_{\kappa}$ is its best $\kappa$-term approximation and $K_{0}, K_{1}$ depend on the RIP constant of $M\Psi$. This result is theoretical motivation rather than a certificate for a CSFR output. The fixed-budget Adam solver minimises the penalised surrogate of Eq.~\eqref{eq:surrogate}, is not certified to reach the minimiser of Eq.~\eqref{eq:objective}, and does not verify the RIP for an individual mask, which is in any case computationally hard and which severe or structured corruption can violate (Section~\ref{sec:limits}). Equation~\eqref{eq:recovery} therefore must not be used to assign a numerical error bound or evidential meaning to a returned reconstruction.
+We therefore replace a recovery bound with a measurement. For each patch, let $S$ be the positions of its $\kappa$ largest-magnitude DCT coefficients, with $\kappa$ equal to 5\% of the pixels, and let $\Phi_{S}$ be the corresponding basis images. The oracle reconstruction fits $\Phi_{S}$ to the observed pixels by least squares. The oracle knows the true support, which no method does. Its hole PSNR describes what a $\kappa$-sparse DCT model can recover from that mask when the support is known, and the condition number of the observed rows of $\Phi_{S}$ measures how well the observations determine the coefficients on that support. Both describe the difficulty of a mask; neither is a bound on any method. Section~\ref{sec:results:oracle} reports them per corruption family.
 
 %%======================================================================
-\section{The CSFR Reconstruction Framework}
+\section{Solver, Certificate and Sensitivity Record}
 \label{sec:framework}
 
-The CSFR pipeline is described in six stages: input preparation, alignment, constraint formulation, optimisation, assembly with terminal fragment-consistency projection, and the sensitivity audit. The alignment stage is specified but not validated, as stated next.
+\subsection{Projected accelerated gradient with restart}
+\label{sec:framework:solver}
 
-\subsection{Ingest, alignment and constraint formulation}
-
-\textbf{Validated input scope.} The evaluated pipeline receives a decoded pixel array and a binary observation mask. It does not estimate the position of raw byte fragments, recover JPEG minimum-coded-unit ordering or re-synthesise the original encoded file. A carver or decoder must perform those operations before CSFR is applied. Storage-level alignment, for instance by cross-correlating fragment edge statistics against a zero-fill composite of the placed fragments, is a proposed extension that requires no learned prior but requires separate validation on genuinely fragmented encoded files. CSFR then instantiates C1 through C4 (Section~\ref{sec:problem}): C1 as the terminal projection, C3 as global clipping, and C2 and C4 as the penalty terms of Eq.~\eqref{eq:surrogate}, so the objective depends only on the input array and mask.
-
-\subsection{$\ell_{1}$-Minimisation Solver}
-
-The constrained programme of Eq.~\eqref{eq:objective} is the specification; the released solver minimises its penalised surrogate. We state the surrogate exactly as implemented, because the distinction matters for what the reported numbers certify. Writing $\alpha(x) = \Psi^{\top} x$ for the DCT coefficients of the current iterate, the objective minimised at each step is
+The gradient of $J$ is Lipschitz-continuous with constant
 \begin{equation}
-\label{eq:surrogate}
-\begin{aligned}
-J(x) \;=\; & \underbrace{\tfrac{1}{2}\,\bigl\|M(x - y)\bigr\|_{2}^{2}}_{\text{data fidelity (C1)}}
-\;+\; \lambda_{\ell_1}\,\bigl\|\alpha(x)\bigr\|_{1} \\
-& \;+\; \lambda_{\mathrm{TV}}\,\mathrm{TV}(x)
-\;+\; \lambda_{\mathrm{FC}}\,\bigl\|P_{\mathcal{H}}\,\alpha(x)\bigr\|_{2}^{2},
-\end{aligned}
+\label{eq:lipschitz}
+L = \frac{\lambda_{\ell_1}}{N\varepsilon} + \lambda_{\mathrm{TV}} \Bigl( \frac{4}{N_{v}\varepsilon} + \frac{4}{N_{h}\varepsilon} \Bigr) + \frac{2\lambda_{\mathrm{FC}}}{N},
 \end{equation}
-where $P_{\mathcal{H}}$ is the diagonal selector of the high-frequency coefficient set $\mathcal{H}$ (Section~\ref{sec:problem}), $\mathrm{TV}$ is the anisotropic total variation, and each norm is evaluated as a mean over its index set rather than a sum, so that a single set of $\lambda$ values transfers across patch sizes. The $\ell_{1}$ and TV terms are non-smooth, and the implementation uses automatic subgradients within Adam. This practical optimisation choice does not provide the convergence guarantee of a proximal method for the idealised programme.
+because $\phi_{\varepsilon}'' \le 1/\varepsilon$, the DCT is orthonormal and each one-dimensional difference operator has squared norm at most four. The feasible set $\mathcal{C} = \{X : X_{\Omega} = Y_{\Omega},\ 0 \le X \le 255\}$ fixes the observed coordinates and boxes the others. Because $Y_{\Omega}$ lies in the box, its Euclidean projection is exact and acts coordinate by coordinate: clip to $[0,255]$, then reset the observed pixels to $Y_{\Omega}$.
 
-Three implementation choices depart from the textbook projected proximal-gradient scheme and are stated plainly rather than elided.
-\begin{enumerate}
-  \item \textbf{Adam rather than proximal gradient.} The four terms of Eq.~\eqref{eq:surrogate} are badly scaled relative to one another. The data term grows with the number of observed pixels while the penalties are means, so a single global step size that stabilises the data term is far too small for the penalties. Adam's~\cite{kingma2015adam} per-coordinate step-size adaptation removes the need to hand-tune $\mu$ per corruption family, which is essential here because the protocol requires one fixed parameter set across all 20 cells. This approach sacrifices the convergence guarantee that a proximal scheme on the exact objective would carry; the solver is therefore reproducible and deterministic, yet its iterates are not certified minimisers of Eq.~\eqref{eq:objective}.
-  \item \textbf{C3 enforced every step, C1 enforced at release.} Global 8-bit intensity bounds are imposed by clipping to $[0,255]$ after each Adam step. The fragment-consistency projection $\mathcal{P}_{\Omega}$ ($\hat{x}_{i} \leftarrow y_{i}$ for $i \in \Omega$) is applied once, as the terminal operation, rather than inside the loop: applying it every iteration would zero the data-term gradient and stall the coupling through which observed pixels inform the imputed ones. Observed pixels may therefore move \emph{during} optimisation and are restored exactly \emph{before} release, which is what makes the released C1 violation rate zero by construction (Section~\ref{sec:results:cvr}). The clipping operation enforces only the global C3 definition of Section~\ref{sec:problem:c3}.
-  \item \textbf{Fixed iteration budget.} A budget of $T = 600$ iterations, with no early stopping and no data-dependent tolerance, so that the iteration count is part of the deterministic, auditable procedure and not a function of the evidence. Checkpoints every $150$ iterations provide resumability.
-\end{enumerate}
-Algorithm~\ref{alg:csfr} states the procedure. All parameter values are given in \texttt{configs/\allowbreak csfr\allowbreak\_sweep\allowbreak\_2d.yaml} and were used unchanged for every cell of every sweep reported in this paper.
+CSFR minimises Eq.~\eqref{eq:objective} by projected FISTA~\cite{beck2009fast} with step $1/L$ and the gradient-based adaptive restart of O'Donoghue and Cand\`{e}s~\cite{odonoghue2015adaptive} (Algorithm~\ref{alg:csfr}), in double precision, starting from the zero-filled composite. The projection is applied at every iteration, so every iterate satisfies C1 and C3 exactly. There is no terminal correction step, and the released output is an iterate of the method rather than a post-processed version of one. The gradient and the Hessian--vector products are evaluated in closed form. For images with a side above 128 pixels, the DCT is computed with one FFT per axis~\cite{makhoul1980fast}.
+
+\textbf{Stopping rule and certificate.} Every \csfrCheckEvery\ iterations the solver evaluates the Frank--Wolfe gap~\cite{frank1956algorithm}
+\begin{equation}
+\label{eq:gap}
+G(X) = \max_{Z \in \mathcal{C}} \langle \nabla J(X),\, X - Z \rangle = \sum_{i \in \Omega^{c}} g_{i}\,(X_{i} - z_{i}),
+\end{equation}
+where $g = \nabla J(X)$, $z_{i} = 255$ where $g_{i} < 0$ and $z_{i} = 0$ elsewhere. Convexity gives $J(X) - J(X^{\star}) \le \langle \nabla J(X), X - X^{\star} \rangle \le G(X)$, so $G$ bounds the suboptimality of the current iterate in objective units without knowledge of $X^{\star}$. A patch stops when $G \le \csfrTol$ and is then frozen. A patch that reaches \csfrMaxIter\ iterations is reported as not converged; it is never silently accepted. Each patch's certificate is written beside its output and copied into every record manifest. It contains the iterations, the converged flag, $G$, $G/J$, the final projected-step size and the objective, together with $L$, the step and the full configuration.
+
+The tolerance was calibrated, not chosen. On \calibNcells\ cells of the DFRWS corpus (\calibCells; \calibNpatches\ patches each), every patch was first solved to a reference gap of $\recRefTol$, close to the double-precision floor, and then at each tolerance from $\calibGridLoose$ to $\calibGridTight$. The criterion compares each solve with the minimiser, not with the ground truth, so it fixes numerical accuracy and cannot tune reconstruction quality. The default is the loosest tolerance whose 99th-percentile per-patch maximum pixel error against the reference is below $0.01$ grey levels in every cell. That tolerance is $\csfrTol$: in the worst cell the 99th-percentile error is $\calibPctlErrMax$ grey levels and the mean hole PSNR is within $\calibPsnrDiffMax$\,dB of the reference. The next looser value, $\calibNextTol$, fails on \calibNextFailCells. No calibration solve reached the iteration cap, and at the default tolerance the median iteration count ranged from \calibItersMin\ to \calibItersMax\ across the cells.
+
+Two independent checks agree with the reference solves. L-BFGS-B (SciPy) on the same objective and box reached them within $\calibLbfgsbMaxDiff$ grey levels on the first \calibLbfgsbN\ patches of each cell. Zero-filled and Navier--Stokes initialisations, each solved to $\calibInitTol$, agree within $\calibInitMaxDiff$ grey levels, as Proposition~\ref{prop:unique} requires.
+
+Two simpler stopping rules were rejected on measurement. A relative gap $G/J$ cannot be met on flat patches, where the double-precision floor of $G$ is a large fraction of a small $J$. A projected-step rule, which stops when no pixel moves by more than a threshold, stops far from the optimum in large holes: there the gradient is close to zero until information has propagated in from the boundary. On CF3~L5, a threshold of $\calibRejStepThresh$ grey levels stopped at a mean hole PSNR of \calibRejStepPsnr\,dB, against \calibRejRefPsnr\,dB at the minimiser.
+
+\textbf{Fixed-budget comparison arm.} The configuration of the previously released implementation (\texttt{src/\allowbreak csfr\allowbreak\_reconstruct\allowbreak\_2d.py}) is evaluated only as a comparison arm (Section~\ref{sec:results:solver}). It runs Adam with learning rate $2.0$~\cite{kingma2015adam} on a penalised form of the objective with a quadratic data term, for a budget of $600$ iterations, with C3 applied by clipping after each step and C1 once at the end. It carries no certificate. Runtime and memory of both solvers are reported in Section~\ref{sec:results:cost}.
 
 \begin{algorithm}[htbp]
-\caption{CSFR solver (Stage 4), exactly as released in \texttt{src/csfr\allowbreak\_reconstruct\allowbreak\_2d.py}.}
+\caption{CSFR solver, as implemented in \texttt{src/\allowbreak csfr\allowbreak\_solver.py} (function \texttt{solve}). The patches of a batch are solved independently, and a converged patch is frozen.}
 \label{alg:csfr}
 \begin{algorithmic}[1]
-\Require corrupted patch $Y \in \mathbb{R}^{H \times W}$; binary mask $\mathbf{M} \in \{0,1\}^{H \times W}$; weights $\lambda_{\ell_1}, \lambda_{\mathrm{TV}}, \lambda_{\mathrm{FC}}$; learning rate $\mu$; budget $T$
-\Ensure reconstruction $\hat{X}$ with $\hat{X}_{rc} = Y_{rc}$ wherever $\mathbf{M}_{rc}=1$
-\Statex \textit{(Patch form: $\mathbf{M}$ is the mask in $H\times W$ layout, $\odot$ is elementwise, and $\mathbf{M}=\mathrm{mat}(\mathrm{diag}(M))$ relative to the diagonal $M$ of Section~\ref{sec:problem}.)}
-\State $D \gets$ orthonormal 1-D DCT-II matrix ($\Psi = D \otimes D$); \; $P_{\mathcal{H}} \gets$ high-frequency selector
-\State $X^{(0)} \gets \mathbf{M} \odot Y$ \Comment{zero-fill start; no learned initialiser}
-\State initialise Adam state with step size $\mu$
-\For{$t = 0$ \textbf{to} $T-1$}
-  \State $A \gets D\,X^{(t)}D^{\top}$ \Comment{2-D DCT coefficients}
-  \State $J \gets \tfrac{1}{2}\|\mathbf{M}\odot(X^{(t)}-Y)\|_{F}^{2} + \lambda_{\ell_1}\|A\|_{1} + \lambda_{\mathrm{TV}}\,\mathrm{TV}(X^{(t)}) + \lambda_{\mathrm{FC}}\|P_{\mathcal{H}}\odot A\|_{F}^{2}$
-  \State $X^{(t+1)} \gets \textsc{AdamStep}\bigl(X^{(t)}, \nabla_{X} J\bigr)$
-  \State $X^{(t+1)} \gets \mathrm{clip}\bigl(X^{(t+1)},\, 0,\, 255\bigr)$ \Comment{C3, every step}
+\Require observed values $Y$; mask $\mathbf{M}$ ($\mathbf{M}=1$ on $\Omega$); $\lambda_{\ell_1}, \lambda_{\mathrm{TV}}, \lambda_{\mathrm{FC}}, \varepsilon$; tolerance $\tau$; cap $K$; check interval $c$
+\Ensure $\hat{X} \in \mathcal{C}$ and its certificate
+\State $L \gets$ Eq.~\eqref{eq:lipschitz}
+\State $P(X) \gets \mathbf{M}\odot Y + (1-\mathbf{M})\odot\mathrm{clip}(X, 0, 255)$ \Comment{projection onto $\mathcal{C}$}
+\State $X_{0} \gets P(\mathbf{M}\odot Y)$; \; $Z \gets X_{0}$; \; $t \gets 1$
+\For{$k = 1, \ldots, K$}
+  \State $X_{k} \gets P\bigl(Z - \nabla J(Z)/L\bigr)$
+  \If{$\langle Z - X_{k},\, X_{k} - X_{k-1} \rangle > 0$}
+    \State $t \gets 1$ \Comment{adaptive restart}
+  \EndIf
+  \State $t' \gets \bigl(1 + \sqrt{1 + 4t^{2}}\bigr)/2$
+  \State $Z \gets X_{k} + \tfrac{t-1}{t'}\,(X_{k} - X_{k-1})$; \; $t \gets t'$
+  \If{$k \bmod c = 0$ \textbf{or} $k = K$}
+    \If{$G(X_{k}) \le \tau$} \Comment{Eq.~\eqref{eq:gap}}
+      \State \Return $X_{k}$ with a certificate marked converged
+    \EndIf
+  \EndIf
 \EndFor
-\State $\hat{X} \gets \mathbf{M}\odot Y + (1-\mathbf{M})\odot X^{(T)}$ \Comment{C1 projection, terminal}
-\State $\hat{X} \gets \mathrm{clip}(\hat{X}, 0, 255)$
-\State \textbf{emit} $\hat{X}$ and the approximate sensitivity audit record of Section~\ref{sec:framework:audit} (Stage 6)
-\State \Return $\hat{X}$
+\State \Return $X_{K}$ with a certificate marked not converged
 \end{algorithmic}
 \end{algorithm}
 
-\textbf{Convergence behaviour.} With a fixed rather than tolerance-driven budget, the relevant question is whether $T = 600$ leaves the objective flat across all corruption regimes. The answer is mixed: the exception is informative. The solver logs $J$ every $200$ iterations; across the 20 cells of the primary sweep the relative decrease over the final logged interval ($t = 400 \to 600$) averages $1.0\,\%$, but it is not uniform. Under random pixel loss (CF1) the objective is flat to within $4 \times 10^{-4}$ at every severity, and on the half-image masks (CF3/CF4) the residual decrease stays below $1\,\%$. Under burst block corruption (CF2) it rises monotonically with severity, from $0.7\,\%$ at L1 to $6.2\,\%$ at L5. In the single family where CSFR is beaten by every classical baseline (Table~\ref{tab:psnr-ssim}), the solver has demonstrably not settled by the end of its budget. Section~\ref{sec:results:budget} follows this up and finds that it matters: extending the budget on CF2 and the severe masks recovers most of the reported deficit and, on CF2, reverses it. We nonetheless report the main results at the fixed budget as the audited, uniform procedure rather than tuning $T$ per family, which would make the iteration count a function of the evidence; the consequences of that choice are quantified in Section~\ref{sec:results:budget}. The logged objective traces are released with the per-cell checkpoints.
-
-\subsection{Assembly and approximate sensitivity audit}
+\subsection{Sensitivity record}
 \label{sec:framework:audit}
 
-The inverse transform $\hat{x} = \Psi \hat{\alpha}$ yields the reconstructed pixel grid. Consistent with the pixel-domain scope (Section~\ref{sec:problem}), the released implementation does not re-synthesise a valid encoded bitstream, for instance by re-quantising and entropy-coding JPEG MCUs, which remains engineering future work.
-
-For a sampled reconstructed pixel $\hat{x}_{i}$ with $i \in \Omega^{c}$, the audit asks how a small change in an observed input would change the target solution locally. The reported vector is an approximate Jacobian row obtained by applying implicit differentiation to a smoothed local representation of the stationarity condition for Eq.~\eqref{eq:surrogate}. It is a sensitivity measure, not a decomposition of the pixel value and not proof that the recorded inputs caused the reconstruction. Writing $J(x,y)$ for the objective of Eq.~\eqref{eq:surrogate}, stationarity $\nabla_{x} J(\hat{x},y) = 0$ differentiated in $y$ gives
+At the minimiser, let $F = \{ i \in \Omega^{c} : \recBoundMargin < X^{\star}_{i} < 255 - \recBoundMargin \}$ be the free set of hole pixels not at a bound, and $B = \Omega^{c} \setminus F$. Stationarity $\nabla_{F} J(X^{\star}) = 0$ holds on $F$, and $Y_{\Omega}$ enters the problem only through $X_{\Omega} = Y_{\Omega}$. Where strict complementarity holds at the pixels of $B$, so that small perturbations do not change which pixels are at a bound, the implicit function theorem~\cite{dontchev2014implicit} gives the Jacobian of the solution map:
 \begin{equation}
-\label{eq:provenance}
-\frac{\partial \hat{x}}{\partial y} \;=\; \bigl(\nabla^{2}_{xx} J\bigr)^{-1} M,
+\label{eq:record}
+\frac{\partial X^{\star}_{F}}{\partial Y_{\Omega}} = -\,H_{FF}^{-1} H_{F\Omega}, \qquad H = \nabla^{2} J(X^{\star}).
 \end{equation}
-since the only coupling to $y$ is the data term, whose mixed second derivative is $-M$. The $i$-th row is obtained by solving $(\nabla^{2}_{xx}J)\,v = e_{i}$ with conjugate gradients and automatic Hessian--vector products, so the Hessian is not formed explicitly. The manifest records non-negligible sensitivity weights, solver settings, residual diagnostics and constraint activity for each queried pixel; \texttt{src/\allowbreak provenance.py} implements this and \texttt{results/provenance\allowbreak\_example/} contains a released example. Because the objective contains non-smooth terms, clipping and terminal projection, the calculation depends on the local numerical approximation used by the implementation.
+$H_{FF}$ is invertible by Proposition~\ref{prop:unique}. The derivative of a pixel in $B$ is zero, and an observed pixel has the identity row because C1 fixes it.
 
-The resulting sensitivity vectors are generally dense, on the order of $10^{3}$ observed pixels with non-negligible weight for a $64\times64$ patch, and may contain signed weights. They need not sum to the reconstructed pixel value and must not be described as contribution shares. Equation~\eqref{eq:provenance} is exact only under differentiability, local stationarity and Hessian invertibility. The fixed-budget solver does not certify these conditions in every cell. Accordingly, the released record is labelled approximate local sensitivity. For observed pixels, the terminal C1 projection gives the exact identity relation $\hat{x}_{i} = y_{i}$.
+The record of an imputed pixel $i$ is row $i$ of Eq.~\eqref{eq:record}. It is computed by solving $H_{FF}\, w = e_{i}$ with conjugate gradients~\cite{hestenes1952methods} and the closed-form Hessian--vector products, and then forming $-H_{\Omega F}\, w$. Columns, the response of every free pixel to one observed pixel, are computed in the same way; they are the transposed view of the same matrix, which a test checks. All record computations use double precision, a relative CG residual of $\recCGrtol$ with a cap of \recCGmax\ iterations, and no damping. Weights smaller than $\recSupport$ times the largest weight are not counted in the reported support. Units are grey levels of the reconstructed pixel per grey level of the observed pixel.
 
+\begin{proposition}[affine record]
+\label{prop:affine}
+If no hole pixel is at a bound ($B = \emptyset$), every row of Eq.~\eqref{eq:record} sums to one.
+\end{proposition}
+\textit{Proof.} The sparsity term excludes the DC coefficient, $\mathcal{H}$ does not contain it, and TV acts on differences, so $J(X + c\mathbf{1}) = J(X)$ for every constant $c$ and $H\mathbf{1} = 0$. With $F = \Omega^{c}$, the rows of $H$ indexed by $F$ give $H_{FF}\mathbf{1}_{F} + H_{F\Omega}\mathbf{1}_{\Omega} = 0$, hence $-H_{FF}^{-1} H_{F\Omega}\mathbf{1}_{\Omega} = \mathbf{1}_{F}$.~$\square$
 
+The record is therefore an affine combination of the observed pixels: shifting every observed value by $c$ shifts every free pixel by $c$. The barycentric weights of linear interpolation also sum to one, but the CSFR weights are dense and can be negative, so they must not be read as contribution shares. The proposition also gives every record row a free accuracy check. Its affine defect, $1 - \sum_{k} w_{k}$, is zero for the exact Jacobian, and every manifest reports it beside the CG residual. For the same reason the linear system is not damped. A damped system $(H_{FF} + \gamma I)\,w = e_{i}$ is a common safeguard for CG, but it is unnecessary here because $H_{FF}$ is positive definite, and for any $\gamma > 0$ it violates Proposition~\ref{prop:affine}.
 
-\subsection{Refusal and warning behaviour}
+\textbf{What the record is and is not.} The record is the derivative of the map from observations to reconstruction, evaluated at the released output. It states how the reconstructed value would change, to first order, if an observed pixel had a different value. It is not a decomposition of the pixel value, it does not say which observations caused the content, and it says nothing about whether the reconstructed value is close to the truth. A first-order statement can also fail for perturbations of practical size, which is why the record is validated.
+
+\textbf{Validation by perturb-and-re-solve.} For a queried observed pixel $k$ and a perturbation $\delta$, the predicted column $c_{\mathrm{pred}} = \partial X^{\star}_{F} / \partial Y_{k}$ is compared with the measured response $c_{\mathrm{act}}(\delta) = \bigl(X^{\star}(Y + \delta e_{k}) - X^{\star}(Y)\bigr)_{F} / \delta$, obtained by solving the perturbed problem again. The sign of $\delta$ is reversed where $Y_{k} + \delta$ would leave the range. The relative error is $e(\delta) = \|c_{\mathrm{act}} - c_{\mathrm{pred}}\|_{2} / \|c_{\mathrm{act}}\|_{2}$ over $F$, and it is measured twice:
+\begin{itemize}
+  \item against re-solves at a gap of $\recRefTol$, which asks whether the record is the derivative of the solution map;
+  \item against re-solves at the operational tolerance $\csfrTol$, which asks what an examiner who re-runs the tool would observe.
+\end{itemize}
+The \emph{Sensitivity Record Fidelity} (SRF) of a set of queries is the fraction with $e(1) \le 0.10$. It is reported for both references, together with the sign agreement on the \recTopK\ largest predicted entries. Column queries are observed pixels at Chebyshev distance 1, 3 and at least 8 from the hole. Row queries, which the manifests display, are imputed pixels at distance 1, 3 and at the deepest point of the hole (Section~\ref{sec:results:fidelity}). Each manifest records the observation hashes, the objective and solver configuration, the certificate and the record parameters. For each query it records the largest weights, the support, the CG iterations and residual, the affine defect and the time taken. \texttt{src/\allowbreak sensitivity.py} implements the record.
+
+\textbf{Comparison records.} A record is not unique to CSFR, because classical interpolators are deterministic and some have exact records. Linear interpolation on the Delaunay triangulation of the observed pixels has an exact, sparse Jacobian: each imputed pixel is a barycentric combination of at most three observed pixels. Telea and Navier--Stokes inpainting are deterministic but have no closed-form Jacobian, so their sensitivity can be obtained only by finite differences, at the cost of one re-run per observed pixel. Section~\ref{sec:results:records} compares these records with that of CSFR in type, exactness, support, fidelity and cost. What the convex formulation adds is a record for a global, non-local reconstruction, together with a certificate that the released output is the minimiser at which the record is evaluated.
+
+\subsection{Warnings}
 \label{sec:framework:warnings}
 
-The current implementation preserves two operational safeguards and one explicit limitation:
+The implementation issues two warnings and states one limitation.
 \begin{enumerate}
-  \item It reconstructs masked pixels but computes an isolated-missing-fraction diagnostic. Regions without adequate observed neighbourhood support are labelled Bounded-Unknown for review; the label does not mean that the solver withheld the numerical output.
-  \item It does not invoke learned priors trained on data external to the input fragment set.
-  \item The evaluated solver does not test whether the idealised feasibility set is empty and does not produce a per-instance recovery certificate. A constraint-violation report and the Bounded-Unknown diagnostic should therefore be treated as warnings, not as proof of recoverability.
+  \item A patch whose solve reaches the iteration cap is released with a not-converged flag, and its certificate says so.
+  \item The Bounded-Unknown diagnostic is the isolated-missing fraction of the mask, the share of hole pixels with no observed four-neighbour. It is computed from the mask alone (\texttt{scripts/\allowbreak run\allowbreak\_downstream.py}), and a patch where it exceeds one half is labelled Bounded-Unknown for review. The label does not withhold the numerical output. Whether the statistic predicts reconstruction failure well enough to act on is tested against a rule fixed before the data were seen (Section~\ref{sec:results:bu}).
+  \item The method does not certify that reconstructed content is correct. The certificate concerns the optimisation and the record concerns the solution map, so both should be treated as aids to examination, not as proof of recoverability.
 \end{enumerate}
+No stage uses a learned prior trained on data from outside the patch under examination.
 
 %%======================================================================
 \section{Experimental Design}

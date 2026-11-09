@@ -203,7 +203,14 @@ def test_committed_corpora_match_the_hashes_the_runs_recorded(tex):
 
 
 def test_paper_hyperparameters_match_the_config(tex):
-    """Every solver constant the paper states must be the one the config sets."""
+    """The CSFR weights are stated through generated macros (locked to
+    SolverConfig by test_numbers_v2.py), and the paper says they are the
+    released configuration's: the two must agree. The fixed-budget Adam arm's
+    constants are typed and must match the same config."""
+    import sys
+    sys.path.insert(0, str(ROOT / "src"))
+    from csfr_solver import SolverConfig
+
     cfg = (ROOT / "configs" / "csfr_sweep_2d.yaml").read_text(encoding="utf-8")
 
     def cfg_val(key):
@@ -211,12 +218,15 @@ def test_paper_hyperparameters_match_the_config(tex):
         assert m, f"{key} absent from configs/csfr_sweep_2d.yaml"
         return float(m.group(1))
 
-    for claim_text, key, value in (
-            (r"\lambda_{\ell_1} = 0.02", "lam_l1", 0.02),
-            (r"\lambda_{\mathrm{TV}} = 0.10", "lam_tv", 0.10),
-            (r"\lambda_{\mathrm{FC}} = 0.005", "lam_fc", 0.005),
-            ("Adam with learning rate $2.0$", "lr", 2.0),
-            ("budget of $600$ iterations", "max_iter", 600)):
+    s = SolverConfig()
+    for macro, key, value in ((r"\lambda_{\ell_1} = \csfrLamLone", "lam_l1", s.lam_l1),
+                              (r"\lambda_{\mathrm{TV}} = \csfrLamTV", "lam_tv", s.lam_tv),
+                              (r"\lambda_{\mathrm{FC}} = \csfrLamFC", "lam_fc", s.lam_fc)):
+        assert macro in tex, f"manuscript no longer states {macro!r}"
+        assert cfg_val(key) == value, f"{key}: released config {cfg_val(key)}, solver {value}"
+    assert "The weights are those of the released configuration" in tex
+    for claim_text, key, value in (("Adam with learning rate $2.0$", "lr", 2.0),
+                                   ("budget of $600$ iterations", "max_iter", 600)):
         assert claim_text in tex, f"manuscript no longer states {claim_text!r}"
         assert cfg_val(key) == value, f"{key} is {cfg_val(key)}, paper says {value}"
 
@@ -272,20 +282,22 @@ def test_revised_terminology_is_used_throughout(tex):
                    "yields output with zero traceability"):
         assert phrase not in body, f"withdrawn wording is back: {phrase!r}"
     for phrase in ("Audit Record Coverage", "approximate local sensitivity",
-                   "Refusal and warning behaviour", "auditability composite (AC)",
+                   "Sensitivity Record Fidelity", "auditability composite (AC)",
                    "not as proof of recoverability", "Adoption Scope"):
         assert phrase in body, f"revised wording missing: {phrase!r}"
 
 
 def test_c3_is_stated_as_the_global_bound(tex):
-    """The solver clips to a global constant. The paper once defined C3 as a
-    neighbourhood-derived bound it never implemented."""
-    sec = section(tex, r"\subsection{Constraint Family C3",
-                  r"\subsection{Constraint Family C4")
-    assert r"[\,0, 255\,]" in sec
-    assert "not implemented or evaluated" in sec
-    src = (ROOT / "src" / "csfr_reconstruct_2d.py").read_text(encoding="utf-8")
-    assert "clamp_(LO, HI)" in src, "the solver no longer clips to the global constants"
+    """The solver projects onto the global 8-bit box. The paper once defined C3
+    as a neighbourhood-derived bound it never implemented."""
+    table = section(tex, r"\label{tab:constraints}", r"\end{tabularx}")
+    assert r"intensity range: $0 \le X \le 255$, the global 8-bit range & hard" in table
+    note = section(tex, r"\label{sec:problem:c3}", r"\begin{proposition}[unique minimiser]")
+    assert "not implemented or evaluated" in note
+    solver = (ROOT / "src" / "csfr_solver.py").read_text(encoding="utf-8")
+    assert "x = x.clamp(LO, HI)" in solver, "the solver no longer projects onto the global box"
+    objective = (ROOT / "src" / "csfr_objective.py").read_text(encoding="utf-8")
+    assert "LO, HI = 0.0, 255.0" in objective
 
 
 def test_withdrawn_absolute_claims_stay_withdrawn(tex):
