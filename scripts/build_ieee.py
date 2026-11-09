@@ -38,7 +38,7 @@ CLASS_DIR = PAPER / "ieeeaccess"
 MIKTEX = Path(os.environ.get(
     "MIKTEX_BIN", r"C:\Users\adjei\AppData\Local\Programs\MiKTeX\miktex\bin\x64"))
 
-SHORT_TITLE = "Constraint-Driven Forensic Image Reconstruction"
+SHORT_TITLE = "Constraint-Driven Sparse Reconstruction of Forensic Image Fragments"
 ACCESS_CLASS = r"\documentclass{ieeeaccess}"
 TRAN_CLASS = r"\documentclass[journal]{IEEEtran}"
 
