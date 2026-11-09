@@ -15,8 +15,8 @@ levels: {L1: 0.05, L2: 0.15, L3: 0.30, L4: 0.50, L5: 0.70}
 # numerical controls only; the tolerance and the objective weights of every
 # variant are the defaults in src/csfr_solver.py (recorded per method in metrics.json)
 solver: {max_iter: 20000, init: zero}
-csfr_variants: [csfr]
-ablation_variants: [csfr_tv_only, csfr_dct_only, csfr_no_fc, csfr_no_clip]
+csfr_variants: [csfr, csfr_tv_only]   # TV-only is also a baseline, so it runs at every seed
+ablation_variants: [csfr_dct_only, csfr_no_fc, csfr_no_clip]
 ablation_seeds: [0]
 baselines: [zero_fill, bilinear, inpaint_telea, inpaint_ns, dictlearn, biharmonic, guleryuz, fsr, shiftmap, criminisi]
 external: [lama]
