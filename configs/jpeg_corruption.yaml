@@ -1,0 +1,20 @@
+# Byte-level JPEG corruption with standard decoding (E9).
+# Run (the source files are downloaded data, so Python runs isolated):
+#   python -I scripts/run_jpeg_corruption.py --config configs/jpeg_corruption.yaml
+#   .venv-lama/Scripts/python scripts/run_lama_cells.py --root results/jpeg_corruption/cases
+#   python -I scripts/run_jpeg_corruption.py --config configs/jpeg_corruption.yaml   # scores LaMa
+experiment: jpeg_corruption
+manifest: data/jpeg_corruption/manifest.json
+src_dir: data/jpeg_corruption/src
+output_dir: results/jpeg_corruption
+kinds: [truncate, overwrite, flip]
+repeats: 2
+seed: 2026
+max_side: 512               # centre crop after decoding, recorded per case
+conditions: [oracle, decoder, offset]
+offset_margin_rows: 2
+# numerical controls only, as in the sweeps; tolerance and weights from src/csfr_solver.py
+solver: {max_iter: 50000}
+csfr_variants: [csfr, csfr_tv_only]
+baselines: [bilinear, inpaint_telea, inpaint_ns, dictlearn, biharmonic, guleryuz, fsr]
+external: [lama]
