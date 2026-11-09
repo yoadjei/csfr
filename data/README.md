@@ -6,6 +6,8 @@
 |---|---|---|---|
 | `patches.npy` | 300 grayscale 64x64 patches, uint8 | 6 (dfrws 2006) | 41.3% |
 | `patches_govdocs1.npy` | 300 grayscale 64x64 patches, uint8 | 176 (govdocs1) | 1.7% |
+| `patches_govdocs1_v2.npy` | 600 grayscale 64x64 patches, uint8, at most 2 per image (round-2 primary) | 496 (govdocs1 archives 000-009) | 0.3% |
+| `patches_kodak.npy` | 240 grayscale 64x64 patches, uint8, at most 10 per image | 24 (kodak lossless true color suite) | 4.2% |
 | `patches_mikus_11-carve-fat.npy` | 20 colour 64x64x3 patches | 3 (dftt #11, fat32) | 80.0% |
 | `patches_mikus_12-carve-ext2.npy` | 26 colour 64x64x3 patches | 3 (dftt #12, ext2) | 61.5% |
 
@@ -15,7 +17,10 @@ patch coordinates, and the sha-256 of every carved byte range.
 
 the dfrws corpus is concentrated: two images supply 77% of its patches, so
 cluster-level inference is not possible on it. govdocs1 carries the
-generalisation claim for that reason. rebuild either with
+generalisation claim for that reason. the first govdocs1 corpus
+(`patches_govdocs1.npy`, 176 images) was built from archives 000-002 only; the
+round-2 primary corpus `patches_govdocs1_v2.npy` uses archives 000-009 and caps
+each image at two patches. rebuild either with
 `scripts/extract_patches.py`.
 
 ## downstream corpus
@@ -52,3 +57,14 @@ downstream number already released. load it, do not retrain it.
 
 paths are recorded in each manifest. the committed `.npy` corpora are the
 released artefacts; the raw sources are third-party downloads.
+
+## round-2 corpora
+
+- kodak: the 24 images of the kodak lossless true color image suite, released by
+  eastman kodak for unrestricted use, fetched by `python scripts/fetch_corpora.py kodak`
+  into `data/kodak/` (not committed). they also serve as the full-resolution colour set.
+- govdocs1 archives 003-009 are fetched by `python scripts/fetch_corpora.py govdocs1`.
+- the byte-corruption jpeg set is assembled by
+  `python scripts/fetch_corpora.py jpeg-corruption-set`; raw bytes go to
+  `data/jpeg_corruption/src/` (not committed), the manifest with every sha-256 to
+  `data/jpeg_corruption/manifest.json`.
