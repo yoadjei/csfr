@@ -93,10 +93,31 @@ def save_output(path: Path, x: np.ndarray, max_err: float = 0.0) -> dict:
     return {"stored_dtype": "float64", "storage_max_abs_error": 0.0}
 
 
+def _replace(tmp: Path, path: Path, attempts: int = 40, delay: float = 0.25) -> None:
+    """os.replace with retries: Windows refuses to replace a file that another
+    process holds open, and virus scanners and indexers briefly open fresh files.
+    Gives up (re-raising) after attempts * delay seconds."""
+    for i in range(attempts):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(delay)
+
+
 def _write_json(path: Path, obj: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(obj, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    _replace(tmp, path)
+
+
+def _load_npz(path: Path) -> dict:
+    """Every array of an .npz, with the file closed afterwards (an open NpzFile
+    would block a later rewrite on Windows)."""
+    with np.load(path) as z:
+        return {k: z[k] for k in z.files}
 
 
 def _sha256(a: np.ndarray) -> str:
@@ -216,7 +237,8 @@ def run_cell(patches, fam, lvl, frac, seed, cell: Path, cfg: dict, *, workers: i
         if only and name not in only:
             continue
         pp_path = cell / f"per_patch_{name}.npz"
-        if pp_path.exists() and not force:
+        recorded = metrics["methods"].get(name, {}).get("status") == "done"
+        if pp_path.exists() and recorded and not force:
             continue
         entry: dict = {"kind": kind}
         t0 = time.time()
@@ -283,7 +305,7 @@ def write_summary(cfg: dict, outdir: Path) -> Path:
                 for name, kind in cell_methods(cfg, seed):
                     f = cell / f"per_patch_{name}.npz"
                     if f.exists():
-                        methods.setdefault(name, []).append((kind, dict(np.load(f)), cell))
+                        methods.setdefault(name, []).append((kind, _load_npz(f), cell))
             for name, runs in methods.items():
                 kind = runs[0][0]
                 row = {"corpus": cfg.get("corpus", ""), "family": fam, "level": lvl, "frac": frac,

@@ -120,3 +120,32 @@ def test_outputs_are_stored_losslessly(tmp_path):
     h.save_output(tmp_path / "b.npy", floats)
     back = np.load(tmp_path / "b.npy")
     assert back.dtype == np.float32 and np.array_equal(back, floats)
+
+
+def test_json_write_survives_a_transient_lock_on_the_target(tmp_path):
+    """Windows refuses os.replace onto a file another process holds open (a virus
+    scanner or indexer does this to fresh files); the write must wait it out."""
+    import threading
+    import time
+    h = _harness()
+    target = tmp_path / "metrics.json"
+    target.write_text("{}")
+    f = target.open("r")
+    threading.Thread(target=lambda: (time.sleep(0.6), f.close()), daemon=True).start()
+    h._write_json(target, {"a": 1})
+    assert json.loads(target.read_text()) == {"a": 1}
+
+
+def test_resume_recomputes_a_method_whose_metrics_entry_is_missing(tiny):
+    """A crash between the per-patch file and metrics.json must not leave a method
+    counted as done without its entry."""
+    cfg, out = tiny
+    h = _harness()
+    h.main(["--config", str(cfg), "--workers", "1"])
+    mpath = out / "CF1_L3" / "seed0" / "metrics.json"
+    m = json.loads(mpath.read_text())
+    del m["methods"]["bilinear"]
+    mpath.write_text(json.dumps(m))
+    h.main(["--config", str(cfg), "--workers", "1"])
+    m = json.loads(mpath.read_text())
+    assert m["methods"]["bilinear"]["status"] == "done"

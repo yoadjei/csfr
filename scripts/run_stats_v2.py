@@ -77,7 +77,10 @@ def load(sweep: Path, cell: str, seeds: list[int], method: str) -> dict | None:
     files = [sweep / cell / f"seed{s}" / f"per_patch_{method}.npz" for s in seeds]
     if not files or not all(f.exists() for f in files):
         return None
-    runs = [np.load(f) for f in files]
+    runs = []
+    for f in files:
+        with np.load(f) as z:          # closed at once: an open NpzFile blocks rewrites on Windows
+            runs.append({k: z[k] for k in z.files})
     out = {m: np.mean([r[m] for r in runs], axis=0) for m in METRICS}
     out["exact_any"] = np.any([r["exact"] for r in runs], axis=0)
     out["n_seeds"] = len(seeds)
