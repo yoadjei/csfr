@@ -1,0 +1,24 @@
+# Round-2 downstream experiment (E12), first classifier (the released DigitCNN).
+# Reconstructions are cached in cases_dir and shared with downstream_v2_resnet.yaml;
+# LaMa enters through the cache:
+#   python scripts/run_downstream.py --config configs/downstream_v2_cnn.yaml
+#   .venv-lama/Scripts/python scripts/run_lama_cells.py --root results/downstream_v2/cases
+#   python scripts/run_downstream.py --config configs/downstream_v2_cnn.yaml   # scores LaMa
+experiment: downstream_v2_cnn
+description: Corrupted SVHN digits reconstructed by every method, classified by the frozen DigitCNN, three mask seeds.
+seeds: [0, 1, 2]
+device: cpu
+precision: float32
+corpus: svhn
+classifier_path: results/downstream/classifier.pt
+output_dir: results/downstream_v2/cnn
+cases_dir: results/downstream_v2/cases
+calibration_n: 5000        # temperature fitted on SVHN test images disjoint from the evaluation subset
+n_test: 1000
+families: [CF1, CF2, CF3, CF4]
+levels: {L1: 0.05, L2: 0.15, L3: 0.30, L4: 0.50, L5: 0.70}
+methods: [zero_fill, bilinear, telea, ns, dictlearn, biharmonic, guleryuz, fsr, shiftmap, criminisi, csfr, csfr_tv_only, lama]
+solver: {solver: v2}       # CSFR variants through src/csfr_solver.py at its calibrated defaults
+bounded_unknown_threshold: 0.5
+centre_box_frac: 0.5
+signal_covering_threshold: 0.25

@@ -45,12 +45,20 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from baselines import BASELINES  # noqa: E402
 from csfr_reconstruct_2d import pick_device, reconstruct  # noqa: E402
+from csfr_solver import VARIANTS, solve  # noqa: E402
 from downstream import (  # noqa: E402
+    fit_temperature,
     load_classifier,
     load_digit_dataset,
     predict,
+    predict_logits,
 )
+
+# round-2 baselines, dispatched to src/baselines.py; the released names below
+# keep their released code paths so the released configuration is unchanged
+REGISTRY_ONLY = {"biharmonic", "guleryuz", "fsr", "shiftmap", "criminisi"}
 from run_csfr_sweep import (  # noqa: E402
     baseline_bilinear,
     baseline_dictlearn,
@@ -75,6 +83,7 @@ ROW_FIELDS = [
     "isolated_missing_frac",
     "mask_overlap_centre",
     "centre_erased_frac",
+    "confidence_ts",
 ]
 
 SUMMARY_FIELDS = [
@@ -340,6 +349,11 @@ def reconstruct_method(
         return baseline_inpaint_cv(y, M, cv2.INPAINT_NS)
     if name == "dictlearn":
         return baseline_dictlearn(y, M, seed)
+    if name in REGISTRY_ONLY:
+        return BASELINES[name](y, M, seed=seed)
+    if sol.get("solver") == "v2" and name in VARIANTS:
+        x_t, _ = solve(torch.from_numpy(y.astype(np.float64)), torch.from_numpy(M), VARIANTS[name])
+        return x_t.numpy().astype(np.float32)
     if name == "csfr":
         y_t = torch.from_numpy(y)
         M_t = torch.from_numpy(M)
@@ -410,14 +424,38 @@ def run_pipeline(cfg: dict, *, force: bool = False) -> Path:
     lama_weights = _resolve_path(lama_raw) if lama_raw else None
 
     prefer = str(cfg.get("corpus", "svhn"))
-    images, labels, corpus = load_digit_dataset(prefer=prefer, split="test")
+    all_images, all_labels, corpus = load_digit_dataset(prefer=prefer, split="test")
     # selection seed is the first experiment seed so the subset is stable
     sel_seed = int(seeds[0])
-    images, labels, patch_ids = select_class_balanced(images, labels, n_test, sel_seed)
+    images, labels, patch_ids = select_class_balanced(all_images, all_labels, n_test, sel_seed)
     patches = _to_uint_scale(images)  # (N,H,W) in [0,255]
     true_labels = labels.cpu().numpy().astype(np.int64)
 
     model = load_classifier(clf_path, device=device, freeze_weights=True)
+    temperature, calibration = None, None
+    if cfg.get("calibration_n"):
+        # temperature scaling on clean SVHN test images disjoint from the evaluation subset
+        rest = np.setdiff1d(np.arange(all_images.shape[0]), patch_ids)
+        cal = np.sort(np.random.default_rng(sel_seed + 1000).choice(rest, int(cfg["calibration_n"]), replace=False))
+        cal_x = _to_classifier_tensor(_to_uint_scale(all_images[cal]), scale="uint8")
+        logits = predict_logits(model, cal_x, device=device)
+        temperature = fit_temperature(logits, all_labels[cal])
+        calibration = {"n": int(cal.size), "disjoint_from_evaluation": bool(np.intersect1d(cal, patch_ids).size == 0),
+                       "index_sha256": __import__("hashlib").sha256(cal.tobytes()).hexdigest(),
+                       "method": "temperature scaling, NLL by L-BFGS on log T"}
+        print(f"[downstream] temperature {temperature:.4f} on {cal.size} held-out test images", flush=True)
+    cases_dir = _resolve_path(cfg["cases_dir"]) if cfg.get("cases_dir") else None
+
+    def classify(rec: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+        x = _to_classifier_tensor(rec)
+        if temperature is None:
+            pred, conf = predict(model, x, device=device)
+            return pred.numpy().astype(np.int64), conf.numpy().astype(np.float64), None
+        lg = predict_logits(model, x, device=device)
+        conf, pred = torch.softmax(lg, 1).max(1)
+        conf_ts = torch.softmax(lg / temperature, 1).max(1).values
+        return (pred.numpy().astype(np.int64), conf.numpy().astype(np.float64),
+                conf_ts.numpy().astype(np.float64))
     print(
         f"[downstream] corpus={corpus}  n={patches.shape[0]}  "
         f"{patches.shape[1]}x{patches.shape[2]}  device={device}  "
@@ -479,6 +517,17 @@ def run_pipeline(cfg: dict, *, force: bool = False) -> Path:
             rng = np.random.default_rng(int(seed))
             M = make_mask(patches.shape, fam, frac, rng)
             y = patches * M
+            cdir = None
+            if cases_dir is not None:
+                cdir = cases_dir / f"{fam}_{lvl}" / f"seed{seed}"
+                cdir.mkdir(parents=True, exist_ok=True)
+                if (cdir / "y.npy").exists():
+                    if not (np.array_equal(np.load(cdir / "y.npy"), y) and
+                            np.array_equal(np.load(cdir / "mask.npy"), M)):
+                        raise RuntimeError(f"{cdir}: cached inputs differ from the regenerated ones")
+                else:
+                    np.save(cdir / "y.npy", y)
+                    np.save(cdir / "mask.npy", M)
 
             overlaps = np.array(
                 [mask_overlap_centre(M[i], centre_frac) for i in range(M.shape[0])],
@@ -523,25 +572,33 @@ def run_pipeline(cfg: dict, *, force: bool = False) -> Path:
                         continue
 
                 t0 = time.time()
-                try:
-                    rec = reconstruct_method(
-                        method, y, M,
-                        seed=int(seed), sol=sol, device=device,
-                        lama_weights=lama_weights,
-                    )
-                except NotImplementedError as exc:
-                    print(f"[downstream] skip {method}: {exc}", flush=True)
+                cached = cdir / f"x_hat_{method}.npy" if cdir is not None else None
+                if cached is not None and cached.exists():
+                    rec = np.load(cached).astype(np.float32)
+                elif cached is not None and method == "lama":
+                    print(f"[downstream] {fam}/{lvl}/lama seed={seed}: pending "
+                          f"(run scripts/run_lama_cells.py on {cases_dir})", flush=True)
                     continue
-                if rec is None:
-                    print(
-                        f"[downstream] skip {method}: required dependency missing",
-                        flush=True,
-                    )
-                    continue
+                else:
+                    try:
+                        rec = reconstruct_method(
+                            method, y, M,
+                            seed=int(seed), sol=sol, device=device,
+                            lama_weights=lama_weights,
+                        )
+                    except NotImplementedError as exc:
+                        print(f"[downstream] skip {method}: {exc}", flush=True)
+                        continue
+                    if rec is None:
+                        print(
+                            f"[downstream] skip {method}: required dependency missing",
+                            flush=True,
+                        )
+                        continue
+                    if cached is not None:
+                        np.save(cached, rec.astype(np.float32))
 
-                pred, conf = predict(model, _to_classifier_tensor(rec), device=device)
-                pred_np = pred.numpy().astype(np.int64)
-                conf_np = conf.numpy().astype(np.float64)
+                pred_np, conf_np, conf_ts = classify(rec)
                 correct = pred_np == true_labels
 
                 rows = []
@@ -564,6 +621,7 @@ def run_pipeline(cfg: dict, *, force: bool = False) -> Path:
                         "isolated_missing_frac": float(isolated_fracs[i]),
                         "mask_overlap_centre": float(overlaps[i]),
                         "centre_erased_frac": float(centre_fracs[i]),
+                        "confidence_ts": "" if conf_ts is None else float(conf_ts[i]),
                     })
                 method_rows[method].extend(rows)
                 acc = float(correct.mean())
@@ -615,6 +673,8 @@ def run_pipeline(cfg: dict, *, force: bool = False) -> Path:
         "clean_accuracy": clean_accuracy,
         "environment": env_data,
     }
+    if temperature is not None:
+        env_payload.update({"temperature": temperature, "calibration": calibration})
     (outdir / "environment.json").write_text(
         json.dumps(env_payload, indent=2), encoding="utf-8"
     )
