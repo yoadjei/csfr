@@ -15,8 +15,11 @@ import re
 import sys
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from csfr_solver import SolverConfig  # noqa: E402
 from masks import SEVERITY, describe_families  # noqa: E402
 from quality import CAP  # noqa: E402
 
@@ -59,12 +62,24 @@ FLOOR = ("zero_fill", "Zero-fill (floor)")
 
 
 def _summary(sweep: Path) -> dict[tuple[str, str, str], dict] | None:
+    """The sweep's summary keyed by (family, level, method), or None until the
+    sweep is complete: every configured cell and method (the external one
+    included) at every seed. The sweep rewrites summary.csv after each cell, so
+    an incomplete one is pending, not an error; the submission gate fails while
+    anything is pending."""
     import csv
-    p = sweep / "summary.csv"
-    if not p.exists():
+    import json
+    p, meta = sweep / "summary.csv", sweep / "run_metadata.json"
+    if not p.exists() or not meta.exists():
         return None
+    cfg = json.loads(meta.read_text(encoding="utf-8"))["config"]
     with p.open(encoding="utf-8") as f:
-        return {(r["family"], r["level"], r["method"]): r for r in csv.DictReader(f)}
+        s = {(r["family"], r["level"], r["method"]): r for r in csv.DictReader(f)}
+    methods = cfg.get("csfr_variants", []) + cfg.get("baselines", []) + cfg.get("external", [])
+    n = len(cfg["seeds"])
+    complete = all(int(s.get((f, lv, m), {}).get("n_seeds", 0)) == n
+                   for f in cfg["families"] for lv in cfg["levels"] for m in methods)
+    return s if complete else None
 
 
 FALLBACKS = ROOT / "results" / "baseline_fallbacks" / "fallbacks.csv"
@@ -122,8 +137,8 @@ def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digit
                          fallbacks: Path = FALLBACKS) -> str | None:
     """Rows are methods, columns are (family, level) cells; the best value of
     each column among the compared methods (not the floor) is bold, and a value
-    a method mostly produced by its mean-fill fallback carries a dagger. A cell
-    a method did not run in is a dash. Returns the complete tabular."""
+    a method mostly produced by its mean-fill fallback carries a dagger. Methods
+    the sweep does not configure have no row. Returns the complete tabular."""
     s = _summary(sweep)
     if s is None:
         return None
@@ -139,12 +154,7 @@ def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digit
     def row(key: str, name: str, mark_best: bool) -> str:
         out = []
         for c in cells:
-            r = s.get((*c, key))
-            if r is None:
-                out.append("--")
-                continue
-            v = float(r[f"{metric}_mean"])
-            txt = f"{v:.{digits}f}"
+            txt = f"{float(s[(*c, key)][f'{metric}_mean']):.{digits}f}"
             if mark_best and txt == f"{best[c]:.{digits}f}":
                 txt = rf"\textbf{{{txt}}}"
             out.append(txt + DAGGER if (*c, key) in fell_back else txt)
@@ -300,6 +310,57 @@ def ablation_v2(sweep: Path = SWEEP, metric: str = "psnr_hole") -> str | None:
     return tabular(rf"@{{}}l*{{{len(cells)}}}{{r}}@{{}}", family_level_header(MAIN_LEVELS, "Arm"), body)
 
 
+SOLVER_DIR = ROOT / "results" / "solver_comparison"
+
+
+def tex_pow10(x: float) -> str:
+    """1e-06 -> $10^{-6}$; 5e-12 -> $5 \\times 10^{-12}$."""
+    m, e = f"{x:.0e}".split("e")
+    return f"$10^{{{int(e)}}}$" if m == "1" else rf"${m} \times 10^{{{int(e)}}}$"
+
+
+def solver_arm_name(arm: str) -> str:
+    """The display name of a solver-comparison arm."""
+    if m := re.fullmatch(r"adam(\d+)_(released|cpu)", arm):
+        where = {"released": "released, GPU", "cpu": "CPU"}[m.group(2)]
+        return f"Adam, {m.group(1)} iterations ({where})"
+    if m := re.fullmatch(r"fista_gap(.+)", arm):
+        tol = float(m.group(1))
+        return f"Convergent, gap {tex_pow10(tol)}" + (" (default)" if tol == SolverConfig().tol else "")
+    raise ValueError(f"unknown solver arm {arm}")
+
+
+def solver_cmp(d: Path = SOLVER_DIR) -> str | None:
+    """Per arm: hole PSNR per family (mean over levels and seeds), time per
+    cell, median iterations and the share of patches that met the certificate.
+    The CPU re-run of the released budget exists at one seed for its time
+    only, so it shows no quality, and a note gives how far its outputs are
+    from the released GPU outputs."""
+    summ, cells = _csv(d / "quality_vs_compute.csv"), _csv(d / "per_cell.csv")
+    if summ is None or cells is None:
+        return None
+    arms = list(dict.fromkeys(r["arm"] for r in summ))
+    by = {(r["arm"], r["family"]): r for r in summ}
+    body = []
+    for arm in arms:
+        rs = [by[(arm, f)] for f in FAMILIES]
+        timing_only = arm == "adam600_cpu"
+        psnr = ["--"] * len(FAMILIES) if timing_only else [f"{float(r['psnr_hole']):.2f}" for r in rs]
+        secs = np.mean([float(r["seconds_per_cell"]) for r in rs])
+        iters = np.median([float(r["iterations_median"]) for r in rs])
+        conv = rs[0]["converged_frac"]
+        conv = f"{100 * np.mean([float(r['converged_frac']) for r in rs]):.1f}" if conv != "" else "--"
+        body.append(" & ".join([solver_arm_name(arm), *psnr, f"{secs:.0f}", f"{iters:.0f}", conv]) + r" \\")
+    diffs = [float(r["max_abs_diff_vs_released"]) for r in cells if r.get("max_abs_diff_vs_released", "") != ""]
+    if diffs:
+        body += [r"\midrule",
+                 _note(r"The CPU re-run of the released budget differs from the released outputs by at most "
+                       rf"{max(diffs):.2g} grey levels; its row reports time only.", 4 + len(FAMILIES))]
+    header = [r" & \multicolumn{4}{c}{Hole PSNR (dB)} & & & \\", r"\cmidrule(lr){2-5}",
+              "Solver & " + " & ".join(FAMILIES) + r" & s/cell & Iter. & Cert.\ (\%) \\"]
+    return tabular(r"@{}l*{4}{r}rrr@{}", header, body)
+
+
 def quality() -> str | None:
     return method_by_cell_table(SWEEP, "psnr_hole", higher_is_better=True, digits=2, with_cap_note=True)
 
@@ -309,7 +370,7 @@ def gmsd_table() -> str | None:
 
 
 TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_V2": paired_v2,
-          "EXTERNAL_V2": external_v2, "ABLATION_V2": ablation_v2}
+          "EXTERNAL_V2": external_v2, "ABLATION_V2": ablation_v2, "SOLVER_CMP": solver_cmp}
 
 
 def main() -> int:

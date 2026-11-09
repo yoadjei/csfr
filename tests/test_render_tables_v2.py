@@ -56,17 +56,24 @@ def test_family_level_header_spans_each_family_over_its_levels():
     assert h[2].count(" & ") == 12 and h[2].startswith("Method & L1 & L3 & L5 & L1")
 
 
-def _fixture_summary(tmp_path, values):
+def _fixture_summary(tmp_path, values, n_seeds=3):
     """summary.csv with the columns run_sweep_v2.write_summary writes that the
-    generator reads; values maps (family, level, method) -> psnr_hole_mean."""
+    generator reads, and a run_metadata.json whose configuration is exactly the
+    (family, level, method) keys of values -> psnr_hole_mean."""
     import csv
+    import json
     rows = [{"family": f, "level": lv, "method": m, "psnr_hole_mean": v, "gmsd_hole_mean": 1.0 / v,
-             "n_patches": 900, "n_at_cap": int(m == "guleryuz" and (f, lv) == ("CF2", "L3")) * 7}
+             "n_seeds": n_seeds, "n_patches": 900,
+             "n_at_cap": int(m == "guleryuz" and (f, lv) == ("CF2", "L3")) * 7}
             for (f, lv, m), v in values.items()]
     with (tmp_path / "summary.csv").open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0]))
         w.writeheader()
         w.writerows(rows)
+    cfg = {"seeds": [0, 1, 2], "families": sorted({f for f, _, _ in values}),
+           "levels": {lv: 0.0 for lv in sorted({lv for _, lv, _ in values})},
+           "csfr_variants": [], "external": [], "baselines": sorted({m for _, _, m in values})}
+    (tmp_path / "run_metadata.json").write_text(json.dumps({"config": cfg}))
 
 
 def test_method_by_cell_table_orders_bolds_and_dashes(tmp_path):
@@ -77,17 +84,17 @@ def test_method_by_cell_table_orders_bolds_and_dashes(tmp_path):
         values[(*c, "csfr")] = 30.0 + i
         values[(*c, "guleryuz")] = 31.0 + i if c[0] == "CF1" else 29.0 + i
         values[(*c, "zero_fill")] = 99.0          # the floor never takes the bold
-        if c != ("CF4", "L5"):
-            values[(*c, "lama")] = 20.0
+        values[(*c, "lama")] = 20.0
     _fixture_summary(tmp_path, values)
     none = tmp_path / "no_fallbacks.csv"
     lines = _body(m.method_by_cell_table(tmp_path, "psnr_hole", True, 2, fallbacks=none))
+    # unconfigured methods (Telea, ...) have no row; the floor is set apart
     assert [ln.split(" & ")[0] for ln in lines] == ["CSFR", "Block-DCT thr.", "LaMa", r"\midrule",
                                                    "Zero-fill (floor)"]
     csfr, gul, lama = (ln.split(" & ") for ln in lines[:3])
     assert gul[1] == r"\textbf{31.00}" and csfr[1] == "30.00"        # CF1 L1: Guleryuz best
     assert csfr[4] == r"\textbf{33.00}" and gul[4] == "32.00"         # CF2 L1: CSFR best
-    assert lama[-1] == r"-- \\"                                      # did not run in CF4 L5
+    assert lama[-1] == r"20.00 \\"
     assert r"\textbf" not in lines[-1]
     lower = m.method_by_cell_table(tmp_path, "gmsd_hole", False, 3, fallbacks=none)
     assert r"\textbf{0.032}" in _body(lower)[1]                 # 1/31, lower is better
@@ -120,12 +127,19 @@ def test_majority_fallback_cells_carry_a_dagger(tmp_path):
     assert lines[-1].startswith(r"\multicolumn{13}{@{}l}{\footnotesize " + m.DAGGER)
 
 
-def test_missing_cell_is_an_error(tmp_path):
+def test_an_incomplete_sweep_is_pending(tmp_path):
+    import json
     m = _mod()
-    _fixture_summary(tmp_path, {("CF1", "L1", "csfr"): 30.0})
-    import pytest
-    with pytest.raises(ValueError, match="no results for cell CF1 L3"):
-        m.method_by_cell_table(tmp_path, "psnr_hole", True, 2)
+    cells = [(f, lv) for f in m.FAMILIES for lv in m.MAIN_LEVELS]
+    values = {(*c, meth): 30.0 for c in cells for meth in ("csfr", "zero_fill")}
+    _fixture_summary(tmp_path, values, n_seeds=1)                      # one of three seeds so far
+    assert m.method_by_cell_table(tmp_path, "psnr_hole", True, 2) is None
+    _fixture_summary(tmp_path, values)
+    assert m.method_by_cell_table(tmp_path, "psnr_hole", True, 2) is not None
+    meta = json.loads((tmp_path / "run_metadata.json").read_text())
+    meta["config"]["external"] = ["lama"]                              # not scored yet
+    (tmp_path / "run_metadata.json").write_text(json.dumps(meta))
+    assert m.method_by_cell_table(tmp_path, "psnr_hole", True, 2) is None
 
 
 def _paired_fixture(tmp_path, drop_lama_in=None, drop_cell=None):
@@ -221,6 +235,32 @@ def test_ablation_v2_stars_holm_significance_and_states_the_range(tmp_path):
     assert lines[2].split(" & ")[1] == "$-$0.02"                     # not significant: no star
     assert r"Without C3, 0.50\% of the imputed pixels leave $[0, 255]$, by up to 12.3 grey levels; " \
            r"with it, none do." in lines[-1]
+
+
+def test_solver_arm_names():
+    m = _mod()
+    assert m.solver_arm_name("adam600_released") == "Adam, 600 iterations (released, GPU)"
+    assert m.solver_arm_name("adam2400_cpu") == "Adam, 2400 iterations (CPU)"
+    assert m.solver_arm_name("fista_gap1e-06") == "Convergent, gap $10^{-6}$ (default)"
+    assert m.solver_arm_name("fista_gap1e-10") == "Convergent, gap $10^{-10}$"
+    assert m.tex_pow10(5e-12) == r"$5 \times 10^{-12}$"
+
+
+def test_solver_cmp_reports_time_only_for_the_cpu_rerun(tmp_path):
+    m = _mod()
+    arms = ["adam600_released", "adam600_cpu", "adam2400_cpu", "fista_gap1e-06"]
+    summ = [{"family": f, "arm": a, "psnr_hole": 30.0 + i, "seconds_per_cell": 10.0 * (i + 1),
+             "iterations_median": 600 if a.startswith("adam600") else (2400 if "2400" in a else 750),
+             "converged_frac": 0.99 if a.startswith("fista") else ""}
+            for i, a in enumerate(arms) for f in m.FAMILIES]
+    _write_csv(tmp_path / "quality_vs_compute.csv", summ)
+    _write_csv(tmp_path / "per_cell.csv", [{"arm": "adam600_cpu", "max_abs_diff_vs_released": 0.0021},
+                                           {"arm": "fista_gap1e-06", "max_abs_diff_vs_released": ""}])
+    lines = _body(m.solver_cmp(tmp_path))
+    assert lines[0] == r"Adam, 600 iterations (released, GPU) & 30.00 & 30.00 & 30.00 & 30.00 & 10 & 600 & -- \\"
+    assert lines[1] == r"Adam, 600 iterations (CPU) & -- & -- & -- & -- & 20 & 600 & -- \\"
+    assert lines[3].endswith(r"& 33.00 & 40 & 750 & 99.0 \\")
+    assert "at most 0.0021 grey levels" in lines[-1]
 
 
 def test_committed_tables_are_current():
