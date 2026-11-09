@@ -61,29 +61,67 @@ def test_abstract_within_venue_cap(tex):
         f"abstract is {len(words)} words, cap is {ABSTRACT_WORD_CAP}")
 
 
-def test_baselines_section_agrees_with_the_tables(tex):
-    """§5.2 must enumerate six same-harness baselines and name the sixth."""
-    sec = section(tex, r"\subsection{Baselines}",
-                  r"\subsection{Forensic-Appropriate Metrics}")
-    assert "Six baselines are evaluated under the identical harness" in sec
-    assert "LaMa" in sec, "the sixth same-harness baseline is never named"
-    items = re.findall(r"\\item \\textbf\{", sec)
-    assert len(items) == 6, f"§5.2 enumerates {len(items)} baselines, not six"
-    # the withdrawn claim: it was contradicted by LaMa running under the harness.
-    assert "Running them under this harness would require the learned priors" \
-        not in sec
+# every method the primary sweep runs, and the words that name it in §V-C
+METHOD_NAMES = {"zero_fill": "Zero-fill", "bilinear": "Linear interpolation",
+                "inpaint_telea": "Telea", "inpaint_ns": "Navier--Stokes",
+                "dictlearn": "Dictionary learning", "biharmonic": "Biharmonic",
+                "guleryuz": "Guleryuz", "fsr": "Frequency-selective reconstruction",
+                "shiftmap": "shift-map", "criminisi": "Criminisi", "csfr_tv_only": "TV-only",
+                "lama": "LaMa"}
 
 
-def test_abstract_and_baselines_agree_on_the_count(tex):
+def _methods_section(tex: str) -> str:
+    return section(tex, r"\subsection{Methods}", r"\subsection{Metrics}")
+
+
+def test_methods_section_names_every_configured_method(tex):
+    """The methods paragraph must name exactly the methods the primary sweep
+    runs: a method added to the configuration without the paper, or described
+    in the paper without being run, fails here."""
+    import yaml
+    cfg = yaml.safe_load((ROOT / "configs" / "sweep_v2_govdocs1.yaml").read_text(encoding="utf-8"))
+    configured = set(cfg["baselines"]) | set(cfg["external"]) | (set(cfg["csfr_variants"]) - {"csfr"})
+    assert configured == set(METHOD_NAMES), f"update METHOD_NAMES: {configured ^ set(METHOD_NAMES)}"
+    sec = _methods_section(tex)
+    for key, name in METHOD_NAMES.items():
+        assert name in sec, f"{key} is configured but the methods section never names it"
+    assert "It is reported as the floor and is not counted as a baseline" in sec
+    assert r"\methodsTotal\ methods" in sec
+
+
+def test_methods_section_parameters_match_the_code(tex):
+    """Every configuration number typed in the methods section is the default
+    the registry runs with."""
+    import inspect
+    import sys
+    sys.path.insert(0, str(ROOT / "src"))
+    import baselines as b
+    sec = _methods_section(tex)
+    g = inspect.signature(b.baseline_guleryuz).parameters
+    assert (g["n_iter"].default, g["tau0"].default, g["tau1"].default) == (100, 128.0, 2.0)
+    assert "from $128$ to $2$ over $100$ iterations" in sec and "$16$ grid shifts" in sec
+    assert inspect.signature(b._block_dct_threshold).parameters["shifts"].default == (0, 2, 4, 6)
+    d = inspect.signature(b.baseline_dictlearn).parameters
+    assert (d["n_atoms"].default, d["n_nonzero"].default) == (64, 8)
+    assert "$64$ atoms of $8 \\times 8$ pixels" in sec and "$8$ non-zero coefficients" in sec
+    assert inspect.signature(b.baseline_criminisi).parameters["patch"].default == 9
+    assert "with $9 \\times 9$ patches, reduced to $7$, $5$ and $3$" in sec
+    assert "inpaintRadius=3" in inspect.getsource(b.baseline_inpaint_cv)
+    assert "via OpenCV with radius $3$" in sec
+
+
+@pytest.mark.xfail(strict=True, reason="the abstract is rewritten when the round-2 results exist; "
+                                       "remove this marker then")
+def test_abstract_and_methods_agree_on_the_count(tex):
     body = section(tex, r"\begin{abstract}", r"\end{abstract}")
-    assert "six same-harness baselines" in body
+    assert r"\methodsTotal" in body or r"\methodsClassical" in body
+    assert "six same-harness baselines" not in body
 
 
 def test_lama_configuration_is_stated(tex):
     """Reviewers of a DL baseline always ask for the checkpoint and the
     grayscale-to-RGB path. Both are in the code; they must be in the paper."""
-    sec = section(tex, r"\subsection{Baselines}",
-                  r"\subsection{Forensic-Appropriate Metrics}")
+    sec = _methods_section(tex)
     for fragment in ("big-lama", "simple-lama-inpainting", "native resolution",
                      "three channels", "composited"):
         assert fragment in sec, f"LaMa configuration omits {fragment!r}"

@@ -178,7 +178,7 @@ Table~\ref{tab:constraints} maps the four constraint families of the method onto
 \centering
 \caption{The four constraint families as implemented in Eq.~\eqref{eq:objective}. Hard constraints hold exactly at every iteration; penalties are terms of Eq.~\eqref{eq:J}.}
 \label{tab:constraints}
-\begin{tabularx}{\linewidth}{@{}l X l@{}}
+\begin{tabularx}{\linewidth}{@{}l >{\raggedright\arraybackslash}X l@{}}
 \toprule
  & Family and implemented form & Type \\
 \midrule
@@ -311,82 +311,95 @@ No stage uses a learned prior trained on data from outside the patch under exami
 \section{Experimental Design}
 \label{sec:experiments}
 
-\subsection{Datasets and Fragmentation Types}
+\subsection{Corpora}
+\label{sec:experiments:corpora}
 
-We distinguish the data on which CSFR results are executed from the data that motivate and contextualise them:
-
+Three corpora of grey-level $64 \times 64$ patches carry the quantitative comparison. Further sets carry the forensic, full-resolution and downstream experiments.
 \begin{enumerate}
-  \item \textbf{DFRWS 2006 image patches (executed CSFR evaluation).} All quantitative CSFR results (Section~\ref{sec:results}) use $N = 300$ grayscale $64{\times}64$ patches carved from the DFRWS 2006 forensic challenge disk image, corrupted synthetically across four families (CF1 random pixel loss, CF2 burst block corruption, CF3 half-image overwrite, CF4 truncation) at five severity levels. Synthetic corruption on intact patches yields the per-pixel ground truth required for PSNR and SSIM.
-  \item \textbf{GovDocs1 patches (external validation).} An independent corpus of $N = 300$ grayscale $64{\times}64$ patches from 176 distinct JPEGs in the GovDocs1 public document corpus~\cite{garfinkel2009bringing}, separate from DFRWS 2006. We applied the identical protocol with no parameter re-tuning (Section~\ref{sec:results:external}).
-  \item \textbf{Nick Mikus carving images (naturally corrupted, full-resolution, colour).} The DFTT FAT32 and Ext2 carving test images~\cite{mikus2005evaluation}, containing real carved colour JPEGs including one with deliberately damaged header. These provide full-resolution colour case studies (Section~\ref{sec:results:external}).
-  \item \textbf{Protocol extensions (specified, not executed).} The FFT-75 SC5 (DS-03) and SC6 (DS-04) JPEG partitions define the byte-domain scaling path. They are specified here for replication and remain future evaluation targets.
+  \item \textbf{GovDocs1 (primary).} \corpusGovN\ patches from \corpusGovImages\ JPEG images of the GovDocs1 public corpus~\cite{garfinkel2009bringing}; no image contributes more than \corpusGovMaxShare\% of the patches.
+  \item \textbf{DFRWS 2006 (secondary, forensic).} \corpusDfrwsN\ patches carved from the DFRWS 2006 challenge disk image. They come from \corpusDfrwsImages\ source images, the two largest of which contribute \corpusDfrwsTopTwoShare\% of the patches, so the corpus is analysed with cluster-aware intervals and not as independent units.
+  \item \textbf{Kodak (tertiary, photographic).} \corpusKodakN\ patches from the \corpusKodakImages\ images of the Kodak set; no image contributes more than \corpusKodakMaxShare\%.
+  \item \textbf{Full-resolution colour images.} Kodak images, colour JPEGs carved from the Nick Mikus file-system test images~\cite{mikus2005evaluation}, and GovDocs1 pages (Section~\ref{sec:results:fullres}).
+  \item \textbf{Byte-corrupted JPEGs.} Baseline-sequential GovDocs1 JPEGs and the Mikus JPEG byte ranges, kept as original bytes and corrupted at the byte level (Section~\ref{sec:results:jpeg}).
+  \item \textbf{Downstream sets.} SVHN digits for classification, and text-line crops of GovDocs1 pages for optical character recognition (Section~\ref{sec:results:downstream}).
 \end{enumerate}
 
-\paragraph{Patch sampling protocol.} Both patch corpora are built by \texttt{scripts/extract\allowbreak\_patches.py} under one seeded protocol, stated here in full because the review of an earlier draft correctly identified the sampling as under-specified. JPEG byte ranges are signature-carved from the source, decoded, and kept if the shorter side is at least 96 pixels. Each kept image is diced on a \emph{non-overlapping} grid with stride equal to the patch size, so no two patches in a corpus share a pixel and there is no leakage between them. Patches whose intensity standard deviation is below 10 levels are discarded, because PSNR is degenerate on flat content and such patches would otherwise dominate the aggregate. The retained patches are sampled without replacement to the target count under a fixed seed. Every patch's source image, its coordinates within that image, and the SHA-256 of the carved byte range are recorded in the released manifest.
+\paragraph{Patch extraction.} All patch corpora are built by \texttt{scripts/\allowbreak extract\allowbreak\_patches.py} under one seeded protocol. JPEG byte ranges are carved from the source by signature and decoded, and an image is kept if its shorter side is at least 96 pixels. Each kept image is divided into a non-overlapping grid with stride equal to the patch size, so no two patches share a pixel. Patches whose intensity standard deviation is below 10 grey levels are discarded, because PSNR is degenerate on flat content. The retained patches are sampled without replacement under a fixed seed, with a cap on the number of patches per image. The released manifest records every patch's source image, its coordinates, and the SHA-256 of the carved byte range.
 
-\paragraph{Clustering and the statistical unit.} The two corpora differ sharply in concentration. The 300 DFRWS 2006 patches come from six source images, the two largest contributing $77\,\%$ between them; the 300 GovDocs1 patches come from 176 images, none contributing more than $1.7\,\%$. Patches from one image share content, capture conditions and quantisation, so treating $N=300$ as 300 independent units overstates precision on the DFRWS corpus. Section~\ref{sec:results:stats} therefore reports patch-level and cluster-robust results side by side, and treats GovDocs1 as the better-designed sample. The DFRWS corpus is reported as constituted so the numbers remain those of the released artefacts.
+\paragraph{Clustering.} Patches from one image share content, capture conditions and quantisation. Every analysis therefore reports intervals that resample source images as well as patches (Section~\ref{sec:experiments:stats}). The primary corpus was assembled with many images and few patches per image so that the two kinds of interval agree, and DFRWS 2006 is kept as constituted because it is the forensic corpus of record.
 
-The four corruption families abstract corruption mechanisms documented in the file-carving literature~\cite{garfinkel2007carving,pal2009evolution} into the pixel domain: scattered loss (CF1), localised burst damage (CF2), and the two half-image erasures (CF3/CF4) that model contiguous overwrite and truncation of the decoded patch.
+\subsection{Corruption families and severity}
+\label{sec:experiments:families}
 
+The four corruption families of Table~\ref{tab:severity} move damage modes documented in the file-carving literature~\cite{garfinkel2007carving,pal2009evolution} into the pixel domain: scattered loss (CF1), burst damage (CF2), overwrite of the top of the patch (CF3) and truncation of its bottom (CF4). CF3 and CF4 are contiguous losses, and CF2 lies between the two kinds. Every cell, a family at a severity level, runs with \sweepSeeds\ mask seeds, and every method sees the same masks.
 
+\begin{table}[htbp]
+\centering
+\caption{Corruption families and severity levels, as generated by \texttt{src/\allowbreak masks.py} for an $H \times W$ patch.}
+\label{tab:severity}
+\begin{tabularx}{\linewidth}{@{}l l >{\raggedright\arraybackslash}X@{}}
+\toprule
+ & Family & Generation rule \\
+\midrule
+% BEGIN AUTO SEVERITY
+CF1 & uniform random pixel loss & exactly $\mathrm{round}(fHW)$ pixels erased, drawn without replacement \\
+CF2 & axis-aligned bursts & height and width uniform on $\{4,\ldots,31\}$ and $\{4,\ldots,31\}$, top-left corner uniform, blocks added until the erased fraction reaches $f$ (the last block may overshoot) \\
+CF3 & half-image overwrite & the top $\mathrm{round}(fH)$ rows erased \\
+CF4 & truncation & the bottom $\mathrm{round}(fH)$ rows erased \\
+\midrule
+\multicolumn{3}{@{}l}{Erased fraction $f$: L1~0.05, L2~0.15, L3~0.30, L4~0.50, L5~0.70} \\
+% END AUTO SEVERITY
+\bottomrule
+\end{tabularx}
+\end{table}
 
+\subsection{Methods}
+\label{sec:experiments:methods}
 
-
-
-\subsection{Baselines}
-
-Six baselines are evaluated under the identical harness: same masks, same seeds, same metrics. Five are classical methods whose imputed values are derived from the image under examination. The sixth, LaMa, is included as an external-prior baseline so that reconstruction quality can be compared empirically with the audit-oriented CSFR implementation on this paper's own corpus rather than argued from citation (Section~\ref{sec:related}). The study does not use this comparison to determine legal admissibility.
-
+CSFR is compared with \methodsTotal\ methods under one harness, with the same patches, masks, seeds and metrics. Every output is retained, so every comparison is paired. The harness composites the observed pixels back into every output, so every method reproduces them exactly and the comparisons concern only what each method imputes.
 \begin{enumerate}
-  \item \textbf{Zero-fill.} Sets $\hat{x}_{i} = 0$ for $i \in \Omega^{c}$. This trivial lower bound establishes baseline performance.
-  \item \textbf{Linear interpolation.} Bilinear interpolation from $\Omega \cap \mathcal{N}(i)$.
-  \item \textbf{Telea inpainting.} The fast-marching method~\cite{telea2004image}, via OpenCV (\texttt{cv2.inpaint}, radius 3).
-  \item \textbf{Navier--Stokes inpainting.} The PDE formulation of Bertalmio et al.~\cite{bertalmio2000image}, via the same OpenCV call (radius 3).
-  \item \textbf{Dictionary-learning sparse coding.} Online dictionary learning~\cite{mairal2009online,aharon2006ksvd} fitted to each corrupted image: a 64-atom dictionary of $8{\times}8$ tiles learned from fully observed tiles, with each incomplete tile reconstructed by orthogonal matching pursuit ($8$-sparse) on its observed pixels only; observed pixels are retained exactly. This baseline resembles CSFR's forensic posture: it draws imputations only from the fragment's own content. Tiles with no observed pixels fall back to the observed-region mean.
-  \item \textbf{LaMa external-prior inpainting}~\cite{suvorov2022resolution}. The large-mask Fourier-convolutional inpainter, run off the shelf from the released \texttt{big-lama} checkpoint distributed with the \texttt{simple-lama-inpainting} package, with no fine-tuning on any corpus used here. Masks, seeds and metrics are identical to the classical methods. Three configuration details matter to anyone replicating it. Inference runs at the patch's native resolution, since the network is fully convolutional and $64$ and $32$ are both divisible by $8$; an earlier configuration that upsampled to $256$ and back cost $8$ to $22$\,dB and was discarded on measurement. The grayscale patch is replicated across three channels for input and the output is taken back to one channel. The model output is composited onto the observed region, so observed pixels are returned bit-exact and the only thing this baseline contributes is what it imputes, which is what makes it comparable to the five classical methods and to CSFR. A single forward pass with no sampling makes it deterministic on fixed hardware.
+  \item \textbf{Zero-fill} sets the hole to zero. It is reported as the floor and is not counted as a baseline.
+  \item \textbf{Linear interpolation} on the Delaunay triangulation of the observed pixels.
+  \item \textbf{Telea}~\cite{telea2004image} and \textbf{Navier--Stokes}~\cite{bertalmio2000image} inpainting, via OpenCV with radius $3$.
+  \item \textbf{Dictionary learning}~\cite{mairal2009online,aharon2006ksvd}: a dictionary of $64$ atoms of $8 \times 8$ pixels is learned from the fully observed tiles of each image, and each incomplete tile is coded on its observed pixels with $8$ non-zero coefficients.
+  \item \textbf{Biharmonic} inpainting~\cite{damelin2018surface}, as implemented in scikit-image.
+  \item \textbf{Iterated block-DCT thresholding} after Guleryuz~\cite{guleryuz2006nonlinear}: $8 \times 8$ DCT blocks on $16$ grid shifts, with the hard threshold decreasing geometrically from $128$ to $2$ over $100$ iterations and the hole initialised at the observed mean.
+  \item \textbf{Frequency-selective reconstruction}~\cite{seiler2015resampling} in its fast mode and \textbf{shift-map} inpainting~\cite{pritch2009shift}, via OpenCV-contrib.
+  \item \textbf{Exemplar-based inpainting} after Criminisi et al.~\cite{criminisi2004region}, with $9 \times 9$ patches, reduced to $7$, $5$ and $3$ when no fully observed exemplar exists. If none exists at size $3$, as under severe scattered loss, the remaining hole is filled with the observed mean and the patch is counted as a fallback.
+  \item \textbf{TV-only}: the objective of Eq.~\eqref{eq:J} with $\lambda_{\ell_1} = \lambda_{\mathrm{FC}} = 0$, solved to the same certificate. It is both a baseline and an ablation arm.
+  \item \textbf{LaMa}~\cite{suvorov2022resolution}, the external-prior method. It uses the released big-lama checkpoint through the simple-lama-inpainting package, with no fine-tuning, and runs at the native resolution of the input. The grey patch is replicated to three channels, and the output is composited onto the observed pixels. A single forward pass makes it deterministic. LaMa was trained on images much larger than $64 \times 64$, so the patch corpora lie outside its training distribution; the full-resolution experiment runs it in distribution (Section~\ref{sec:results:fullres}).
 \end{enumerate}
+The constraint ablation removes one part of CSFR at a time. Besides TV-only, it runs DCT-only ($\lambda_{\mathrm{TV}} = 0$), no high-frequency penalty ($\lambda_{\mathrm{FC}} = 0$) and no range constraint (C3 removed), at mask seed \sweepAblationSeeds\ of the primary corpus, for \methodsAblation\ arms in all. The fixed-budget Adam arm of Section~\ref{sec:framework:solver} runs on DFRWS 2006 only (Section~\ref{sec:results:solver}).
 
-Two scope qualifications on the external-prior baseline are stated where its results are reported. It received no privileged run: the primary sweep executed as a single job in which every method reconstructed the same patches under the same masks, with the two PyTorch methods, CSFR and LaMa, on the GPU and the OpenCV and scikit-learn baselines on CPU because those libraries provide no GPU path (Section~\ref{sec:protocol}). Device therefore affects runtime, which Section~\ref{sec:results:cost} measures separately on a uniform CPU path for every method, and not the reconstructions the quality tables compare. The run persisted cell-level metrics without the per-patch reconstructions the paired tests consume, so LaMa appears in Tables~\ref{tab:psnr-ssim}, \ref{tab:cvr}, \ref{tab:hrp} and~\ref{tab:downstream} as cell means, is absent from the paired analysis of Section~\ref{sec:results:stats}, and was not run on the external corpus of Section~\ref{sec:results:external}.
+\subsection{Metrics}
+\label{sec:experiments:metrics}
 
-Beyond LaMa, the wider generative family, GAN completion~\cite{yu2018generative}, denoising~\cite{ho2020denoising} and latent~\cite{rombach2022high} diffusion, and diffusion inpainting variants~\cite{lugmayr2022repaint,zheng2019pluralistic}, is discussed from the literature only and is not run under this harness. These methods are therefore excluded from the implementation-level Audit Record Coverage comparison of Section~\ref{sec:results:ts}. One measured representative keeps the comparison empirical while the family-level claim remains citation-based.
-
-\subsection{Forensic-Appropriate Metrics}
-
-Five metrics are computed per reconstruction:
-
-\paragraph{M1, M2: PSNR and SSIM.} Peak signal-to-noise ratio against ground truth over the whole patch, capped at $100$\,dB for numerically exact reconstructions, and structural similarity as defined by Wang et al.~\cite{wang2004image} on the full reconstructed image. Every evaluated method returns observed pixels unaltered, so the preserved region contributes near-zero error uniformly and inflates absolute values without favouring any method. That convention is kept because it matches the released harness, and Section~\ref{sec:results:stats} reports the stricter imputation-only variant, taking the mean over $\Omega^{c}$ alone, to confirm the between-method conclusions survive scoring only the pixels that were reconstructed.
-
-\paragraph{M3: Constraint Violation Rate (CVR).} The fraction of pixels violating a given constraint family,
-\begin{equation}
-\mathrm{CVR}_{c} \;=\; \frac{1}{|\mathcal{I}_{c}|} \sum_{i \in \mathcal{I}_{c}} \mathbb{I}\bigl(\, \hat{x}_{i} \text{ violates } c \,\bigr),
-\end{equation}
-reported per family rather than pooled, since the four families carry different forensic weight. The constraint definitions of Section~\ref{sec:problem} are stated at the level of the feasibility set; scoring them requires committing to operational thresholds, which we state here in full because they determine every number in Table~\ref{tab:cvr}:
+Quality is scored over the hole only. Every method reproduces the observed pixels, so scoring them would add the same near-zero error to every method.
 \begin{itemize}
-  \item \textbf{C1} counts observed pixels whose reconstructed value moves by more than $0.5$ intensity levels, $\{i \in \Omega : |\hat{x}_{i} - y_{i}| > 0.5\}$; the half-level tolerance absorbs float round-trip error and nothing else.
-  \item \textbf{C2} counts adjacent-pixel differences exceeding a fixed threshold $\tau_{\mathrm{TV}} = 64$ intensity levels, averaged over the horizontal and vertical difference fields. This is a global constant, not the position-dependent $\tau_{\mathrm{TV}}(i)$ of Section~\ref{sec:problem}: a per-pixel bound estimated from each pixel's own observed neighbourhood would make the metric a function of the mask, and therefore not comparable across corruption families. The constant threshold is the weaker but comparable choice.
-  \item \textbf{C3} counts pixels outside the implemented global range $[0,255]$ of Section~\ref{sec:problem:c3}. This is also the bound enforced by the solver. Because all evaluated methods return values in this range, C3 is mainly informative in the CSFR ablation of Section~\ref{sec:results:ablation}, which removes clipping; it does not measure neighbourhood plausibility.
-  \item \textbf{C4} counts high-frequency DCT coefficients whose magnitude exceeds $32$, where the high-frequency set $\mathcal{H}$ is the coefficients with normalised index sum $\ge 0.5$. This is a per-coefficient magnitude test rather than the energy-ratio form of Section~\ref{sec:problem}; the two agree in direction but the per-coefficient form is what the released harness computes.
+  \item \textbf{Hole PSNR}: the mean squared error over $\Omega^{c}$ with peak 255, capped at 100\,dB. Exactly reconstructed patches reach the cap, and their number is reported beside each mean so that the cap cannot move an average unnoticed.
+  \item \textbf{Hole SSIM}~\cite{wang2004image}: the mean of the SSIM map over $\Omega^{c}$, with window 7 and data range 255.
+  \item \textbf{GMSD}~\cite{xue2014gradient}: the standard deviation over $\Omega^{c}$ of the gradient-magnitude similarity map (Prewitt gradients, $c = 170$). It measures edge fidelity on the structured masks; lower is better.
 \end{itemize}
-Thresholds are fixed in \texttt{configs/\allowbreak csfr\allowbreak\_sweep\allowbreak\_2d.yaml} and identical for all methods. For CSFR, C1 and C3 are zero by construction on released outputs (terminal projection and per-step clipping respectively); C2 and C4 are penalised softly and reported as measured. Reading these columns as evidence about \emph{arbitrary} constraint sets would over-claim: they are measurements against these stated thresholds.
+Whole-patch PSNR is kept in the released files but not tabulated. The Hallucination Risk Proxy (HRP) is the mean absolute deviation of the imputed pixels from the mean of the observed region, in units of its standard deviation (floored at one grey level). It is reported as a descriptive statistic only: it flags imputations outside the intensity distribution of the fragment, but cannot detect wrong values inside it. Constraint-violation rates appear only in the ablation (Section~\ref{sec:results:ablation}), for the reason given in Section~\ref{sec:problem:objective}. The record is scored by SRF (Section~\ref{sec:framework:audit}), and the downstream tasks by their own measures (Section~\ref{sec:results:downstream}).
 
-\paragraph{M4: Hallucination Risk Proxy (HRP).} The mean standardised deviation of imputed pixels from the intensity distribution of the observed fragment region: with $\mu_{\Omega}$ and $\sigma_{\Omega}$ the mean and standard deviation of the observed pixels $y_{\Omega}$,
-\begin{equation}
-\mathrm{HRP} \;=\; \frac{1}{|\Omega^{c}|}\sum_{i \in \Omega^{c}} \frac{\bigl|\hat{x}_{i} - \mu_{\Omega}\bigr|}{\max(\sigma_{\Omega}, 1)}
-\end{equation}
-HRP is expressed in observed-region standard deviations, so a value near or below $1$ indicates imputations statistically consistent with the fragment's own content. HRP measures distributional departure from the observed-region intensity distribution. It can flag out-of-distribution imputations but cannot identify incorrect values that remain within that distribution. The global C3 bound does not guarantee a low HRP. HRP is therefore reported as a descriptive proxy, not as evidence that a reconstruction is free from hallucinated structure. This definition is the one implemented in \texttt{src/csfr\allowbreak\_reconstruct\allowbreak\_2d.py} and used in all reported tables.
+\subsection{Statistics}
+\label{sec:experiments:stats}
 
-\paragraph{M5: Audit Record Coverage (ARC).} The fraction of declared sensitivity queries for which the released software produced a usable audit artefact:
-\begin{equation}
-\mathrm{ARC} \;=\; \frac{1}{|Q|} \sum_{i \in Q} \mathbb{I}\bigl(\, s_{i} \text{ is finite and non-empty} \,\bigr)
-\end{equation}
-where $Q$ is the declared set of queried imputed pixels and $s_{i}$ is the approximate local sensitivity vector returned for query $i$ by Eq.~\eqref{eq:provenance} (distinct from the sparse coefficient vector $\alpha$). ARC is an implementation-level completeness indicator. It records whether the released software produced a usable audit artefact for the declared queries. It does not establish that the sensitivity vector is exact, causally complete or unique, and it does not assign an intrinsic score to methods that were not instrumented to emit comparable records; for those methods ARC is reported as not available rather than as zero. For CSFR, ARC is measured rather than asserted: for a sample of 16 imputed pixels per probed patch the solve of Eq.~\eqref{eq:provenance} is run, and a query counts as covered when the solve returns a non-empty set of non-negligible weights with a finite residual (Section~\ref{sec:results:ts}). One caveat travels with the score: Eq.~\eqref{eq:provenance} holds at a stationary point, and Section~\ref{sec:results:budget} shows the fixed-budget solver is not at one on the harder masks, so on CF2 and severe-mask cells these weights describe the solver's target rather than a certified property of the returned iterate, and the released manifest labels them accordingly.
+The analysis plan is written to the results directory before any statistic is computed (\texttt{scripts/\allowbreak run\allowbreak\_stats\allowbreak\_v2.py}). The unit is the patch. Each per-patch metric is averaged over the mask seeds before pairing, and differences are signed so that a positive value favours CSFR for every metric, GMSD included. For CSFR against each method, in each cell and for each metric, we report:
+\begin{itemize}
+  \item the mean difference;
+  \item a two-sided Wilcoxon signed-rank test, with Holm adjustment across all comparisons of that metric;
+  \item Cohen's $d_{z}$ and Cliff's $\delta$;
+  \item 95\% percentile bootstrap intervals with \statsBoot\ resamples, resampling patches and, separately, source images, which respects the clustering.
+\end{itemize}
+Per source image, we report the mean difference, the fraction of images in which CSFR leads, and an image-level interval and test. The strongest competitor in a cell is the method with the best mean on the metric in question. It is identified after the fact, so the comparison with it is labelled as such and is not a pre-specified test.
 
-\subsection{Reproducibility Protocol}
+\subsection{Reproducibility}
 \label{sec:protocol}
 
-All experiments are seeded with $\mathrm{seed} \in \{0, 1, 2\}$ for $n = 3$ independent runs per condition; reported values are means over seeds, with per-patch standard deviations ($N = 300$ patches per cell) and between-seed standard deviations recorded in the released summary files. The solver uses the 2-D DCT sparsifying basis with fixed regularisation weights $\lambda_{\ell_1} = 0.02$, $\lambda_{\mathrm{TV}} = 0.10$, $\lambda_{\mathrm{FC}} = 0.005$, Adam with learning rate $2.0$, and a fixed budget of $600$ iterations with no early stopping; the C3 bounds are enforced by projection (clipping to $[0, 255]$) after every step. All hyper-parameters are stated in \texttt{configs/\allowbreak csfr\allowbreak\_sweep\allowbreak\_2d.yaml}. The released results come from two environments, and which produced which is recorded in the artefacts rather than asserted here. The primary sweep of Section~\ref{sec:results} and the downstream experiment of Section~\ref{sec:results:downstream} were executed as single jobs on Linux under Python 3.12.13 with PyTorch 2.10.0+cu128 on an NVIDIA T4, with \texttt{device=cuda} recorded in all 60 per-cell metric files of the primary sweep. The external validation of Section~\ref{sec:results:external} and the runtime benchmark of Section~\ref{sec:results:cost} were executed on Windows 11 (x64) on CPU under Python 3.14.6 with PyTorch 2.13.0+cpu, which is the environment pinned in \texttt{requirements.txt}. The harness records the interpreter, platform, and exact version of every dependency into the \texttt{run\allowbreak\_metadata.json} of each sweep directory, together with the SHA-256 of the patch array consumed; those files, not this paragraph, are the authoritative record, and the committed corpora verify against the hashes the runs recorded. Two released artefacts predate the capture and carry no environment record: the iteration-budget sweep behind Table~S3 and the per-method downstream runs other than the external prior. The reference implementation is released alongside \texttt{src/csfr\allowbreak\_reconstruct\allowbreak\_2d.py} and \texttt{scripts/run\allowbreak\_csfr\allowbreak\_sweep.py}.
+CSFR, the classical methods and the analyses ran on one Windows~11 workstation with \envCores\ physical cores and no GPU, under Python~\envPython, PyTorch~\envTorch\ and OpenCV~\envOpencv. LaMa and the OCR engine ran in separate environments on the same machine. Every results directory records its interpreter, platform and package versions, together with the SHA-256 of the patch array it consumed, and those files are the authoritative record. The outputs of the fixed-budget Adam arm are the only artefacts from another environment: they come from the previously released sweep on an NVIDIA T4 under Linux and are used only in the solver comparison.
 
-\paragraph{Determinism.} The solver contains no stochastic element: initialisation is the zero-fill composite, Adam is deterministic given the gradient sequence, and no dropout, sampling, or data-order shuffling occurs. The seed governs only mask generation and the dictionary-learning baseline's fit. Re-running a cell on the same machine and software stack is expected to reproduce $\hat{x}$ bit-for-bit, and the released checkpoints allow this to be checked directly. Determinism \emph{across} hardware and library versions is a stronger property that we do not claim: floating-point reduction order differs between BLAS builds and accelerators, so a reconstruction produced on different hardware may differ in the last bits. For evidential use this means the audit artefact to preserve is the reconstruction together with its \texttt{run\allowbreak\_metadata.json}, not the expectation that any machine will reproduce it exactly.
+\paragraph{Determinism.} CSFR has no stochastic element, and the patches of a batch are solved independently. The classical methods run in single-thread worker processes, so their outputs do not depend on how the work is parallelised. The seed governs only mask generation and the fit of the dictionary-learning baseline. Bit-for-bit agreement across hardware and library versions is not claimed, because floating-point reduction order differs between builds. What carries across machines is the certificate: a re-run anywhere reaches the same unique minimiser to the accuracy measured in Section~\ref{sec:framework:solver}.
 
 %%======================================================================
 \section{Results}
