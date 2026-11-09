@@ -281,20 +281,20 @@ def convert(src: str, doc_class: str) -> tuple[str, list[str]]:
     return out, missing
 
 
-def build() -> int:
-    """pdflatex, bibtex, pdflatex, pdflatex in paper/, with the class directory
-    on every search path the fonts and map files need."""
+def build(tex: Path = OUT) -> int:
+    """pdflatex, bibtex, pdflatex, pdflatex on a tex file in paper/, with the
+    class directory on every search path the fonts and map files need."""
     env = os.environ.copy()
     if class_available():
         for var in ("TEXINPUTS", "TFMFONTS", "T1FONTS", "TEXFONTMAPS", "ENCFONTS"):
             env[var] = str(CLASS_DIR) + os.pathsep + env.get(var, "")
     pdflatex = [str(MIKTEX / "pdflatex.exe"), "-interaction=nonstopmode",
-                "-include-directory=" + str(CLASS_DIR), OUT.stem]
-    bibtex = [str(MIKTEX / "bibtex.exe"), OUT.stem]
+                "-include-directory=" + str(CLASS_DIR), tex.stem]
+    bibtex = [str(MIKTEX / "bibtex.exe"), tex.stem]
     for cmd in (pdflatex, bibtex, pdflatex, pdflatex):
-        subprocess.run(cmd, cwd=PAPER, env=env, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, check=False)
-    log = (PAPER / f"{OUT.stem}.log").read_text(encoding="utf-8", errors="replace")
+        subprocess.run(cmd, cwd=PAPER, env=env, stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    log = (PAPER / f"{tex.stem}.log").read_text(encoding="utf-8", errors="replace")
     errors = sum(1 for ln in log.splitlines() if ln.startswith("!"))
     undefined = len(re.findall(r"(Citation|Reference) .* undefined|There were undefined references", log))
     pages = re.search(r"Output written on .*\((\d+) pages", log)
@@ -303,7 +303,7 @@ def build() -> int:
     # are the class's own, so only the overfull lines in our text are counted.
     overfull = [m for m in re.finditer(r"Overfull \\hbox \(([\d.]+)pt too wide\)(.*)", log)
                 if float(m.group(1)) > 20 and "output is active" not in m.group(2)]
-    blg = PAPER / f"{OUT.stem}.blg"
+    blg = PAPER / f"{tex.stem}.blg"
     bib_warn = len(re.findall(r"^Warning--", blg.read_text(encoding="utf-8", errors="replace"), re.M)) if blg.exists() else -1
     print(f"[ieee] class={'ieeeaccess' if class_available() else 'IEEEtran'} "
           f"errors={errors} undefined={undefined} overfull>20pt={len(overfull)} "
