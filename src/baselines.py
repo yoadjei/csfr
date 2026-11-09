@@ -245,13 +245,13 @@ def baseline_criminisi(y: np.ndarray, M: np.ndarray, seed: int = 0, patch: int =
     observed mean and the patch is counted as a fallback. Deterministic: ties
     resolve to the first index in raster order."""
     out = y.copy()
-    fallbacks = 0
+    flags = []
     for i in range(y.shape[0]):
         rec, fell_back = _criminisi_single(y[i], M[i] == 1, patch)
         out[i] = rec
-        fallbacks += int(fell_back)
+        flags.append(bool(fell_back))
     if return_info:
-        return out, {"fallback_patches": fallbacks}
+        return out, {"fallback_patches": int(sum(flags)), "fallback": flags}
     return out
 
 
@@ -343,3 +343,35 @@ BASELINES = {name: _keep_observed(fn) for name, fn in {
     "shiftmap": baseline_shiftmap,
     "criminisi": baseline_criminisi,
 }.items()}
+
+# methods whose registry call can also return per-patch diagnostics
+_WITH_INFO = {"criminisi"}
+
+
+def run_chunk(name: str, y: np.ndarray, M: np.ndarray, seed: int) -> tuple[np.ndarray, dict]:
+    """One registered baseline on a chunk of patches; returns (output, info).
+
+    The process-pool entry point of the sweep harness. It lives here, not in the
+    script, so that it pickles by reference under the spawn start method. Every
+    registered method treats patches independently, so the output does not
+    depend on how the batch is split (tests/test_sweep_v2.py checks that). The
+    output can differ in the last float32 bit between processes whose BLAS was
+    initialised with different thread counts, which is why the harness runs every
+    baseline in workers initialised by limit_threads.
+    """
+    if name in _WITH_INFO:
+        return BASELINES[name](y, M, seed=seed, return_info=True)
+    return BASELINES[name](y, M, seed=seed), {}
+
+
+_THREAD_LIMITS = None
+
+
+def limit_threads() -> None:
+    """Process-pool initialiser: one BLAS, OpenMP and OpenCV thread per worker,
+    so that the workers do not oversubscribe the cores."""
+    global _THREAD_LIMITS
+    import cv2
+    from threadpoolctl import threadpool_limits
+    _THREAD_LIMITS = threadpool_limits(1)  # kept alive for the life of the worker
+    cv2.setNumThreads(1)

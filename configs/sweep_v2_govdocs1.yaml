@@ -1,0 +1,22 @@
+# Round-2 primary sweep (E1) and constraint ablation (E4): balanced GovDocs1
+# corpus, convergent solver, every method's output retained.
+# Run: python scripts/run_sweep_v2.py --config configs/sweep_v2_govdocs1.yaml
+# LaMa: .venv-lama/Scripts/python scripts/run_lama_cells.py --root results/sweep_v2_govdocs1
+#       then re-run the harness, which scores the saved LaMa outputs.
+experiment: sweep_v2_govdocs1
+description: Round-2 primary sweep on the balanced GovDocs1 corpus, convergent solver, all outputs retained.
+corpus: govdocs1_v2
+patches_path: data/patches_govdocs1_v2.npy
+cluster_path: data/patches_govdocs1_v2_cluster.npy
+output_dir: results/sweep_v2_govdocs1
+seeds: [0, 1, 2]
+families: [CF1, CF2, CF3, CF4]
+levels: {L1: 0.05, L2: 0.15, L3: 0.30, L4: 0.50, L5: 0.70}
+# numerical controls only; the tolerance and the objective weights of every
+# variant are the defaults in src/csfr_solver.py (recorded per method in metrics.json)
+solver: {max_iter: 20000, init: zero}
+csfr_variants: [csfr]
+ablation_variants: [csfr_tv_only, csfr_dct_only, csfr_no_fc, csfr_no_clip]
+ablation_seeds: [0]
+baselines: [zero_fill, bilinear, inpaint_telea, inpaint_ns, dictlearn, biharmonic, guleryuz, fsr, shiftmap, criminisi]
+external: [lama]
