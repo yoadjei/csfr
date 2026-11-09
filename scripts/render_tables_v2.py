@@ -184,41 +184,120 @@ def _csv(path: Path) -> list[dict] | None:
         return list(csv.DictReader(f))
 
 
-def paired_v2(sweep: Path = SWEEP, metric: str = "psnr_hole") -> str | None:
-    """Per cell: CSFR's rank among CSFR and the classical methods, the
-    comparison with the strongest classical method (difference, interval over
-    source images, fraction of images CSFR leads, cap-free difference), and the
-    comparison with the external method."""
+COMPARISON_SPEC = r"@{}l c l r c r r r c@{}"
+COMPARISON_HEADER = [
+    r" & & \multicolumn{5}{c}{Strongest classical method} & \multicolumn{2}{c}{LaMa} \\",
+    r"\cmidrule(lr){3-7}\cmidrule(l){8-9}",
+    r"Cell & Rank & Method & $\Delta$ & 95\% CI & Led (\%) & $\Delta_{\mathrm{cf}}$ & $\Delta$ & 95\% CI \\"]
+
+
+def comparison_row(rows: list[dict], fam: str, lv: str, metric: str, where: str) -> str:
+    """One cell of a sweep's paired tests: CSFR's rank among CSFR and the
+    classical methods, the comparison with the strongest classical method
+    (difference, interval over source images, share of images CSFR leads,
+    cap-free difference), and the comparison with the external method."""
+    cell = [r for r in rows if (r["family"], r["level"], r["metric"]) == (fam, lv, metric)]
+    classical = [r for r in cell if r["method"] != EXTERNAL]
+    if not classical:
+        raise ValueError(f"{where}: no {metric} comparisons for {fam} {lv}")
+    best = max(classical, key=lambda r: float(r["method_mean"]))
+    rank = 1 + sum(float(r["method_mean"]) > float(r["csfr_mean"]) for r in classical)
+    ext = next((r for r in cell if r["method"] == EXTERNAL), None)
+    cf = best.get("diff_mean_capfree", "")
+    out = [f"{fam}~{lv}", f"{rank}/{len(classical) + 1}", dict(METHOD_ORDER)[best["method"]],
+           signed(float(best["diff_mean"])),
+           interval(float(best["ci_cluster_lo"]), float(best["ci_cluster_hi"])),
+           f"{100 * float(best['frac_images_csfr_leads']):.0f}",
+           signed(float(cf)) if cf != "" else "--"]
+    out += ([signed(float(ext["diff_mean"])), interval(float(ext["ci_cluster_lo"]), float(ext["ci_cluster_hi"]))]
+            if ext else ["--", "--"])
+    return " & ".join(out) + r" \\"
+
+
+def comparison_rows(sweep: Path, levels: tuple[str, ...], metric: str = "psnr_hole") -> list[str] | None:
+    """comparison_row for every cell of a sweep, families separated by rules."""
     rows = _csv(sweep / "stats" / "paired_tests.csv")
     if rows is None:
         return None
-    names = dict(METHOD_ORDER)
     body = []
     for fam in FAMILIES:
         if body:
             body.append(r"\midrule")
-        for lv in ALL_LEVELS:
-            cell = [r for r in rows if (r["family"], r["level"], r["metric"]) == (fam, lv, metric)]
-            classical = [r for r in cell if r["method"] != EXTERNAL]
-            if not classical:
-                raise ValueError(f"{sweep.name}: no {metric} comparisons for {fam} {lv}")
-            best = max(classical, key=lambda r: float(r["method_mean"]))
-            rank = 1 + sum(float(r["method_mean"]) > float(r["csfr_mean"]) for r in classical)
-            ext = next((r for r in cell if r["method"] == EXTERNAL), None)
-            cf = best.get("diff_mean_capfree", "")
-            out = [f"{fam}~{lv}", f"{rank}/{len(classical) + 1}", names[best["method"]],
-                   signed(float(best["diff_mean"])),
-                   interval(float(best["ci_cluster_lo"]), float(best["ci_cluster_hi"])),
-                   f"{100 * float(best['frac_images_csfr_leads']):.0f}",
-                   signed(float(cf)) if cf != "" else "--"]
-            out += ([signed(float(ext["diff_mean"])),
-                     interval(float(ext["ci_cluster_lo"]), float(ext["ci_cluster_hi"]))]
-                    if ext else ["--", "--"])
-            body.append(" & ".join(out) + r" \\")
-    header = [r" & & \multicolumn{5}{c}{Strongest classical method} & \multicolumn{2}{c}{LaMa} \\",
-              r"\cmidrule(lr){3-7}\cmidrule(l){8-9}",
-              r"Cell & Rank & Method & $\Delta$ & 95\% CI & Led (\%) & $\Delta_{\mathrm{cf}}$ & $\Delta$ & 95\% CI \\"]
-    return tabular(r"@{}l c l r c r r r c@{}", header, body)
+        body += [comparison_row(rows, fam, lv, metric, sweep.name) for lv in levels]
+    return body
+
+
+def paired_v2(sweep: Path = SWEEP) -> str | None:
+    """The primary corpus at every severity level."""
+    body = comparison_rows(sweep, ALL_LEVELS)
+    return None if body is None else tabular(COMPARISON_SPEC, COMPARISON_HEADER, body)
+
+
+SECONDARY = {"DFRWS 2006": ROOT / "results" / "sweep_v2_dfrws", "Kodak": ROOT / "results" / "sweep_v2_kodak"}
+
+
+def external_v2(sweeps: dict[str, Path] = SECONDARY) -> str | None:
+    """The comparison of PAIRED_V2 on the secondary corpora at L1, L3 and L5,
+    one panel per corpus; pending until every corpus has its statistics."""
+    panels = {name: comparison_rows(p, MAIN_LEVELS) for name, p in sweeps.items()}
+    if any(b is None for b in panels.values()):
+        return None
+    body = []
+    for name, rows in panels.items():
+        if body:
+            body.append(r"\midrule")
+        body += [rf"\multicolumn{{9}}{{@{{}}l}}{{\emph{{{name}}}}} \\", *rows]
+    return tabular(COMPARISON_SPEC, COMPARISON_HEADER, body)
+
+
+ABLATION_ARMS = [("csfr_tv_only", r"TV only ($\lambda_{\ell_1} = \lambda_{\mathrm{FC}} = 0$)"),
+                 ("csfr_dct_only", r"DCT only ($\lambda_{\mathrm{TV}} = 0$)"),
+                 ("csfr_no_fc", r"No high-frequency penalty ($\lambda_{\mathrm{FC}} = 0$)"),
+                 ("csfr_no_clip", r"No range constraint (C3)")]
+NO_RANGE = "csfr_no_clip"
+ALPHA = 0.05
+
+
+def range_note(rows: list[dict]) -> str:
+    """The range figure of the ablation: imputed pixels outside the range without
+    C3, pooled over cells, and what the arms that keep C3 do."""
+    out = [r for r in rows if r["method"] == NO_RANGE]
+    kept = [r for r in rows if r["method"] != NO_RANGE]
+    n_out = sum(float(r["frac_pixels_out"]) * int(r["n_imputed"]) for r in out)
+    share = 100 * n_out / sum(int(r["n_imputed"]) for r in out)
+    worst = max(float(r["max_excess"]) for r in out)
+    kept_max = max(float(r["frac_pixels_out"]) for r in kept)
+    rest = ("with it, none do" if kept_max == 0
+            else rf"with it, at most {100 * kept_max:.2g}\% in any cell")
+    return (rf"Without C3, {share:.2f}\% of the imputed pixels leave $[0, 255]$, by up to "
+            rf"{worst:.1f} grey levels; {rest}.")
+
+
+def ablation_v2(sweep: Path = SWEEP, metric: str = "psnr_hole") -> str | None:
+    """Hole PSNR of CSFR minus each ablation arm per cell at the ablation
+    seeds, starred where the Holm-adjusted Wilcoxon p is below ALPHA, with the
+    range figure as a note."""
+    rows = _csv(sweep / "stats" / "paired_tests_ablation.csv")
+    ranges = _csv(sweep / "stats" / "range_violations.csv")
+    if rows is None or ranges is None:
+        return None
+    by = {(r["family"], r["level"], r["method"]): r for r in rows if r["metric"] == metric}
+    cells = [(f, lv) for f in FAMILIES for lv in MAIN_LEVELS]
+    body = []
+    for arm, name in ABLATION_ARMS:
+        out = []
+        for c in cells:
+            r = by.get((*c, arm))
+            if r is None:
+                raise ValueError(f"{sweep.name}: no ablation comparison for {arm} in {c[0]} {c[1]}")
+            star = "$^{*}$" if float(r["p_holm"]) < ALPHA else ""
+            out.append(signed(float(r["diff_mean"])) + star)
+        body.append(f"{name} & " + " & ".join(out) + r" \\")
+    ncols = 1 + len(cells)
+    body += [r"\midrule",
+             _note(rf"$^{{*}}$ Holm-adjusted Wilcoxon $p < {ALPHA:g}$ across the arms.", ncols),
+             _note(range_note(ranges), ncols)]
+    return tabular(rf"@{{}}l*{{{len(cells)}}}{{r}}@{{}}", family_level_header(MAIN_LEVELS, "Arm"), body)
 
 
 def quality() -> str | None:
@@ -229,7 +308,8 @@ def gmsd_table() -> str | None:
     return method_by_cell_table(SWEEP, "gmsd_hole", higher_is_better=False, digits=3)
 
 
-TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_V2": paired_v2}
+TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_V2": paired_v2,
+          "EXTERNAL_V2": external_v2, "ABLATION_V2": ablation_v2}
 
 
 def main() -> int:

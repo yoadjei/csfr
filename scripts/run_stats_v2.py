@@ -160,7 +160,8 @@ def analysis_plan(cfg: dict, family: list[str], n_boot: int) -> dict:
             "correction": "Holm-Bonferroni across all comparisons of one metric within a family "
                           "(comparison family; ablation family separately)",
             "comparison_family": family,
-            "ablation_family": cfg.get("ablation_variants", []),
+            "ablation_family": [v for v in cfg.get("csfr_variants", []) if v != "csfr"]
+                               + list(cfg.get("ablation_variants", [])),
             "ablation_seeds": cfg.get("ablation_seeds", []),
             "excluded_from_comparisons": sorted(FLOOR) + ["csfr"],
             "intervals": "95 percent percentile bootstrap: patches; source images (cluster); "
@@ -193,6 +194,9 @@ def main(argv=None) -> int:
     clusters = np.load(cpath if cpath.is_absolute() else ROOT / cpath)
     variants = [v for v in cfg.get("csfr_variants", []) if v != "csfr"]
     ablation = cfg.get("ablation_variants", [])
+    # every arm that removes a part of CSFR, compared at the ablation seeds; the
+    # CSFR variants (TV-only) are also baselines and run at every seed besides
+    ablation_family = variants + ablation
     family = variants + [b for b in cfg.get("baselines", []) if b not in FLOOR] + cfg.get("external", [])
     everything = ["csfr"] + variants + ablation + cfg.get("baselines", []) + cfg.get("external", [])
     outdir = sweep / "stats"
@@ -229,7 +233,7 @@ def main(argv=None) -> int:
             a_seeds = cfg.get("ablation_seeds", [])
             if a_seeds:
                 csfr_a = load(sweep, cell, a_seeds, "csfr")
-                for m in ablation:
+                for m in ablation_family:
                     d = load(sweep, cell, a_seeds, m)
                     if d is None or csfr_a is None:
                         continue

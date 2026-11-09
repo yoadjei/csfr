@@ -90,8 +90,11 @@ def test_strongest_baseline_and_ablation(tmp_path):
     assert psnr["method"] == "bilinear"
     assert psnr["cluster_ci_excludes_zero"] == "True" and psnr["lama_included"] == "False"
     ab = _rows(out / "stats" / "paired_tests_ablation.csv")
-    assert {r["method"] for r in ab} == {"csfr_no_fc"}
+    # every arm that removes a part of CSFR, TV-only included, at the ablation seed only
+    assert {r["method"] for r in ab} == {"csfr_tv_only", "csfr_no_fc"}
     assert all(int(r["n_seeds"]) == 1 for r in ab)
+    plan = json.loads((out / "stats" / "analysis_plan.json").read_text())
+    assert plan["ablation_family"] == ["csfr_tv_only", "csfr_no_fc"]
 
 
 def test_cap_sensitivity_repeats_hole_psnr_on_the_cap_free_patches(tmp_path):

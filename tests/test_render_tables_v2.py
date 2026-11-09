@@ -177,6 +177,52 @@ def test_paired_v2_missing_cell_is_an_error(tmp_path):
         m.paired_v2(tmp_path)
 
 
+def test_external_v2_has_one_panel_per_corpus_and_waits_for_both(tmp_path):
+    m = _mod()
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    _paired_fixture(a)
+    assert m.external_v2({"First": a, "Second": b}) is None            # b has no statistics yet
+    _paired_fixture(b, drop_lama_in=("CF1", "L3"))
+    lines = m.external_v2({"First": a, "Second": b}).splitlines()
+    panels = [ln for ln in lines if ln.startswith(r"\multicolumn{9}")]
+    assert panels == [r"\multicolumn{9}{@{}l}{\emph{First}} \\", r"\multicolumn{9}{@{}l}{\emph{Second}} \\"]
+    rows = [ln for ln in lines if ln.startswith("CF")]
+    assert len(rows) == 2 * 12 and all(r.split(" & ")[0][-2:] in ("L1", "L3", "L5") for r in rows)
+    second_cf1_l3 = [r for r in rows if r.startswith("CF1~L3")][1].split(" & ")
+    assert second_cf1_l3[7:] == ["--", r"-- \\"]
+
+
+def _write_csv(path, rows):
+    import csv
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+
+
+def test_ablation_v2_stars_holm_significance_and_states_the_range(tmp_path):
+    m = _mod()
+    arms = [a for a, _ in m.ABLATION_ARMS]
+    rows = [{"family": f, "level": lv, "metric": "psnr_hole", "method": a,
+             "diff_mean": 0.5 if a != "csfr_no_fc" else -0.02, "p_holm": 0.001 if a != "csfr_no_fc" else 0.4}
+            for f in m.FAMILIES for lv in m.MAIN_LEVELS for a in arms]
+    _write_csv(tmp_path / "stats" / "paired_tests_ablation.csv", rows)
+    assert m.ablation_v2(tmp_path) is None                         # range figure not computed yet
+    _write_csv(tmp_path / "stats" / "range_violations.csv",
+               [{"method": "csfr_no_clip", "n_imputed": 1000, "frac_pixels_out": 0.02, "max_excess": 12.34},
+                {"method": "csfr_no_clip", "n_imputed": 3000, "frac_pixels_out": 0.0, "max_excess": 0.0},
+                {"method": "csfr", "n_imputed": 1000, "frac_pixels_out": 0.0, "max_excess": 0.0}])
+    lines = _body(m.ablation_v2(tmp_path))
+    assert [ln.split(" & ")[0] for ln in lines[:4]] == [n for _, n in m.ABLATION_ARMS]
+    assert lines[0].split(" & ")[1] == "+0.50$^{*}$"
+    assert lines[2].split(" & ")[1] == "$-$0.02"                     # not significant: no star
+    assert r"Without C3, 0.50\% of the imputed pixels leave $[0, 255]$, by up to 12.3 grey levels; " \
+           r"with it, none do." in lines[-1]
+
+
 def test_committed_tables_are_current():
     m = _mod()
     for tag, fn in m.TABLES.items():
