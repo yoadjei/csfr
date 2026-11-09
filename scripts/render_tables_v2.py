@@ -526,6 +526,94 @@ def bu(d: Path = BU_DIR) -> str | None:
     return tabular(r"@{}l*{6}{r}@{}", header, body)
 
 
+JPEG_DIR = ROOT / "results" / "jpeg_corruption"
+JPEG_KINDS = [("truncate", "Truncation"), ("overwrite", "Overwritten run"), ("flip", "Flipped byte")]
+JPEG_CONDITIONS = [("oracle", "Oracle"), ("decoder", "Decoder"), ("offset", "Offset")]
+
+
+def starred(diff: float, p: float) -> str:
+    return signed(diff) + ("$^{*}$" if p < ALPHA else "")
+
+
+def jpeg(d: Path = JPEG_DIR) -> str | None:
+    """Per corruption and mask: cases, hole PSNR of CSFR, of the best classical
+    method and of LaMa, CSFR's paired differences to both (starred where the
+    uncorrected Wilcoxon p is below ALPHA), and the mask's coverage of the
+    oracle loss and its false-positive share, over the cases with visible damage."""
+    summ, mq = _csv(d / "summary.csv"), _csv(d / "masks_quality.csv")
+    if summ is None or mq is None:
+        return None
+    names = dict(METHOD_ORDER)
+    by = {(r["kind"], r["condition"], r["method"]): r for r in summ}
+    body = []
+    for kind, kname in JPEG_KINDS:
+        if body:
+            body.append(r"\midrule")
+        for cond, cname in JPEG_CONDITIONS:
+            c = by.get((kind, cond, "csfr"))
+            if c is None:
+                raise ValueError(f"jpeg: no CSFR summary for {kind} {cond}")
+            best = by[(kind, cond, c["vs_best_classical"])]
+            lama = by.get((kind, cond, EXTERNAL))
+            vis = [r for r in mq if r["kind"] == kind and r["condition"] == cond and r["visible_damage"] == "True"]
+            cover = 100 * np.mean([float(r["coverage_of_oracle_loss"]) for r in vis])
+            fp = 100 * np.mean([float(r["false_pos_frac"]) for r in vis])
+            out = [kname if cond == JPEG_CONDITIONS[0][0] else "", cname, c["n_cases"],
+                   f"{float(c['psnr_hole_mean']):.2f}", names[best["method"]], f"{float(best['psnr_hole_mean']):.2f}",
+                   f"{float(lama['psnr_hole_mean']):.2f}" if lama else "--",
+                   starred(float(c["diff_psnr_hole_vs_best_classical"]), float(c["p_wilcoxon_vs_best_classical"])),
+                   (starred(float(c["diff_psnr_hole_vs_lama"]), float(c["p_wilcoxon_vs_lama"]))
+                    if c.get("diff_psnr_hole_vs_lama", "") != "" else "--"),
+                   f"{cover:.1f}", f"{fp:.2f}"]
+            body.append(" & ".join(out) + r" \\")
+    body += [r"\midrule", _note(rf"$^{{*}}$ Wilcoxon signed-rank $p < {ALPHA:g}$, paired by case, "
+                                r"not corrected for multiplicity.", 11)]
+    header = [r" & & & & \multicolumn{2}{c}{Best classical} & & \multicolumn{2}{c}{CSFR $-$} & "
+              r"\multicolumn{2}{c}{Mask (\%)} \\",
+              r"\cmidrule(lr){5-6}\cmidrule(lr){8-9}\cmidrule(l){10-11}",
+              r"Corruption & Mask & Cases & CSFR & Method & PSNR & LaMa & classical & LaMa & Cover & FP \\"]
+    return tabular(r"@{}l l r r l r r r r r r@{}", header, body)
+
+
+MASKERR_DIR = ROOT / "results" / "mask_robustness"
+
+
+def perturbation_name(p: str) -> str:
+    if m := re.fullmatch(r"(erode|dilate)(\d+)", p):
+        return f"{m.group(1).capitalize()} {m.group(2)}\\,px"
+    if m := re.fullmatch(r"flip(\d+)pct", p):
+        return f"Flip {m.group(1)}\\%"
+    raise ValueError(f"unknown perturbation {p}")
+
+
+def maskerr(d: Path = MASKERR_DIR) -> str | None:
+    """Per perturbation: each method's mean change in hole PSNR against the true
+    mask (perturbed minus exact, paired by patch), averaged over the cells, and
+    the realised false-positive and false-negative shares of the wrong mask."""
+    rows = _csv(d / "robustness.csv")
+    if rows is None:
+        return None
+    perts = [p for p in dict.fromkeys(r["perturbation"] for r in rows) if p != "exact"]
+    present = {r["method"] for r in rows}
+    methods = [(k, n) for k, n in METHOD_ORDER if k in present]
+    body = []
+    for p in perts:
+        at = [r for r in rows if r["perturbation"] == p]
+        out = [perturbation_name(p)]
+        for k, _ in methods:
+            v = [float(r["degradation_mean"]) for r in at if r["method"] == k and r.get("degradation_mean", "") != ""]
+            out.append(signed(float(np.mean(v))) if v else "--")
+        cells = {r["cell"]: r for r in at}.values()
+        out += [f"{100 * np.mean([float(r['false_pos_frac']) for r in cells]):.2f}",
+                f"{100 * np.mean([float(r['false_neg_frac']) for r in cells]):.2f}"]
+        body.append(" & ".join(out) + r" \\")
+    header = [r" & \multicolumn{" + str(len(methods)) + r"}{c}{Change in hole PSNR (dB)} & "
+              r"\multicolumn{2}{c}{Wrong mask (\%)} \\",
+              rf"\cmidrule(lr){{2-{1 + len(methods)}}}\cmidrule(l){{{2 + len(methods)}-{3 + len(methods)}}}",
+              "Perturbation & " + " & ".join(n for _, n in methods) + r" & FP & FN \\"]
+    return tabular(rf"@{{}}l*{{{len(methods) + 2}}}{{r}}@{{}}", header, body)
+
+
 def quality() -> str | None:
     return method_by_cell_table(SWEEP, "psnr_hole", higher_is_better=True, digits=2, with_cap_note=True)
 
@@ -536,7 +624,8 @@ def gmsd_table() -> str | None:
 
 TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_V2": paired_v2,
           "EXTERNAL_V2": external_v2, "ABLATION_V2": ablation_v2, "SOLVER_CMP": solver_cmp,
-          "FIDELITY": fidelity, "RECORDS_CMP": records_cmp, "ORACLE": oracle, "BU": bu}
+          "FIDELITY": fidelity, "RECORDS_CMP": records_cmp, "ORACLE": oracle, "BU": bu,
+          "JPEG": jpeg, "MASKERR": maskerr}
 
 
 def main() -> int:

@@ -342,6 +342,46 @@ def test_bu_reports_auroc_per_scope_and_the_rule_decision(tmp_path):
     assert lines[-1].rstrip(" \\").endswith("kept as a contribution.}")
 
 
+def test_jpeg_rows_per_corruption_and_mask(tmp_path):
+    m = _mod()
+    summ, mq = [], []
+    for kind, _ in m.JPEG_KINDS:
+        for cond, _ in m.JPEG_CONDITIONS:
+            summ += [{"kind": kind, "condition": cond, "method": "csfr", "n_cases": 20, "psnr_hole_mean": 25.0,
+                      "vs_best_classical": "fsr", "diff_psnr_hole_vs_best_classical": -0.4,
+                      "p_wilcoxon_vs_best_classical": 0.01, "diff_psnr_hole_vs_lama": 0.3,
+                      "p_wilcoxon_vs_lama": 0.2},
+                     {"kind": kind, "condition": cond, "method": "fsr", "n_cases": 20, "psnr_hole_mean": 25.4},
+                     {"kind": kind, "condition": cond, "method": "lama", "n_cases": 20, "psnr_hole_mean": 24.7}]
+            mq += [{"kind": kind, "condition": cond, "visible_damage": v, "coverage_of_oracle_loss": c,
+                    "false_pos_frac": f} for v, c, f in (("True", 0.9, 0.01), ("True", 0.7, 0.03),
+                                                         ("False", 0.0, 0.5))]
+    _write_csv(tmp_path / "summary.csv", summ)
+    _write_csv(tmp_path / "masks_quality.csv", mq)
+    lines = _body(m.jpeg(tmp_path))
+    assert lines[0] == (r"Truncation & Oracle & 20 & 25.00 & FSR & 25.40 & 24.70 & $-$0.40$^{*}$ & +0.30 "
+                        r"& 80.0 & 2.00 \\")                      # invisible cases excluded from the mask means
+    assert lines[1].startswith(" & Decoder & ")
+    assert sum(1 for ln in lines if " & " in ln and not ln.startswith(r"\multicolumn")) == 9
+
+
+def test_maskerr_averages_cells_per_perturbation(tmp_path):
+    m = _mod()
+    rows = []
+    for cell in ("CF1_L3", "CF2_L5"):
+        for p in ("exact", "erode1", "flip5pct"):
+            for meth, deg in (("csfr", -0.5), ("guleryuz", -1.5), ("lama", -0.25)):
+                r = {"cell": cell, "perturbation": p, "method": meth, "false_pos_frac": 0.01 if cell == "CF1_L3" else 0.03,
+                     "false_neg_frac": 0.02}
+                if p != "exact":
+                    r["degradation_mean"] = deg * (1 if cell == "CF1_L3" else 3)
+                rows.append(r)
+    _write_csv(tmp_path / "robustness.csv", rows)
+    lines = _body(m.maskerr(tmp_path))
+    assert lines == [r"Erode 1\,px & $-$1.00 & $-$3.00 & $-$0.50 & 2.00 & 2.00 \\",
+                     r"Flip 5\% & $-$1.00 & $-$3.00 & $-$0.50 & 2.00 & 2.00 \\"]
+
+
 def test_committed_tables_are_current():
     m = _mod()
     for tag, fn in m.TABLES.items():
