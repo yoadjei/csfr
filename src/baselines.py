@@ -134,28 +134,50 @@ def baseline_dictlearn(y: np.ndarray, M: np.ndarray, rng_seed: int,
 
 
 # ── round-2 classical baselines ─────────────────────────────────────────
-def baseline_guleryuz(y: np.ndarray, M: np.ndarray, seed: int = 0, n_iter: int = 200,
-                      tau0: float = 128.0, tau1: float = 2.0) -> np.ndarray:
-    """Iterative DCT hard-thresholding inpainting with a geometrically decreasing
-    threshold: the orthonormal global-DCT variant of Guleryuz (2006). Each
-    iteration keeps DCT coefficients above the threshold, transforms back, and
-    restores the observed pixels. Deterministic; `seed` is accepted for the
-    common interface and unused."""
+def _block_dct_threshold(x: np.ndarray, tau: float, b: int = 8,
+                         shifts: tuple[int, ...] = (0, 2, 4, 6)) -> np.ndarray:
+    """Average of hard-thresholded reconstructions over shifted b x b block-DCT
+    grids (symmetric padding, DC always kept). x is (B, H, W)."""
     from scipy.fft import dctn, idctn
-    out = y.copy()
+    B, h, w = x.shape
+    pad = np.pad(x, ((0, 0), (b, b), (b, b)), mode="symmetric")
+    acc = np.zeros_like(x)
+    n = 0
+    for sy in shifts:
+        for sx in shifts:
+            H = ((h + sy + b - 1) // b) * b
+            W = ((w + sx + b - 1) // b) * b
+            sub = pad[:, b - sy: b - sy + H, b - sx: b - sx + W]
+            blk = sub.reshape(B, H // b, b, W // b, b).transpose(0, 1, 3, 2, 4)
+            a = dctn(blk, type=2, norm="ortho", axes=(-2, -1))
+            keep = np.abs(a) >= tau
+            keep[..., 0, 0] = True
+            rec = idctn(a * keep, type=2, norm="ortho", axes=(-2, -1))
+            rec = rec.transpose(0, 1, 3, 2, 4).reshape(B, H, W)
+            acc += rec[:, sy: sy + h, sx: sx + w]
+            n += 1
+    return acc / n
+
+
+def baseline_guleryuz(y: np.ndarray, M: np.ndarray, seed: int = 0, n_iter: int = 100,
+                      tau0: float = 128.0, tau1: float = 2.0) -> np.ndarray:
+    """Iterated denoising by overlapping block-DCT hard thresholding, after Guleryuz
+    (2006): 8 x 8 DCT blocks on 16 grid shifts (stride 2), coefficients below the
+    threshold zeroed (DC kept), the 16 reconstructions averaged, observed pixels
+    restored and the box applied; the threshold decreases geometrically from tau0
+    to tau1 over n_iter iterations. The hole starts at the observed mean.
+    Deterministic; `seed` is accepted for the common interface and unused."""
+    m = M == 1
+    x = y.astype(np.float64).copy()
+    cnt = np.maximum(m.reshape(m.shape[0], -1).sum(1), 1)
+    mean = (x * m).reshape(x.shape[0], -1).sum(1) / cnt
+    x = np.where(m, x, mean[:, None, None])
     taus = tau0 * (tau1 / tau0) ** (np.arange(n_iter) / max(n_iter - 1, 1))
-    for i in range(y.shape[0]):
-        m = M[i] == 1
-        x = y[i].astype(np.float64).copy()
-        x[~m] = x[m].mean() if m.any() else 127.5
-        for tau in taus:
-            a = dctn(x, type=2, norm="ortho")
-            a[np.abs(a) < tau] = 0.0
-            x = idctn(a, type=2, norm="ortho")
-            x[m] = y[i][m]
-            np.clip(x, 0, 255, out=x)
-        out[i] = x.astype(np.float32)
-    return out
+    for tau in taus:
+        x = _block_dct_threshold(x, float(tau))
+        x = np.where(m, y, x)
+        np.clip(x, 0, 255, out=x)
+    return x.astype(np.float32)
 
 
 def baseline_biharmonic(y: np.ndarray, M: np.ndarray, seed: int = 0) -> np.ndarray:
