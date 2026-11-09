@@ -11,7 +11,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from csfr_solver import SolverConfig, solve  # noqa: E402
 from sensitivity import (RecordConfig, sensitivity_row, sensitivity_column,  # noqa: E402
-                         fidelity_columns, free_set, write_manifest)
+                         fidelity_columns, fidelity_patch, free_set, write_manifest)
 
 
 def _solved(n=12, seed=1):
@@ -79,6 +79,23 @@ def test_column_is_the_derivative_of_the_solution_map():
     assert e[0] < 1e-3 and e[1] < 1e-2
     assert 5.0 < e[2] / e[1] < 20.0
     assert all(r["sign_agreement_topk"] == 1.0 for r in res)
+
+
+def test_batched_patch_fidelity_equals_per_query_fidelity():
+    """fidelity_patch solves every query and delta of a patch in one batch; the
+    rows must equal the per-query computation."""
+    x, y, Mb, cfg, _ = _solved()
+    obs = [tuple(map(int, p)) for p in np.argwhere(Mb.numpy())[[3, 40]]]
+    rc = RecordConfig()
+    batched = fidelity_patch(x, y, Mb, obs, cfg, rc, deltas=(0.25, 1.0), operational=True)
+    assert len(batched) == 4
+    for q, k in enumerate(obs):
+        single = fidelity_columns(x, y, Mb, k, cfg, rc, deltas=(0.25, 1.0), operational=True)
+        rows = [r for r in batched if r["query"] == q]
+        assert [r["query_pixel"] for r in rows] == [list(k), list(k)]
+        for a, b in zip(rows, single):
+            for key in ["rel_l2_error_ref", "rel_l2_error_op", "sign_agreement_topk", "pred_norm"]:
+                assert abs(a[key] - b[key]) <= 1e-6 * (1 + abs(b[key])), key
 
 
 def test_manifest_is_json_and_carries_parameters(tmp_path):

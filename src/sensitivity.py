@@ -161,20 +161,37 @@ def fidelity_columns(x_hat: Tensor, y: Tensor, Mb: Tensor, obs_pixel: tuple[int,
                      cfg: SolverConfig, rc: RecordConfig,
                      deltas: tuple[float, ...] = (0.25, 1.0, 4.0),
                      operational: bool = True) -> list[dict]:
-    """Perturb y at obs_pixel by each delta, re-solve, and compare the change of the
-    free pixels with the predicted column. The perturbation direction is flipped
-    where +delta would leave [0, 255]."""
-    r, c = obs_pixel
-    t0 = time.time()
-    pred, info = sensitivity_column(x_hat, y, Mb, obs_pixel, cfg, rc)
-    record_s = time.time() - t0
+    """fidelity_patch for a single observed pixel."""
+    return fidelity_patch(x_hat, y, Mb, [obs_pixel], cfg, rc, deltas, operational)
+
+
+def fidelity_patch(x_hat: Tensor, y: Tensor, Mb: Tensor, obs_pixels: list[tuple[int, int]],
+                   cfg: SolverConfig, rc: RecordConfig,
+                   deltas: tuple[float, ...] = (0.25, 1.0, 4.0),
+                   operational: bool = True) -> list[dict]:
+    """Perturb-and-re-solve check of the predicted columns of one patch.
+
+    For every query pixel k in obs_pixels and every delta, y is perturbed at k
+    and the change of the free pixels, divided by the perturbation, is compared
+    with the predicted column d x_F / d y_k. The unperturbed problem and every
+    perturbed one form one batch, solved once with the reference configuration
+    (float64, tolerance rc.ref_tol) and, if operational, once with cfg. The
+    perturbation direction flips where +delta would leave [0, 255]. One row per
+    (query, delta), in that order.
+    """
     free = free_set(x_hat.to(torch.float64), Mb, rc.bound_margin)
-    pf = pred[free]
-    signs = [(-1.0 if float(y[r, c]) + d > HI else 1.0) for d in deltas]
-    Y = y.to(torch.float64).unsqueeze(0).repeat(len(deltas) + 1, 1, 1).clone()
-    for j, (d, s) in enumerate(zip(deltas, signs), start=1):
+    cols = []
+    for k in obs_pixels:
+        t0 = time.time()
+        pred, info = sensitivity_column(x_hat, y, Mb, k, cfg, rc)
+        cols.append((pred[free], info, time.time() - t0))
+    jobs = [(q, d, -1.0 if float(y[k[0], k[1]]) + d > HI else 1.0)
+            for q, k in enumerate(obs_pixels) for d in deltas]
+    Y = y.to(torch.float64).unsqueeze(0).repeat(len(jobs) + 1, 1, 1).clone()
+    for j, (q, d, s) in enumerate(jobs, start=1):
+        r, c = obs_pixels[q]
         Y[j, r, c] += s * d
-    Ms = Mb.to(torch.float64).unsqueeze(0).repeat(len(deltas) + 1, 1, 1)
+    Ms = Mb.to(torch.float64).unsqueeze(0).repeat(len(jobs) + 1, 1, 1)
 
     ref_cfg = replace(cfg, dtype="float64", tol=rc.ref_tol, max_iter=rc.ref_max_iter)
     t0 = time.time()
@@ -187,17 +204,19 @@ def fidelity_columns(x_hat: Tensor, y: Tensor, Mb: Tensor, obs_pixel: tuple[int,
         Xo = Xo.to(torch.float64)
 
     out = []
-    for j, (d, s) in enumerate(zip(deltas, signs), start=1):
+    for j, (q, d, s) in enumerate(jobs, start=1):
+        pf, info, record_s = cols[q]
         act_ref = ((Xr[j] - Xr[0]) / (s * d))[free]
         rel_ref, agree_ref = _compare(pf, act_ref, rc.top_k)
-        row = {"delta": d, "direction": s, "rel_l2_error_ref": rel_ref,
+        row = {"query": q, "query_pixel": [int(obs_pixels[q][0]), int(obs_pixels[q][1])],
+               "delta": d, "direction": s, "rel_l2_error_ref": rel_ref,
                "sign_agreement_topk": agree_ref, "pred_norm": float(pf.norm()),
                "actual_norm_ref": float(act_ref.norm()),
                "ref_converged": bool(cr.converged[0] and cr.converged[j]),
                "ref_iters": int(max(cr.iterations[0], cr.iterations[j])),
                "cg_iters": info["cg_iters"], "cg_residual": info["cg_residual"],
                "n_free": int(free.sum()), "record_seconds": record_s,
-               "reference_seconds_batch": ref_s}
+               "reference_seconds_batch": ref_s, "batch_size": len(jobs) + 1}
         if operational:
             act_op = ((Xo[j] - Xo[0]) / (s * d))[free]
             rel_op, agree_op = _compare(pf, act_op, rc.top_k)
