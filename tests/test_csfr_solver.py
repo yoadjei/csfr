@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from csfr_solver import SolverConfig, solve, project, VARIANTS  # noqa: E402
+from csfr_solver import SolverConfig, solve, project, frank_wolfe_gap, VARIANTS  # noqa: E402
 from csfr_objective import Objective  # noqa: E402
 
 
@@ -34,24 +34,41 @@ def test_observed_pixels_are_exact_and_in_range():
     assert float(x.min()) >= 0.0 and float(x.max()) <= 255.0
 
 
-def test_certificate_reports_convergence_and_the_rule_holds():
+def test_certificate_bounds_the_objective_gap():
+    """The returned point satisfies the stated rule: the Frank-Wolfe gap, an upper
+    bound on J(x) - J*, is at most tol * J(x)."""
     ref, y, M = _toy()
-    cfg = SolverConfig(tol=1e-2, max_iter=5000)
+    cfg = SolverConfig(max_iter=20000)
     x, cert = solve(y, M, cfg)
     assert bool(cert.converged.all())
-    obj = Objective(16, 16, cfg.lam_l1, cfg.lam_tv, cfg.lam_fc, cfg.eps)
-    step = 1.0 / obj.lipschitz()
-    s = (project(x - step * obj.grad(x), y, M.bool()) - x).abs().flatten(1).amax(1)
-    assert float(s.max()) <= cfg.tol
-    assert int(cert.iterations.max()) < 5000
-    assert cert.to_json()["stopping_rule"].startswith("max |P(x - grad/L) - x| <= tol")
+    obj = Objective(16, 16, cfg.lam_l1, cfg.lam_tv, cfg.lam_fc, cfg.eps, dtype=x.dtype)
+    gap = frank_wolfe_gap(obj.grad(x), x, ~M.bool(), 0.0, 255.0)
+    assert bool((gap <= cfg.tol * obj.value(x)).all())
+    assert torch.allclose(cert.rel_gap, gap / obj.value(x), rtol=1e-6, atol=1e-18)
+    assert "Frank-Wolfe" in cert.to_json()["stopping_rule"]
+
+
+def test_large_hole_does_not_stop_early():
+    """Regression for the round-2 calibration: a projected-step rule stopped a
+    70 % top-of-image hole after ~140 iterations, 230 grey levels from the
+    optimum. The gap rule must return the optimum to a hundredth of a grey level."""
+    n = 32
+    yy, xx = np.mgrid[0:n, 0:n]
+    ref = (40 + 3.0 * xx + 2.0 * yy + 60 * ((xx // 6) % 2)).astype(np.float32)[None]
+    M = np.ones_like(ref)
+    M[:, : int(0.7 * n), :] = 0
+    y, Mt = torch.from_numpy(ref * M), torch.from_numpy(M)
+    x, cert = solve(y, Mt, SolverConfig())
+    x_ref, _ = solve(y, Mt, SolverConfig(tol=0.0, max_iter=30000))
+    assert bool(cert.converged.all())
+    assert float((x - x_ref).abs().max()) < 1e-2
 
 
 def test_solution_is_initialisation_independent():
     ref, y, M = _toy()
-    x0, _ = solve(y, M, SolverConfig(tol=1e-4, max_iter=40000, init="zero"))
-    x1, _ = solve(y, M, SolverConfig(tol=1e-4, max_iter=40000, init="mean"))
-    assert float((x0 - x1).abs().max()) < 0.05
+    x0, _ = solve(y, M, SolverConfig(init="zero"))
+    x1, _ = solve(y, M, SolverConfig(init="mean"))
+    assert float((x0 - x1).abs().max()) < 1e-2
 
 
 def test_recovers_a_piecewise_smooth_patch():
@@ -71,7 +88,7 @@ def test_is_deterministic():
 
 def test_cap_is_reported_as_not_converged():
     ref, y, M = _toy()
-    x, cert = solve(y, M, SolverConfig(tol=1e-9, max_iter=50))
+    x, cert = solve(y, M, SolverConfig(tol=0.0, max_iter=50))
     assert not bool(cert.converged.any())
     assert int(cert.iterations.min()) == 50
 
@@ -90,11 +107,20 @@ def test_variants_registry():
     assert VARIANTS["csfr_no_clip"].clip is False
 
 
-def test_float64_solve_returns_float64_and_agrees_with_float32():
+def test_default_precision_is_float64_and_float32_agrees():
     ref, y, M = _toy()
-    x32, _ = solve(y, M, SolverConfig(tol=1e-3, max_iter=20000))
-    x64, c64 = solve(y, M, SolverConfig(tol=1e-6, max_iter=40000, dtype="float64"))
-    assert x32.dtype == torch.float32 and x64.dtype == torch.float64
+    x64, c64 = solve(y, M, SolverConfig())
+    x32, _ = solve(y, M, SolverConfig(dtype="float32", tol=1e-7))
+    assert x64.dtype == torch.float64 and x32.dtype == torch.float32
     assert bool(c64.converged.all())
     assert float((x64 - x32.double()).abs().max()) < 0.05
     assert torch.equal(x64[M.bool()], y.double()[M.bool()])
+
+
+def test_active_subset_matches_full_batch():
+    """Freezing converged patches and computing only on the rest must not change
+    the answer for the patches still running."""
+    ref, y, M = _toy(b=4)
+    xa, _ = solve(y, M, SolverConfig())
+    xb = torch.cat([solve(y[i:i + 1], M[i:i + 1], SolverConfig())[0] for i in range(4)])
+    assert float((xa - xb).abs().max()) < 1e-6

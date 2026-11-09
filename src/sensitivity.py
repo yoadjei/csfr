@@ -46,7 +46,7 @@ class RecordConfig:
     bound_margin: float = 1e-6    # pixels within this of 0 or 255 count as at the bound
     top_k: int = 12
     support_rel: float = 1e-6     # support = |w| above this fraction of max |w|
-    ref_tol: float = 1e-7         # reference re-solve tolerance (grey levels, float64)
+    ref_tol: float = 1e-13        # reference re-solve: relative Frank-Wolfe gap, float64
     ref_max_iter: int = 100000
 
 

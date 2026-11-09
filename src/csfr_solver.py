@@ -2,11 +2,20 @@
 
 Projected FISTA (Beck and Teboulle 2009) with the gradient-based adaptive
 restart of O'Donoghue and Candes (2015) on the strictly convex objective of
-src/csfr_objective.py. The observed pixels are fixed at every iteration (C1),
-the box [0, 255] is enforced at every iteration (C3), and the run stops when a
-plain projected-gradient step would move no pixel by more than `tol` grey
-levels, or at `max_iter`. Every call returns a per-patch certificate that goes
-into the released metrics and into every sensitivity manifest.
+src/csfr_objective.py, in double precision. The observed pixels are fixed at
+every iteration (C1) and the box [0, 255] is enforced at every iteration (C3).
+
+Stopping rule. The run stops for a patch when its Frank-Wolfe gap
+
+    G(x) = max_{z in C} <grad J(x), x - z>,   C = {z: z_Omega = y_Omega, 0 <= z <= 255},
+
+falls to tol * J(x). For a convex J, G(x) >= J(x) - J*, so the rule certifies a
+relative suboptimality of at most tol. A projected-gradient step size is not a
+valid certificate here: deep inside a large hole the gradient is near zero until
+information arrives from the boundary, so steps are tiny far from the optimum
+(results/solver_calibration/ records the failure). Converged patches are frozen
+and the remaining iterations run only on the patches still active. max_iter caps
+the run and a capped patch is reported as not converged.
 
 Because the minimiser is unique, the initialisation changes the path, not the
 answer; tests/test_csfr_solver.py checks that.
@@ -22,6 +31,10 @@ from torch import Tensor
 
 from csfr_objective import HI, LO, Objective
 
+# the unclipped ablation arm has no box; its gap is evaluated over a wider box
+# that contains every value the arm produces on 8-bit data
+NO_CLIP_BOX = (LO - 255.0, HI + 255.0)
+
 
 @dataclass(frozen=True)
 class SolverConfig:
@@ -30,13 +43,13 @@ class SolverConfig:
     lam_fc: float = 0.005
     eps: float = 1.0
     clip: bool = True
-    tol: float = 1e-2          # grey levels: max-norm of the projected-gradient step
+    tol: float = 1e-10         # relative Frank-Wolfe gap: G(x) <= tol * J(x)
     max_iter: int = 20000
     check_every: int = 10
     log_every: int = 100
     restart: bool = True
     init: str = "zero"         # "zero" | "mean" | "ns"
-    dtype: str = "float32"     # "float32" for sweeps; "float64" for reference re-solves
+    dtype: str = "float64"
 
 
 VARIANTS: dict[str, SolverConfig] = {
@@ -47,11 +60,17 @@ VARIANTS: dict[str, SolverConfig] = {
     "csfr_no_clip": SolverConfig(clip=False),
 }
 
+STOPPING_RULE = ("relative Frank-Wolfe gap: max_{z in C} <grad J(x), x - z> <= tol * J(x), "
+                 "an upper bound on the relative suboptimality (J(x) - J*) / J(x); checked "
+                 "every check_every iterations; converged patches are frozen; max_iter caps "
+                 "the run and a capped patch is reported as not converged")
+
 
 @dataclass
 class Certificate:
     iterations: Tensor
     converged: Tensor
+    rel_gap: Tensor
     final_step_inf: Tensor
     objective: Tensor
     lipschitz: float
@@ -63,13 +82,12 @@ class Certificate:
     def to_json(self) -> dict:
         return {"iterations": self.iterations.tolist(),
                 "converged": self.converged.tolist(),
+                "rel_gap": self.rel_gap.tolist(),
                 "final_step_inf": self.final_step_inf.tolist(),
                 "objective": self.objective.tolist(),
                 "lipschitz": self.lipschitz, "step": self.step, "config": self.config,
                 "trace": self.trace, "elapsed_s": self.elapsed_s,
-                "stopping_rule": ("max |P(x - grad/L) - x| <= tol on the current iterate, "
-                                  "checked every check_every iterations; converged patches "
-                                  "are frozen; max_iter caps the run and is reported")}
+                "stopping_rule": STOPPING_RULE}
 
 
 def project(x: Tensor, y: Tensor, Mb: Tensor, clip: bool = True) -> Tensor:
@@ -77,6 +95,12 @@ def project(x: Tensor, y: Tensor, Mb: Tensor, clip: bool = True) -> Tensor:
     if clip:
         x = x.clamp(LO, HI)
     return torch.where(Mb, y, x)
+
+
+def frank_wolfe_gap(g: Tensor, x: Tensor, free: Tensor, lo: float, hi: float) -> Tensor:
+    """Per-patch max_{z in box, z = x off the free set} <g, x - z>."""
+    z = torch.where(g < 0, torch.full_like(x, hi), torch.full_like(x, lo))
+    return ((g * (x - z)) * free.to(x.dtype)).flatten(1).sum(1)
 
 
 def initial_guess(y: Tensor, Mb: Tensor, how: str) -> Tensor:
@@ -92,7 +116,7 @@ def initial_guess(y: Tensor, Mb: Tensor, how: str) -> Tensor:
         for yi, mi in zip(y.cpu().numpy(), Mb.cpu().numpy()):
             img8 = np.clip(yi, 0, 255).astype(np.uint8)
             hole = (~mi).astype(np.uint8)
-            out.append(cv2.inpaint(img8, hole, 3, cv2.INPAINT_NS).astype(np.float32))
+            out.append(cv2.inpaint(img8, hole, 3, cv2.INPAINT_NS).astype(np.float64))
         return torch.from_numpy(np.stack(out)).to(y)
     raise ValueError(f"unknown initialisation: {how}")
 
@@ -102,49 +126,58 @@ def solve(y: Tensor, M: Tensor, cfg: SolverConfig = SolverConfig(),
     """Minimise the objective over the hole pixels of every patch in the batch.
 
     y, M: (B, H, W); M is 1 on observed pixels. Returns (x_hat, certificate),
-    x_hat with the observed pixels exactly equal to y.
+    x_hat in cfg.dtype with the observed pixels exactly equal to y.
     """
     dev = torch.device(device)
     y = y.to(dev, getattr(torch, cfg.dtype))
     Mb = M.to(dev).bool()
     B, H, W = y.shape
     obj = Objective(H, W, cfg.lam_l1, cfg.lam_tv, cfg.lam_fc, cfg.eps, dev, y.dtype)
+    lo, hi = (LO, HI) if cfg.clip else NO_CLIP_BOX
     L = obj.lipschitz()
     step = 1.0 / L
     x = project(initial_guess(y, Mb, cfg.init), y, Mb, cfg.clip)
     z = x.clone()
     t = torch.ones(B, device=dev, dtype=y.dtype)
     active = torch.ones(B, dtype=torch.bool, device=dev)
-    iters = torch.zeros(B, dtype=torch.long, device=dev)
+    iters = torch.full((B,), cfg.max_iter, dtype=torch.long, device=dev)
+    rel_gap = torch.full((B,), float("inf"), device=dev, dtype=y.dtype)
     step_inf = torch.full((B,), float("inf"), device=dev, dtype=y.dtype)
     trace: list[dict] = []
     t0 = time.time()
-    k = 0
+    idx = torch.arange(B, device=dev)
+    xs, zs, ts, ys, Ms = x, z, t, y, Mb
     for k in range(1, cfg.max_iter + 1):
-        x_new = project(z - step * obj.grad(z), y, Mb, cfg.clip)
+        x_new = project(zs - step * obj.grad(zs), ys, Ms, cfg.clip)
         if cfg.restart:
-            crit = ((z - x_new) * (x_new - x)).flatten(1).sum(1) > 0
-            t = torch.where(crit, torch.ones_like(t), t)
-        t_new = 0.5 * (1.0 + torch.sqrt(1.0 + 4.0 * t * t))
-        beta = ((t - 1.0) / t_new).view(B, 1, 1)
-        z_new = x_new + beta * (x_new - x)
-        a = active.view(B, 1, 1)
-        x = torch.where(a, x_new, x)
-        z = torch.where(a, z_new, z)
-        t = torch.where(active, t_new, t)
-        if k % cfg.check_every == 0:
-            s = (project(x - step * obj.grad(x), y, Mb, cfg.clip) - x).abs().flatten(1).amax(1)
-            step_inf = torch.where(active, s, step_inf)
-            newly = active & (s <= cfg.tol)
-            iters = torch.where(newly, torch.full_like(iters, k), iters)
-            active = active & ~newly
+            crit = ((zs - x_new) * (x_new - xs)).flatten(1).sum(1) > 0
+            ts = torch.where(crit, torch.ones_like(ts), ts)
+        t_new = 0.5 * (1.0 + torch.sqrt(1.0 + 4.0 * ts * ts))
+        zs = x_new + ((ts - 1.0) / t_new).view(-1, 1, 1) * (x_new - xs)
+        xs, ts = x_new, t_new
+        if k % cfg.check_every == 0 or k == cfg.max_iter:
+            g = obj.grad(xs)
+            J = obj.value(xs)
+            gap = frank_wolfe_gap(g, xs, ~Ms, lo, hi)
+            rg = gap / J.clamp(min=torch.finfo(J.dtype).tiny)
+            s_inf = (project(xs - step * g, ys, Ms, cfg.clip) - xs).abs().flatten(1).amax(1)
+            rel_gap[idx] = rg
+            step_inf[idx] = s_inf
+            done = rg <= cfg.tol
             if k % cfg.log_every == 0:
-                trace.append({"iter": k, "objective_mean": float(obj.value(x).mean()),
-                              "step_inf_max": float(s.max()), "n_active": int(active.sum())})
-            if not bool(active.any()):
-                break
-    iters = torch.where(active, torch.full_like(iters, cfg.max_iter), iters)
-    cert = Certificate(iterations=iters.cpu(), converged=(~active).cpu(),
+                trace.append({"iter": k, "objective_mean_active": float(J.mean()),
+                              "rel_gap_max_active": float(rg.max()), "n_active": int(idx.numel())})
+            if bool(done.any()):
+                x[idx[done]] = xs[done]
+                iters[idx[done]] = k
+                active[idx[done]] = False
+                keep = ~done
+                idx, xs, zs, ts, ys, Ms = idx[keep], xs[keep], zs[keep], ts[keep], ys[keep], Ms[keep]
+                if idx.numel() == 0:
+                    break
+    if idx.numel() > 0:
+        x[idx] = xs
+    cert = Certificate(iterations=iters.cpu(), converged=(~active).cpu(), rel_gap=rel_gap.cpu(),
                        final_step_inf=step_inf.cpu(), objective=obj.value(x).cpu(),
                        lipschitz=L, step=step, config=asdict(cfg), trace=trace,
                        elapsed_s=time.time() - t0)
