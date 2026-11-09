@@ -99,13 +99,31 @@ def fallback_cells(sweep: Path, path: Path = FALLBACKS) -> set[tuple[str, str, s
                 if r["sweep"] == sweep.name and float(r["frac_fallback"]) > 0.5}
 
 
+def tabular(colspec: str, header: list[str], body: list[str]) -> str:
+    """A complete booktabs tabular: generated tables own their layout, so a
+    header cannot drift from its rows."""
+    return "\n".join([rf"\begin{{tabular}}{{{colspec}}}", r"\toprule", *header, r"\midrule", *body,
+                      r"\bottomrule", r"\end{tabular}"])
+
+
+def family_level_header(levels: tuple[str, ...], first: str = "Method") -> list[str]:
+    """Two header rows: the families over their levels."""
+    k = len(levels)
+    spans = [(2 + i * k, 1 + (i + 1) * k) for i in range(len(FAMILIES))]
+    rules = "".join(rf"\cmidrule({'lr' if i < len(spans) - 1 else 'l'}){{{a}-{b}}}"
+                    for i, (a, b) in enumerate(spans))
+    return [" & " + " & ".join(rf"\multicolumn{{{k}}}{{c}}{{{f}}}" for f in FAMILIES) + r" \\",
+            rules,
+            f"{first} & " + " & ".join(lv for _ in FAMILIES for lv in levels) + r" \\"]
+
+
 def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digits: int,
                          levels: tuple[str, ...] = MAIN_LEVELS, with_cap_note: bool = False,
                          fallbacks: Path = FALLBACKS) -> str | None:
     """Rows are methods, columns are (family, level) cells; the best value of
     each column among the compared methods (not the floor) is bold, and a value
     a method mostly produced by its mean-fill fallback carries a dagger. A cell
-    a method did not run in is a dash."""
+    a method did not run in is a dash. Returns the complete tabular."""
     s = _summary(sweep)
     if s is None:
         return None
@@ -142,7 +160,65 @@ def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digit
         notes.append(cap_note(s, cells))
     if notes:
         lines += [r"\midrule", *(_note(t, 1 + len(cells)) for t in notes)]
-    return "\n".join(lines)
+    return tabular(rf"@{{}}l*{{{len(cells)}}}{{r}}@{{}}", family_level_header(levels), lines)
+
+
+ALL_LEVELS = ("L1", "L2", "L3", "L4", "L5")
+EXTERNAL = "lama"
+
+
+def signed(x: float, digits: int = 2) -> str:
+    """+0.52 / $-$1.21: a typographic minus in text mode."""
+    return f"{x:+.{digits}f}".replace("-", "$-$")
+
+
+def interval(lo: float, hi: float, digits: int = 2) -> str:
+    return f"[{signed(lo, digits)}, {signed(hi, digits)}]"
+
+
+def _csv(path: Path) -> list[dict] | None:
+    import csv
+    if not path.exists():
+        return None
+    with path.open(encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def paired_v2(sweep: Path = SWEEP, metric: str = "psnr_hole") -> str | None:
+    """Per cell: CSFR's rank among CSFR and the classical methods, the
+    comparison with the strongest classical method (difference, interval over
+    source images, fraction of images CSFR leads, cap-free difference), and the
+    comparison with the external method."""
+    rows = _csv(sweep / "stats" / "paired_tests.csv")
+    if rows is None:
+        return None
+    names = dict(METHOD_ORDER)
+    body = []
+    for fam in FAMILIES:
+        if body:
+            body.append(r"\midrule")
+        for lv in ALL_LEVELS:
+            cell = [r for r in rows if (r["family"], r["level"], r["metric"]) == (fam, lv, metric)]
+            classical = [r for r in cell if r["method"] != EXTERNAL]
+            if not classical:
+                raise ValueError(f"{sweep.name}: no {metric} comparisons for {fam} {lv}")
+            best = max(classical, key=lambda r: float(r["method_mean"]))
+            rank = 1 + sum(float(r["method_mean"]) > float(r["csfr_mean"]) for r in classical)
+            ext = next((r for r in cell if r["method"] == EXTERNAL), None)
+            cf = best.get("diff_mean_capfree", "")
+            out = [f"{fam}~{lv}", f"{rank}/{len(classical) + 1}", names[best["method"]],
+                   signed(float(best["diff_mean"])),
+                   interval(float(best["ci_cluster_lo"]), float(best["ci_cluster_hi"])),
+                   f"{100 * float(best['frac_images_csfr_leads']):.0f}",
+                   signed(float(cf)) if cf != "" else "--"]
+            out += ([signed(float(ext["diff_mean"])),
+                     interval(float(ext["ci_cluster_lo"]), float(ext["ci_cluster_hi"]))]
+                    if ext else ["--", "--"])
+            body.append(" & ".join(out) + r" \\")
+    header = [r" & & \multicolumn{5}{c}{Strongest classical method} & \multicolumn{2}{c}{LaMa} \\",
+              r"\cmidrule(lr){3-7}\cmidrule(l){8-9}",
+              r"Cell & Rank & Method & $\Delta$ & 95\% CI & Led (\%) & $\Delta_{\mathrm{cf}}$ & $\Delta$ & 95\% CI \\"]
+    return tabular(r"@{}l c l r c r r r c@{}", header, body)
 
 
 def quality() -> str | None:
@@ -153,7 +229,7 @@ def gmsd_table() -> str | None:
     return method_by_cell_table(SWEEP, "gmsd_hole", higher_is_better=False, digits=3)
 
 
-TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table}
+TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_V2": paired_v2}
 
 
 def main() -> int:

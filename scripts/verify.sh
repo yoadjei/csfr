@@ -21,11 +21,11 @@ trap "rm -rf '$tmpdir'" EXIT
 python scripts/run_downstream.py --config configs/downstream.yaml \
   --smoke --output-dir "$tmpdir" || fail=1
 
-echo "== 3. regenerate primary paper tables from PSNR/SSIM CSVs =="
-python scripts/update_paper_tables.py || fail=1
+echo "== 3. regenerate the numbers in running text from code and result CSVs =="
+python scripts/render_numbers_v2.py || fail=1
 
-echo "== 4. regenerate auto tables from result CSVs =="
-python scripts/render_stats_tables.py || fail=1
+echo "== 4. regenerate the round-2 tables from result CSVs =="
+python scripts/render_tables_v2.py || fail=1
 
 echo "== 5. manuscript build =="
 cd paper
@@ -66,6 +66,14 @@ cp paper2_reconstruction.pdf CSFR_manuscript.pdf || fail=1
 cp paper2_supplementary.pdf  CSFR_supplementary.pdf || fail=1
 echo "CSFR_manuscript.pdf and CSFR_supplementary.pdf refreshed from this build"
 cd ..
+
+echo "== 9. nothing pending =="
+# a macro, table or finding whose result does not exist yet prints [pending]; a
+# manuscript with any of them is not ready to submit
+pending=$(cat paper/numbers_v2.tex paper/paper2_reconstruction.tex paper/paper2_supplementary.tex \
+  | grep -v '\\newcommand' | grep -c '\[pending\|\\resultpending')
+echo "pending results: $pending"
+[ "$pending" -eq 0 ] || fail=1
 
 echo "== result =="
 if [ "$fail" -eq 0 ]; then echo "PASS"; else echo "FAIL"; fi

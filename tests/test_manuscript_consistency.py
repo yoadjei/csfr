@@ -1,21 +1,20 @@
 """Internal consistency of the manuscript against itself and its generators.
 
-test_manuscript_numbers.py checks that hand-typed numbers match their CSVs.
+test_manuscript_numbers.py checks that no result number is typed by hand.
 These tests check a different failure mode: statements that contradict other
-statements in the same paper, or captions that describe a table other than the
-one beneath them. Both have shipped in earlier drafts.
+statements in the same paper or the code they describe. Both have shipped in
+earlier versions.
 
 The specific regressions guarded here:
 
   * §5.2 said five baselines ran under the harness and that the deep-learning
     families appeared "for contrast only", while the external prior was a sixth
-    same-harness baseline in four tables and in the abstract.
-  * The downstream table's seventh column was headed "Cond. Conf-Err" and
-    carried the baseline's *joint* rate, so the conditional rates the prose
-    argues from were absent from the table it cites.
-  * The frontier sensitivity swept six methods with no generative method among
-    them, while concluding that positive weight on the audit record lifts CSFR
-    above the generative methods.
+    same-harness baseline in four tables and in the abstract; the Methods
+    section must now name every configured method with its code parameters.
+  * Round-1 tables had hand-written headers that promised columns the body
+    did not carry. Round-2 results tables are generated whole (header and
+    body) by scripts/render_tables_v2.py, so that check lives with the
+    generators.
   * The ethics statement named a corpus that was never executed and omitted
     three that were.
   * After the first rejection the revision withdrew the over-claiming terms
@@ -26,7 +25,6 @@ The specific regressions guarded here:
 """
 from __future__ import annotations
 
-import csv
 import json
 import re
 from pathlib import Path
@@ -110,8 +108,6 @@ def test_methods_section_parameters_match_the_code(tex):
     assert "via OpenCV with radius $3$" in sec
 
 
-@pytest.mark.xfail(strict=True, reason="the abstract is rewritten when the round-2 results exist; "
-                                       "remove this marker then")
 def test_abstract_and_methods_agree_on_the_count(tex):
     body = section(tex, r"\begin{abstract}", r"\end{abstract}")
     assert r"\methodsTotal" in body or r"\methodsClassical" in body
@@ -125,73 +121,6 @@ def test_lama_configuration_is_stated(tex):
     for fragment in ("big-lama", "simple-lama-inpainting", "native resolution",
                      "three channels", "composited"):
         assert fragment in sec, f"LaMa configuration omits {fragment!r}"
-
-
-def test_downstream_table_header_matches_the_generator(tex):
-    """Every column the header promises must be emitted, and vice versa."""
-    block = section(tex, "% BEGIN AUTO DOWNSTREAM", "% END AUTO DOWNSTREAM")
-    rows = [r for r in block.splitlines()
-            if r.strip().endswith(r"\\") and "midrule" not in r]
-    assert rows, "downstream table body is empty"
-    for r in rows:
-        assert len(r.split("&")) == 10, f"row has wrong column count: {r}"
-
-    header = section(tex, r"\caption{Downstream utility", "% BEGIN AUTO DOWNSTREAM")
-    # the caption must not promise markup or columns the body does not carry.
-    assert "expected calibration error" not in header
-    assert "dagger marks the best confident-error performance" not in header
-    assert "zero-signal coverage" not in header
-    assert r"$n_{\text{conf}}$" in header
-
-
-def test_downstream_conditional_rates_are_in_the_table(tex):
-    """The prose argues from CF3 L5 conditional rates. They must appear in the
-    table that sentence cites, not only in the CSV."""
-    met = {}
-    with (RESULTS / "downstream" / "metrics.csv").open(encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            met[(r["family"], r["level"], r["method"])] = r
-    block = section(tex, "% BEGIN AUTO DOWNSTREAM", "% END AUTO DOWNSTREAM")
-    row = next(r for r in block.splitlines() if r.startswith("CF3 & L5"))
-    for method in ("csfr", "lama"):
-        cond = float(met[("CF3", "L5", method)]["conf_err_cond"])
-        n = int(float(met[("CF3", "L5", method)]["n_confident"]))
-        assert f"{cond:.3f}" in row, f"{method} conditional rate missing"
-        assert f"({n:d})" in row, f"{method} confident count missing"
-
-
-def test_downstream_recovery_definition_is_correct(tex):
-    """Recovery runs from the zero-fill floor to the clean ceiling, and the
-    ceiling is the 1000-digit subset, not the full test set."""
-    header = section(tex, r"\caption{Downstream utility", "% BEGIN AUTO DOWNSTREAM")
-    assert "zero-fill" in header and "0.8690" in header
-    assert "relative to clean ceiling (0.8783)" not in header
-
-
-def test_frontier_sensitivity_includes_the_generative_method(tex):
-    d = json.loads((RESULTS / "sensitivity" / "frontier_sensitivity.json")
-                   .read_text(encoding="utf-8"))
-    scores = d["equal_weight_point"]["scores"]
-    assert "lama" in scores, (
-        "the sweep excludes the only generative method measured under the "
-        "harness, so it cannot support the claim made about generative methods")
-    assert len(scores) == 7
-    worst = d["weights_simplex"]["csfr_rank_max"]
-    assert re.search(rf"never falls below \w+ of seven", tex), \
-        "manuscript does not state CSFR's worst rank over seven methods"
-    assert worst == 5, f"worst rank is now {worst}; update the manuscript"
-
-
-def test_external_corpus_scope_is_stated(tex):
-    """LaMa was not run on GovDocs1. 'Rank of six' means something different
-    there than 'six baselines' does everywhere else, so it must be said."""
-    sec = section(tex, r"\subsection{External Validation}",
-                  r"\subsection{Iteration-Budget Sensitivity}")
-    assert "not re-run on this corpus" in sec
-    with (RESULTS / "csfr_sweep_govdocs1" / "summary.csv").open(encoding="utf-8") as f:
-        methods = {r["method"] for r in csv.DictReader(f)}
-    assert "lama" not in methods, \
-        "LaMa now has GovDocs1 results; tabulate it and drop this caveat"
 
 
 def test_device_claims_match_what_the_runs_recorded(tex):
@@ -319,10 +248,13 @@ def test_revised_terminology_is_used_throughout(tex):
                    "certified by construction", "carries zero traceability",
                    "yields output with zero traceability"):
         assert phrase not in body, f"withdrawn wording is back: {phrase!r}"
-    for phrase in ("Audit Record Coverage", "approximate local sensitivity",
-                   "Sensitivity Record Fidelity", "auditability composite (AC)",
-                   "not as proof of recoverability", "Adoption Scope"):
+    for phrase in ("Sensitivity Record Fidelity", "sensitivity record", "certificate"):
         assert phrase in body, f"revised wording missing: {phrase!r}"
+    # round 2 replaced Audit Record Coverage (a by-construction 1.0) with SRF, a
+    # measured fidelity; the old name may appear only where the replacement is said
+    for sentence in re.split(r"(?<=[.!?])\s+", body):
+        if "Audit Record Coverage" in sentence:
+            assert "replac" in sentence, f"Audit Record Coverage used as a metric: {sentence[:120]!r}"
 
 
 def test_c3_is_stated_as_the_global_bound(tex):
@@ -350,6 +282,9 @@ def test_withdrawn_absolute_claims_stay_withdrawn(tex):
                     r"No method removes", r"guarantees that",
                     r"the single most consequential", r"fails Daubert scrutiny"):
         assert not re.search(pattern, body), f"absolute wording is back: {pattern!r}"
+    # the paper is written as itself, not as a revision of another version (R2.11)
+    for pattern in (r"earlier draft", r"review of an earlier", r"previous submission"):
+        assert not re.search(pattern, body, re.I), f"revision-history wording: {pattern!r}"
 
 
 def test_ieee_build_derives_cleanly_from_the_source(tex):

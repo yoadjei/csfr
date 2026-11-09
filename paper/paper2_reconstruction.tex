@@ -21,6 +21,9 @@
 %% Every number stated in running text (generated; see scripts/render_numbers_v2.py).
 \input{numbers_v2}
 \newtheorem{proposition}{Proposition}
+%% A finding not yet written because its result does not exist yet; the
+%% submission gate (scripts/verify.sh) fails while any remains.
+\newcommand{\resultpending}[1]{\textbf{[pending: #1]}}
 
 %% Allow emergency stretch to prevent overfull hboxes
 \emergencystretch=2em
@@ -64,11 +67,11 @@
 
 %%----------------------------------------------------------------------
 \begin{abstract}
-Digital forensic analysis often encounters image evidence that is fragmented, corrupted or partially overwritten. Deep-learning inpainting can produce visually plausible completions, but pixels generated from an external learned prior cannot be attributed solely to the recovered input. We present Compressed Sensing Fragment Reconstruction (CSFR), a deterministic, training-free method for decoded pixel-domain reconstruction. CSFR minimises a penalised objective with fragment consistency, total-variation regularisation, global intensity clipping and frequency regularisation in a Discrete Cosine Transform basis. The associated idealised compressed-sensing estimator admits a conditional recovery bound under appropriate Restricted Isometry Property assumptions; the fixed-budget implementation does not provide a per-instance recovery certificate. We compare CSFR with six same-harness baselines over four corruption families, five severity levels and three seeds using 300 patches per cell. The evaluation includes a constraint ablation, paired and cluster-aware inference, iteration-budget sensitivity, external validation on 176 GovDocs1 source images and downstream Street View House Numbers digit classification. CSFR leads the strongest classical baseline by $1.0$ to $1.4$\,dB peak signal-to-noise ratio under random pixel loss, and this pattern reproduces on GovDocs1. The external-prior inpainter LaMa attains the highest raw quality on most structured-corruption cells but relies on a learned prior. Released CSFR outputs preserve observed pixels exactly and include an approximate local input-sensitivity record for sampled imputed pixels. These properties support reproducibility and audit, but do not establish semantic correctness or legal admissibility. Code, data and per-seed artefacts are released.
+Image evidence recovered from damaged media often has contiguous regions missing, and an examiner who reconstructs them must be able to say how the result depends on the pixels that survived. CSFR (constraint-driven sparse fragment reconstruction) computes the unique minimiser of a strictly convex objective, a smoothed DCT sparsity term with total variation and a high-frequency penalty, with the observed pixels and the 8-bit range as hard constraints. Projected FISTA with adaptive restart reaches the minimiser, and a Frank--Wolfe gap certifies every output. Each output also carries a sensitivity record, the derivative of the reconstruction with respect to the observed pixels, whose accuracy is measured by re-solving perturbed problems. CSFR is compared with \methodsTotal\ methods, \methodsClassical\ classical and one learned, on three patch corpora with cluster-aware statistics, on byte-corrupted JPEG files decoded by a standard decoder, on full-resolution colour images and on two downstream tasks. \resultpending{rank and gap to the strongest classical method per family with intervals, including scattered loss, where block-DCT thresholding leads; gap to LaMa; record fidelity; JPEG; cost}. The certificate and the record make the computation checkable. They do not establish that a reconstruction is semantically correct, and admissibility remains for a court to decide. Code, data and the result files behind every table are released.
 \end{abstract}
 
 \begin{keyword}
-Auditability \sep Compressed Sensing \sep Constraint-Driven Inference \sep Digital Forensics \sep Hallucination Risk \sep Image Inpainting \sep Image Reconstruction \sep Reproducibility \sep Sensitivity Analysis \sep Sparse Reconstruction
+Auditability \sep Constraint-Driven Inference \sep Convex Optimisation \sep Digital Forensics \sep Image Inpainting \sep Image Reconstruction \sep Reproducibility \sep Sensitivity Analysis \sep Sparse Reconstruction
 \end{keyword}
 
 \end{frontmatter}
@@ -87,7 +90,7 @@ This paper asks whether a reconstruction can come with both statements, and what
 
 \begin{enumerate}
   \item \textbf{A certified convex reconstruction.} The problem is stated exactly as it is solved, with every constant, and shown to have a unique minimiser (Section~\ref{sec:problem}). Projected FISTA with adaptive restart reaches it, and a Frank--Wolfe gap with a calibrated tolerance certifies every output (Section~\ref{sec:framework:solver}).
-  \item \textbf{A validated sensitivity record.} The record is the derivative of the solution map, and its rows provably sum to one. Its accuracy is measured against re-solves at two tolerances (Sensitivity Record Fidelity), and it is compared with the exact record of linear interpolation and with finite-difference records of PDE inpainting (Sections~\ref{sec:framework:audit}, \ref{sec:results:fidelity} and~\ref{sec:results:records}).
+  \item \textbf{A validated sensitivity record.} The record is the derivative of the solution map, and its rows provably sum to one whenever no imputed pixel is at a bound of the range. Its accuracy is measured against re-solves at two tolerances (Sensitivity Record Fidelity), and it is compared with the exact record of linear interpolation and with finite-difference records of PDE inpainting (Sections~\ref{sec:framework:audit}, \ref{sec:results:fidelity} and~\ref{sec:results:records}).
   \item \textbf{A forensic-realism evaluation.} It covers JPEG files corrupted at the byte level and decoded by a standard decoder, with three ways of obtaining the mask; robustness to errors in the mask; and full-resolution colour images (Sections~\ref{sec:results:jpeg}, \ref{sec:results:maskerr} and~\ref{sec:results:fullres}).
   \item \textbf{A same-harness comparison with accuracy reported as measured.} CSFR is compared with \methodsTotal\ methods, \methodsClassical\ classical and one learned, on three patch corpora with cluster-aware statistics. The evaluation adds a constraint ablation, a comparison with a fixed-budget solver and two downstream tasks (Sections~\ref{sec:experiments} and~\ref{sec:results}). It reports where CSFR is not the most accurate method as plainly as where it is.
 \end{enumerate}
@@ -392,333 +395,260 @@ CSFR, the classical methods and the analyses ran on one Windows~11 workstation w
 \section{Results}
 \label{sec:results}
 
-All results in this section are produced by the released CSFR harness on a real 2-D image-patch CF$\times$L sweep ($N=300$ grayscale $64{\times}64$ patches per cell carved from DFRWS 2006, seeds $\{0,1,2\}$ per condition, torch DCT-2D solver; raw per-cell, per-seed artefacts at \texttt{results/\allowbreak csfr\allowbreak\_sweep\allowbreak\_2d\allowbreak\_v2/}).
+The results follow the order of the contributions: quality on the primary corpus, the solver and the ablation, the sensitivity record, what the observed pixels can determine, the secondary corpora, the forensic-realism experiments, cost, the downstream tasks and the Bounded-Unknown diagnostic. Differences are signed so that a positive value favours CSFR. Unless a caption says otherwise, intervals are 95\% bootstrap intervals that resample source images (Section~\ref{sec:experiments:stats}).
 
-\subsection{Reconstruction Quality vs. Corruption Severity}
-\label{sec:results:psnr}
+\subsection{Reconstruction quality on the primary corpus}
+\label{sec:results:quality}
 
-Table~\ref{tab:psnr-ssim} reports quality for CSFR and the six same-harness baselines at severity levels L1/L3/L5 (full grid released; means over seeds $\{0,1,2\}$, $N{=}300$ patches per cell). CSFR attains the best quality on random pixel loss (CF1) at every severity, and that lead survives cluster-robust inference. Elsewhere it does not lead. On the half-image masks it is indistinguishable from the PDE inpainters at L1 and trails them by $7.4$ to $8.4$\,dB from L3 upward, and the external prior LaMa takes the highest PSNR in most cells from L2 up. On burst corruption (CF2) LaMa leads at every severity, by $1.8$\,dB at L1 widening to $7.0$\,dB at L5.
+Tables~\ref{tab:quality} and~\ref{tab:gmsd} give hole PSNR and GMSD on GovDocs1 at three of the five severity levels. The supplement gives all five levels, and hole SSIM. Table~\ref{tab:paired-v2} compares CSFR at every level with the strongest classical method of the cell and with LaMa.
 
-PSNR partly explains the ranking. LaMa's learned Fourier-convolutional prior and the PDE inpainters' smoothing produce fills that score well on large missing regions. CSFR extrapolates frequency structure from a global sparsity prior and loses accuracy when half the support is missing. Per-patch variation is large relative to several margins, CSFR $44.68 \pm 9.05$\,dB against Navier--Stokes $43.49 \pm 8.33$\,dB at CF1~L1, so we do not treat a point estimate as sufficient evidence on its own. Section~\ref{sec:results:stats} reports the paired inference for each comparison, and Section~\ref{sec:results:downstream} examines what these quality differences are worth to a downstream task.
+\resultpending{rank and gap to the strongest classical method per family, with intervals; the CF1 deficit to block-DCT thresholding; the gaps to LaMa; GMSD; what the cap-free subset changes}
 
-\begin{table*}[htbp]
+\begin{table*}[!t]
 \centering
-\caption{Reconstruction PSNR (dB) and SSIM by corruption family and severity level: CSFR versus the six same-harness baselines (Zero-fill; bilinear Linear interpolation; Telea and Navier--Stokes PDE inpainting; per-image dictionary learning; LaMa external-prior inpainter). Values are means over seeds $\{0,1,2\}$ ($N=300$ DFRWS 2006 patches per cell); per-patch and between-seed standard deviations are in the released summary. Bold marks the best point estimate per row. LaMa achieves the highest raw PSNR on CF2 and most CF3/CF4 cells, but the evaluated implementation did not emit a comparable audit record. Point estimates alone do not establish a difference: Table~\ref{tab:paired} reports the paired, cluster-robust inference, and the CF1 leads, the CF2 deficits from L3 upward with cluster-robust intervals, and the CF3/CF4 deficits from L2 upward survive it. No evaluated method dominates on all metrics.}
-\label{tab:psnr-ssim}
-\setlength{\tabcolsep}{4pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{llcccccccccccccc}
-\toprule
-& & \multicolumn{7}{c}{\textbf{PSNR (dB) $\uparrow$}} & \multicolumn{7}{c}{\textbf{SSIM $\uparrow$}} \\
-\cmidrule(lr){3-9} \cmidrule(lr){10-16}
-\textbf{Fam.} & \textbf{Lvl} & \textbf{Zero} & \textbf{Lin.} & \textbf{Telea} & \textbf{NS} & \textbf{Dict.} & \textbf{LaMa} & \textbf{CSFR} & \textbf{Zero} & \textbf{Lin.} & \textbf{Telea} & \textbf{NS} & \textbf{Dict.} & \textbf{LaMa} & \textbf{CSFR} \\
-\midrule
-% BEGIN AUTO PSNR-SSIM
-CF1 & L1 & 20.72 & 42.88 & 41.39 & 43.49 & 30.05 & 43.09 & \textbf{44.68} & 0.538 & 0.992 & 0.989 & 0.993 & 0.835 & 0.989 & \textbf{0.994} \\
-CF1 & L3 & 12.94 & 33.22 & 31.85 & 34.62 & 22.21 & 32.63 & \textbf{35.62} & 0.222 & 0.950 & 0.907 & 0.945 & 0.576 & 0.882 & \textbf{0.950} \\
-CF1 & L5 & 9.25 & 25.91 & 26.65 & 28.05 & 18.52 & 23.12 & \textbf{29.49} & 0.078 & \textbf{0.814} & 0.722 & 0.787 & 0.355 & 0.572 & 0.808 \\
-\midrule
-CF2 & L1 & 18.61 & 34.15 & 33.43 & 33.60 & 29.65 & \textbf{35.75} & 33.94 & 0.812 & 0.925 & 0.928 & 0.928 & 0.896 & \textbf{0.941} & 0.924 \\
-CF2 & L3 & 12.72 & 26.67 & 26.13 & 26.15 & 22.99 & \textbf{28.84} & 25.02 & 0.478 & 0.760 & 0.768 & 0.769 & 0.678 & \textbf{0.807} & 0.749 \\
-CF2 & L5 & 9.24 & 21.17 & 20.55 & 20.54 & 18.32 & \textbf{22.94} & 15.93 & 0.102 & 0.449 & 0.458 & 0.460 & 0.339 & \textbf{0.521} & 0.372 \\
-\midrule
-CF3 & L1 & 21.63 & 21.63 & 38.42 & 38.64 & 34.67 & 37.46 & \textbf{38.90} & 0.959 & 0.959 & 0.993 & 0.993 & 0.987 & 0.992 & \textbf{0.993} \\
-CF3 & L3 & 13.40 & 13.40 & 24.41 & 24.40 & 21.90 & \textbf{25.28} & 16.97 & 0.688 & 0.688 & 0.813 & 0.807 & 0.779 & \textbf{0.821} & 0.757 \\
-CF3 & L5 & 9.45 & 9.45 & 17.87 & 18.05 & 17.20 & \textbf{18.41} & 10.61 & 0.245 & 0.245 & \textbf{0.470} & 0.461 & 0.442 & 0.463 & 0.328 \\
-\midrule
-CF4 & L1 & 22.27 & 22.27 & 39.19 & \textbf{39.50} & 35.65 & 38.70 & 39.30 & 0.960 & 0.960 & 0.994 & 0.994 & 0.988 & 0.993 & \textbf{0.994} \\
-CF4 & L3 & 13.84 & 13.84 & 25.21 & 25.44 & 22.05 & \textbf{26.15} & 17.06 & 0.691 & 0.691 & 0.816 & 0.819 & 0.779 & \textbf{0.823} & 0.756 \\
-CF4 & L5 & 9.61 & 9.61 & 18.23 & 18.22 & 17.28 & \textbf{18.64} & 10.63 & 0.245 & 0.245 & 0.472 & \textbf{0.476} & 0.438 & 0.465 & 0.326 \\
-% END AUTO PSNR-SSIM
-\bottomrule
-\end{tabular}%
-}
+\caption{Hole PSNR (dB) on GovDocs1, the mean over \corpusGovN\ patches and \sweepSeeds\ mask seeds. Bold: the best compared method in each column; zero-fill is the floor and is not compared. Linear interpolation equals the floor under CF3 and CF4, where the whole hole lies outside the convex hull of the observed pixels.}
+\label{tab:quality}
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+% BEGIN AUTO QUALITY
+\textbf{[pending]}
+% END AUTO QUALITY
 \end{table*}
 
-
-
-\subsection{Paired Inference}
-\label{sec:results:stats}
-
-Table~\ref{tab:psnr-ssim} reports point estimates. This section reports whether the differences survive inference. The analysis plan is fixed and released in \texttt{results/\allowbreak paired\allowbreak\_stats/\allowbreak analysis\allowbreak\_plan.json}; it was specified before the tests were run and is stated here in full.
-
-\paragraph{Analysis plan.} The unit is the image patch, matched across methods: every method reconstructs the same patch under the same mask, so comparisons are paired. Each patch's metric is first averaged over the three seeds, giving one paired observation per patch per cell and avoiding the pseudo-replication that would arise from treating the same 300 patches under three seeds as 900 independent observations. The primary test is the two-sided Wilcoxon signed-rank test~\cite{wilcoxon1945individual}, chosen over the paired $t$ because per-patch PSNR is right-skewed and SSIM is bounded; the paired $t$ is reported alongside in the released CSV and agrees throughout. Multiplicity is controlled by the Holm--Bonferroni procedure~\cite{holm1979simple} across all 100 comparisons within each metric (20 cells $\times$ 5 baselines). Effect size is reported as Cohen's $d_{z}$~\cite{cohen1988statistical} and Cliff's $\delta$~\cite{cliff1993dominance}. Intervals are 95\,\% percentile bootstrap with $10^{4}$ resamples. Table~\ref{tab:paired} reports CSFR against the \emph{strongest} baseline in each cell, which is the comparison that can hurt the paper; the full $6 \times 20$ grid is released.
-
-The external-prior baseline is absent from this paired analysis. It was computed in a separate GPU run that persisted cell-level metrics without the per-patch reconstructions the paired tests consume, so its comparison against CSFR rests on the cell means of Table~\ref{tab:psnr-ssim} and is not accompanied by a paired test or an interval. Its margins over CSFR on burst and half-image corruption are large, several decibels in most affected cells, but they are reported here as point estimates and should be read as such. Paired inference against that baseline requires re-running it with per-patch outputs retained, which is left to future work.
-
-\paragraph{Cluster-robust reporting.} The 300 DFRWS patches come from six source images and are not independent draws. Two additional analyses respect this clustering. A cluster bootstrap resamples whole source images rather than patches; this interval is the primary robustness evidence and is roughly three times wider than the patch-level interval. A Wilcoxon test on six per-image mean differences provides a second check. The cluster-level test is uninformative here: with six clusters, the smallest attainable $p$-value is $0.031$, so after correction across 100 comparisons no cell reaches significance. This is a property of the sampling design, not the method, motivating the external corpus (Section~\ref{sec:results:external}).
-
-\paragraph{Findings.} Three conclusions hold; one claim from earlier drafts does not survive.
-
-\begin{enumerate}
-  \item \textbf{Under random pixel loss (CF1), CSFR's advantage is consistent and statistically supported.} It beats the strongest baseline (Navier--Stokes) by $1.00$--$1.44$\,dB at every severity. Both the patch-level and the cluster-robust intervals exclude zero at all five levels, and $d_{z}$ ranges from $0.62$ to $1.19$. Cliff's $\delta$ is small ($0.10$--$0.16$) because the per-patch distributions overlap heavily; the effect is a consistent shift rather than a separation of populations, which is what the paired statistics capture and the unpaired ones do not.
-  \item \textbf{Under burst corruption (CF2) from L3 upward and structured erasure (CF3/CF4) from L2 upward, CSFR loses, and the deficit is large.} Against the best baseline it gives up $1.7$--$5.2$\,dB on CF2 (L3--L5) and $5.1$--$8.4$\,dB on CF3/CF4, with cluster-robust intervals excluding zero and $|d_{z}|$ up to $1.17$. At the two lowest burst severities (CF2~L1, L2) the loss is not cluster-robust (the six-image cluster interval spans zero), so we report those as indistinguishable rather than as losses. These are not marginal losses where they are robust, and we do not present them as such.
-  \item \textbf{The conclusions are essentially unchanged under the stricter, imputation-only PSNR.} Recomputing all 100 comparisons with the mean squared error taken over $\Omega^{c}$ alone rather than the whole patch changes no significance verdict and shifts no estimate by more than $0.13$\,dB. Exactly one of the 100 comparisons changes sign: CSFR versus Telea at CF4~L1 moves from $+0.11$\,dB to $-0.03$\,dB, a reversal of a difference far too small to support a directional claim under either definition. The whole-patch scoring convention is therefore not carrying the comparisons.
-  \item \textbf{The claim that CSFR leads on low-severity structured masks is withdrawn.} At CF3~L1 the point estimate favours CSFR by $0.26$\,dB and the patch-level test is significant after correction ($p = 1.3 \times 10^{-3}$), but the cluster-robust interval is $[-0.49, +0.48]$: once the six-image dependence is respected, the sign is not established. At CF4~L1 the estimate is $-0.20$\,dB and is not significant on either analysis. The honest statement is that CSFR and the PDE inpainters are \emph{indistinguishable} on low-severity half-image masks, not that CSFR leads. Earlier drafts of this paper claimed the latter on the strength of the patch-level analysis alone; that claim was an artefact of treating clustered patches as independent.
-\end{enumerate}
-
-\begin{table*}[htbp]
+\begin{table*}[!t]
 \centering
-\caption{Paired comparison of CSFR against the strongest same-harness baseline in each cell, on the primary DFRWS 2006 corpus. Unit of analysis: image patch ($N=300$), metric averaged over seeds $\{0,1,2\}$ before pairing. $\Delta$PSNR is CSFR minus baseline, so positive favours CSFR. Significance is the two-sided Wilcoxon signed-rank test after Holm--Bonferroni correction across all 100 comparisons ($^{*}p<0.05$, $^{**}p<10^{-3}$). The patch interval treats patches as independent; the cluster interval resamples the six source images and is the one to rely on. ``Robust'' records whether the cluster interval excludes zero. $\Delta$PSNR is computed from unrounded per-patch means and may differ by $\approx0.01$\,dB from the difference of the rounded cell means in Table~\ref{tab:psnr-ssim}.}
-\label{tab:paired}
-\setlength{\tabcolsep}{5pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{lllcccc c}
-\toprule
-\textbf{Fam.} & \textbf{Lvl} & \textbf{Strongest baseline} & \textbf{$\Delta$PSNR (dB)} & \textbf{Patch 95\,\% CI} & \textbf{Cluster 95\,\% CI} & \textbf{$d_{z}$} & \textbf{Robust} \\
-\midrule
-% BEGIN AUTO PAIRED
-CF1 & L1 & NS & +1.19$^{**}$ & [+1.00, +1.41] & [+0.72, +2.93] & +0.65 & yes \\
-CF1 & L2 & NS & +1.05$^{**}$ & [+0.91, +1.22] & [+0.72, +2.30] & +0.79 & yes \\
-CF1 & L3 & NS & +1.00$^{**}$ & [+0.87, +1.14] & [+0.70, +2.10] & +0.81 & yes \\
-CF1 & L4 & NS & +1.16$^{**}$ & [+1.04, +1.30] & [+0.86, +2.06] & +1.01 & yes \\
-CF1 & L5 & NS & +1.44$^{**}$ & [+1.31, +1.58] & [+1.06, +2.39] & +1.23 & yes \\
-\midrule
-CF2 & L1 & Linear & -0.20 & [-0.57, +0.12] & [-0.77, +0.43] & -0.07 & no \\
-CF2 & L2 & Linear & -0.97 & [-1.47, -0.51] & [-1.41, +0.43] & -0.23 & no \\
-CF2 & L3 & Linear & -1.65$^{**}$ & [-2.13, -1.20] & [-1.93, -0.23] & -0.40 & yes \\
-CF2 & L4 & Linear & -3.42$^{**}$ & [-4.00, -2.86] & [-4.27, -2.00] & -0.68 & yes \\
-CF2 & L5 & Linear & -5.24$^{**}$ & [-5.86, -4.64] & [-7.06, -3.25] & -0.97 & yes \\
-\midrule
-CF3 & L1 & NS & +0.26$^{*}$ & [+0.00, +0.49] & [-0.49, +0.48] & +0.12 & no \\
-CF3 & L2 & Telea & -5.13$^{**}$ & [-5.89, -4.39] & [-6.73, -2.92] & -0.76 & yes \\
-CF3 & L3 & Telea & -7.44$^{**}$ & [-8.23, -6.65] & [-10.61, -4.71] & -1.07 & yes \\
-CF3 & L4 & NS & -7.80$^{**}$ & [-8.70, -6.98] & [-11.73, -4.99] & -1.03 & yes \\
-CF3 & L5 & NS & -7.45$^{**}$ & [-8.36, -6.66] & [-10.63, -4.90] & -0.98 & yes \\
-\midrule
-CF4 & L1 & NS & -0.20 & [-0.72, +0.14] & [-1.80, +0.24] & -0.05 & no \\
-CF4 & L2 & NS & -6.57$^{**}$ & [-7.70, -5.54] & [-9.31, -4.24] & -0.69 & yes \\
-CF4 & L3 & NS & -8.37$^{**}$ & [-9.25, -7.50] & [-11.40, -5.12] & -1.08 & yes \\
-CF4 & L4 & NS & -8.20$^{**}$ & [-9.01, -7.40] & [-11.17, -5.32] & -1.17 & yes \\
-CF4 & L5 & Telea & -7.60$^{**}$ & [-8.33, -6.86] & [-9.50, -5.04] & -1.17 & yes \\
-% END AUTO PAIRED
-\bottomrule
-\end{tabular}%
-}
+\caption{Hole GMSD on GovDocs1 (lower is better), the mean over \corpusGovN\ patches and \sweepSeeds\ mask seeds. Bold: the best compared method in each column.}
+\label{tab:gmsd}
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+% BEGIN AUTO GMSD
+\textbf{[pending]}
+% END AUTO GMSD
 \end{table*}
 
-\subsection{Constraint Violation Analysis}
-\label{sec:results:cvr}
-
-Table~\ref{tab:cvr} reports the Constraint Violation Rate (CVR, metric M3) for each method, broken down by the four constraint families.
-
-\begin{table*}[htbp]
+\begin{table*}[!t]
 \centering
-\caption{Constraint Violation Rate (CVR, \%) by reconstruction method and constraint family, averaged over the 20-cell CF$\times$L sweep, means over seeds $\{0,1,2\}$ ($N{=}300$ DFRWS 2006 patches per cell). C1 is zero for every method: none of the baselines altered observed pixels in the evaluated outputs, and CSFR projects observed pixels back exactly as its final solver step, so its released output satisfies C1 by construction. C3 is zero throughout because every evaluated method returned values within $[0,255]$. On the softly-penalised constraints, CSFR attains the lowest C4 (frequency coherence) and is within 0.05 points of the PDE inpainters on C2.}
-\label{tab:cvr}
-\setlength{\tabcolsep}{6pt}
-\resizebox{0.8\textwidth}{!}{%
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Method} & \textbf{C1 Fragment} & \textbf{C2 Spatial} & \textbf{C3 Intensity} & \textbf{C4 Frequency} \\
-\midrule
-% BEGIN AUTO CVR
-Zero-fill & 0.00 & 7.84 & 0.00 & 11.93 \\
-Linear & 0.00 & 1.75 & 0.00 & 2.32 \\
-Telea & 0.00 & 1.43 & 0.00 & 1.94 \\
-NS & 0.00 & 1.41 & 0.00 & 1.93 \\
-Dict. & 0.00 & 3.03 & 0.00 & 4.70 \\
-LaMa (ext.) & 0.00 & 1.83 & 0.00 & 2.73 \\
-CSFR & 0.00 & 1.46 & 0.00 & 1.85 \\
-% END AUTO CVR
-\bottomrule
-\end{tabular}%
-}
+\caption{CSFR against the strongest classical method of each cell and against LaMa on GovDocs1, hole PSNR (dB). Rank: CSFR's place among itself and the classical methods. $\Delta$: CSFR minus the method, the mean over patches. Led: the share of source images in which CSFR has the higher mean. $\Delta_{\mathrm{cf}}$: the same difference over the patches on which no method reaches the 100\,dB cap. The strongest method is chosen after the fact (Section~\ref{sec:experiments:stats}).}
+\label{tab:paired-v2}
+\footnotesize
+% BEGIN AUTO PAIRED_V2
+\textbf{[pending]}
+% END AUTO PAIRED_V2
 \end{table*}
 
+\subsection{Convergent and fixed-budget solvers}
+\label{sec:results:solver}
 
-\subsection{Hallucination Risk Comparison}
-\label{sec:results:hrp}
+The released solver ran Adam for a fixed budget on a different objective (Section~\ref{sec:framework:solver}). Table~\ref{tab:solver} scores its released outputs, a re-run with a four times larger budget, and the convergent solver at three gap tolerances, on the released DFRWS 2006 patches and masks with the hole-only metrics. The two objectives differ, so the comparison is of reconstruction quality against iterations and time, not of objective values.
 
-Table~\ref{tab:hrp} reports the Hallucination Risk Proxy (HRP, metric M4) for each method. Lower values indicate closer agreement with the observed-region intensity distribution, not greater correctness or admissibility. CSFR keeps HRP near the distributional-consistency level ($\approx 1$) on CF1/CF2 and improves substantially on zero-fill on the half-image masks, while the PDE and dictionary baselines attain lower HRP than CSFR on CF3/CF4. These results show that HRP ranks smoothing and observed-content methods favourably by design: the dictionary-learning baseline recombines only observed content and is therefore maximally in-distribution on this proxy. CSFR's distinguishing implemented properties are deterministic execution, terminal preservation of observed pixels and release of approximate sensitivity records for queried pixels. The theoretical recovery bound belongs to the idealised estimator and is not a certificate for the returned iterate.
+\resultpending{quality, iterations and time of each arm; what the fixed budget cost the released numbers}
 
-\begin{table*}[htbp]
+\begin{table*}[!t]
 \centering
-\caption{Hallucination Risk Proxy (HRP) by reconstruction method, averaged over severity levels for each corruption family; means over seeds $\{0,1,2\}$ ($N{=}300$ DFRWS 2006 patches per cell). Lower is better; bold marks the lowest value per family. HRP is the mean absolute $z$-score of imputed pixels relative to the observed-region intensity distribution: it flags out-of-distribution imputation (the generative failure mode) and, by the same token, rewards smoothing methods; it is a distributional-consistency proxy, not a correctness measure.}
-\label{tab:hrp}
-\setlength{\tabcolsep}{8pt}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Method} & \textbf{CF1} & \textbf{CF2} & \textbf{CF3} & \textbf{CF4} \\
-\midrule
-% BEGIN AUTO HRP
-Zero-fill & 3.26 & 3.17 & 4.46 & 3.97 \\
-Linear & 0.75 & 0.66 & 4.46 & 3.97 \\
-Telea & 0.69 & 0.70 & 0.80 & 0.80 \\
-NS & 0.72 & 0.70 & 0.79 & 0.80 \\
-Dict. & \textbf{0.00} & \textbf{0.37} & \textbf{0.27} & \textbf{0.27} \\
-LaMa (ext.) & 0.77 & 0.78 & 0.96 & 0.90 \\
-CSFR & 0.74 & 0.84 & 2.87 & 2.48 \\
-% END AUTO HRP
-\bottomrule
-\end{tabular}
+\caption{Fixed-budget Adam and the convergent solver on the released DFRWS 2006 patches and masks: hole PSNR (dB) per family, the mean over levels and seeds; time per patch; iterations; share of patches that met the certificate.}
+\label{tab:solver}
+\footnotesize
+% BEGIN AUTO SOLVER_CMP
+\textbf{[pending]}
+% END AUTO SOLVER_CMP
 \end{table*}
 
-\subsection{Constraint Ablation}
+\subsection{Constraint ablation}
 \label{sec:results:ablation}
 
-Table~S1 isolates the implemented effects of C2 total variation, C3 global intensity clipping and C4 frequency regularisation. The data-fidelity term (C1) and the $\ell_1$ sparsity prior are the reconstruction engine and are active in every variant. C2 provides the largest average quality gain ($+1.15$\,dB over the C1-only core and the largest SSIM gain). C3 eliminates values outside $[0,255]$ and modestly improves average PSNR ($25.09$ against $24.41$\,dB for the C1-only core), but it does not enforce neighbourhood-derived bounds. C4 reduces the operational high-frequency violation measure and contributes little in isolation. The full configuration gives the highest average PSNR and SSIM among the tested variants together with zero C3 violation; the C1+C4 variant achieves a marginally lower C4 violation rate (1.69\,\% against 1.85\,\%) but drops the clipping that keeps released intensities in range. These results support the implemented penalties; they do not establish local plausibility or per-instance recovery guarantees.
+Each arm removes one part of CSFR and is solved to the same certificate (Section~\ref{sec:experiments:methods}). Table~\ref{tab:ablation-v2} gives the hole-PSNR difference between CSFR and each arm on the primary corpus at mask seed \sweepAblationSeeds, and the share of imputed pixels that leave the range when C3 is removed.
 
+\resultpending{what each term contributes per family; the range figure}
 
-
-
-\subsection{Runtime and Memory}
-\label{sec:results:cost}
-
-Table~S2 reports wall-clock time and Python-tracked peak allocation per patch, measured on the same CPU path for every method (five repeats of a 32-patch batch; environment recorded in \texttt{results/\allowbreak bench/\allowbreak environment.json}). CSFR's 600-iteration solve is roughly one to two orders of magnitude slower than the PDE and dictionary baselines, tens of milliseconds per $64\times64$ patch against roughly one, consistent with the $O(T \cdot N \log N)$ cost of Section~\ref{sec:limits}. Bilinear interpolation is slow in this implementation because the SciPy Delaunay interpolation it uses scales poorly on scattered masks; it is not a floor on interpolation cost. Peak allocation was measured with \texttt{tracemalloc}, which does not capture all native allocations made by PyTorch, NumPy or OpenCV; the memory values should therefore be read as Python-level allocation indicators rather than complete process-memory measurements. Within that limit, allocation is small and comparable across methods, so CSFR's cost is compute rather than memory. These figures place CSFR in offline analysis rather than real-time triage, and they are the practical price of the fixed, auditable iteration budget.
-
-
-
-\subsection{Audit Record Coverage}
-\label{sec:results:ts}
-
-CSFR produced a finite, non-empty approximate sensitivity vector for all 16 sampled queries in CF1~L3 and all 16 sampled queries in CF3~L5, giving Audit Record Coverage of $1.00$ for those probes, with mean support of $2867$ and $1216$ observed pixels respectively (the latter smaller because fewer pixels are observed). The comparison implementations did not emit equivalent persisted records in this study and are therefore marked ``not available'' rather than assigned an intrinsic score of zero. Linear interpolation, PDE inpainting and dictionary learning are deterministic and could be instrumented in future work. The present result establishes availability of the CSFR audit artefact, not exclusive traceability of the underlying method.
-
-
-
-\subsection{Exploratory quality and auditability comparison}
-\label{sec:results:frontier}
-
-Figure~\ref{fig:frontier} plots mean PSNR against a study-defined auditability composite (AC) formed from CVR, normalised HRP and implementation-level Audit Record Coverage. The composite is exploratory. It is not a validated forensic-quality scale and does not measure legal admissibility:
-\begin{equation}
-\mathrm{AC} \;=\; w_{1}\,(1 - \mathrm{CVR}) \;+\; w_{2}\,(1 - \mathrm{HRP}_{\mathrm{norm}}) \;+\; w_{3}\,\mathrm{ARC}
-\end{equation}
-with $w_{1} = w_{2} = w_{3} = 1/3$, and with ARC entered as $0$ for the methods whose evaluated implementations emitted no record, since the composite needs a number where Section~\ref{sec:results:ts} reports ``not available''. With equal weights, CSFR ranks highly because it emits the audit record that the comparison implementations were not configured to produce. This result describes the evaluated software artefacts, not an inherent inability of classical algorithms to support attribution or logging. The component measures in Tables~\ref{tab:cvr} and~\ref{tab:hrp} remain the primary evidence and should be interpreted separately.
-
-\begin{figure*}[htbp]
+\begin{table*}[!t]
 \centering
-\includegraphics[width=0.8\textwidth]{figures/paper2_F9_method_frontier.png}
-\caption{Exploratory comparison of mean PSNR over the 20-cell sweep and the study-defined auditability composite for all seven evaluated methods. The composite combines operational CVR, normalised HRP and implementation-level Audit Record Coverage with equal weights; ARC is scored on released artefacts, and only the CSFR implementation was instrumented to emit a record. The shaded band marks the $2/3$ ceiling that methods without a released record cannot exceed under this composite, whatever their reconstruction quality. The figure describes the evaluated software outputs and is not a validated measure of forensic validity or legal admissibility. Rendered from \texttt{results/\allowbreak csfr\allowbreak\_sweep\allowbreak\_2d\allowbreak\_v2/\allowbreak summary.csv} by \texttt{scripts/\allowbreak render\allowbreak\_frontier.py}.}
-\label{fig:frontier}
-\end{figure*}
+\caption{Constraint ablation on GovDocs1 at mask seed \sweepAblationSeeds: hole PSNR of CSFR minus the arm (dB), with Holm-adjusted Wilcoxon tests across the arms.}
+\label{tab:ablation-v2}
+\footnotesize
+% BEGIN AUTO ABLATION_V2
+\textbf{[pending]}
+% END AUTO ABLATION_V2
+\end{table*}
 
-The composite does not support an admissibility frontier. It provides a sensitivity analysis of how reconstruction quality and selected audit features change under stated, study-defined weights.
+\subsection{Sensitivity record fidelity}
+\label{sec:results:fidelity}
 
-\paragraph{Sensitivity of the exploratory composite.} The equal weights and the HRP normalisation are discretionary analytical choices, and a ranking that depended on them would not be a finding. We therefore swept the weights over the full probability simplex (253 weightings on a grid) across all seven evaluated methods, the external prior included, and varied the HRP normaliser from $0.5\times$ to $2\times$ its default; the analysis is released in \texttt{results/\allowbreak sensitivity/\allowbreak frontier\allowbreak\_sensitivity.json}. CSFR is top-ranked under $70\,\%$ of the tested weightings and ranks first at equal weights under every tested HRP normaliser; over the 253 tested weightings its rank never falls below fifth of seven, even in the corner of the simplex that ignores the audit record entirely ($w_{3}=0$) and rewards only the CVR/HRP axes where the smoothing baselines are strong. This ranking is strongly influenced by the audit-record component, which only CSFR emitted in the evaluated harness. The precise position is not a measure of forensic validity, and no legal or evidential conclusion rests on it.
+For up to three observed pixels per patch, at distances 1, 3 and at least 8 from the hole where such pixels exist, the column of the record is compared with the difference quotient of a perturbed re-solve (Section~\ref{sec:framework:audit}). Table~\ref{tab:fidelity} gives the relative error against the reference re-solve, and SRF against the reference and the operational re-solve, at a perturbation of one grey level. The supplement gives perturbations from \recDeltaMin\ to \recDeltaMax\ grey levels and other tolerances.
 
-\subsection{External Validation}
+\resultpending{relative error and SRF per family and level; where the record is least accurate and why}
+
+\begin{table}[!t]
+\centering
+\caption{Sensitivity record fidelity on GovDocs1 at a perturbation of one grey level: median and 90th percentile of the relative error against the reference re-solve, SRF against the reference (ref) and the operational re-solve (op), sign agreement of the largest entries, and time per record row.}
+\label{tab:fidelity}
+\footnotesize
+% BEGIN AUTO FIDELITY
+\textbf{[pending]}
+% END AUTO FIDELITY
+\end{table}
+
+\subsection{Comparison records}
+\label{sec:results:records}
+
+For the same query pixels, Table~\ref{tab:records} sets the CSFR record beside the exact record of linear interpolation and finite-difference records of linear interpolation and of Telea and Navier--Stokes inpainting at perturbations of one and four grey levels. Linear interpolation has a record only for hole pixels inside the convex hull of the observed pixels, so it has none under CF3 and CF4.
+
+\resultpending{how the records differ in norm, support and reach; the instability of finite-difference records of the 8-bit methods}
+
+\begin{table}[!t]
+\centering
+\caption{Records of CSFR and of the comparison methods for the same query pixels on GovDocs1: $\ell_1$ norm, support size, $|w|$-weighted mean distance from the query, and for finite-difference records the relative difference between perturbations of one and four grey levels.}
+\label{tab:records}
+\footnotesize
+% BEGIN AUTO RECORDS_CMP
+\textbf{[pending]}
+% END AUTO RECORDS_CMP
+\end{table}
+
+\subsection{What the observed pixels can determine}
+\label{sec:results:oracle}
+
+Table~\ref{tab:oracle} reports the oracle-support diagnostic of Section~\ref{sec:problem:oracle} for the primary and the forensic corpus.
+
+\resultpending{conditioning per family; what it implies for scattered against contiguous loss}
+
+\begin{table}[!t]
+\centering
+\caption{Oracle-support diagnostic: median hole PSNR of the least-squares fit on the true support of the largest DCT coefficients, and the condition number of the observed rows of that basis (median, 90th percentile, share above $10^{3}$).}
+\label{tab:oracle}
+\footnotesize
+% BEGIN AUTO ORACLE
+\textbf{[pending]}
+% END AUTO ORACLE
+\end{table}
+
+\subsection{Secondary corpora}
 \label{sec:results:external}
 
-The primary sweep uses 300 patches from six DFRWS 2006 images, and Section~\ref{sec:results:stats} explains that this clustering limits cluster-level inference. An independent corpus provides a stronger test of whether the CF1 result reflects the method rather than the original corpus. GovDocs1~\cite{garfinkel2009bringing} contributes 300 grayscale $64\times64$ patches from 176 distinct documents' JPEGs, with no image supplying more than $1.7\,\%$ of the corpus. We used the same protocol and froze every solver parameter at its primary-sweep value. This is an out-of-corpus generalisation check, not a second fit. The external-prior baseline was not re-run on this corpus (Section~\ref{sec:experiments}), so the comparison here is CSFR against the five classical baselines. Table~\ref{tab:external} reports PSNR per cell together with CSFR's rank among those six methods and, for contrast, the CSFR-minus-best-baseline gap on each corpus.
+Table~\ref{tab:external-v2} repeats the comparison of Table~\ref{tab:paired-v2} on DFRWS 2006 and Kodak. DFRWS 2006 draws \corpusDfrwsTopTwoShare\% of its patches from two images, so its intervals are wide and its estimates are secondary to those of the primary corpus.
 
-\begin{table*}[htbp]
+\resultpending{whether the ranking of the primary corpus carries over}
+
+\begin{table*}[!t]
 \centering
-\caption{External validation on GovDocs1 (300 patches, 176 source images), identical protocol and frozen parameters. PSNR (dB), means over seeds $\{0,1,2\}$; bold marks the best method per cell. The external-prior baseline was not re-run on this corpus, so the five classical baselines and CSFR are the six methods compared, and ``Rank'' is CSFR's rank among those six. ``Gap (ext.)'' and ``Gap (prim.)'' are CSFR minus the best classical baseline on GovDocs1 and on the primary DFRWS corpus respectively; agreement in sign between the two columns is the generalisation evidence.}
-\label{tab:external}
-\setlength{\tabcolsep}{4pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{llcccccc cc c}
-\toprule
-\textbf{Fam.} & \textbf{Lvl} & \textbf{Zero} & \textbf{Lin.} & \textbf{Telea} & \textbf{NS} & \textbf{Dict.} & \textbf{CSFR} & \textbf{Rank} & \textbf{Gap (ext.)} & \textbf{Gap (prim.)} \\
-\midrule
-% BEGIN AUTO EXTERNAL
-CF1 & L1 & 18.66 & 38.22 & 37.67 & 39.22 & 28.90 & \textbf{40.26} & 1 & +1.04 & +1.19 \\
-CF1 & L3 & 10.89 & 29.32 & 28.32 & 30.34 & 21.03 & \textbf{31.17} & 1 & +0.84 & +1.00 \\
-CF1 & L5 & 7.21 & 22.88 & 23.44 & 24.24 & 17.34 & \textbf{25.38} & 1 & +1.14 & +1.44 \\
-\midrule
-CF2 & L1 & 16.92 & \textbf{34.17} & 33.20 & 33.58 & 28.44 & 30.57 & 4 & -3.60 & -0.20 \\
-CF2 & L3 & 10.78 & \textbf{24.21} & 24.05 & 23.98 & 21.27 & 20.45 & 5 & -3.77 & -1.65 \\
-CF2 & L5 & 7.20 & \textbf{18.65} & 18.48 & 18.43 & 17.12 & 12.08 & 5 & -6.57 & -5.24 \\
-\midrule
-CF3 & L1 & 19.70 & 19.70 & 38.43 & \textbf{38.52} & 33.93 & 37.75 & 3 & -0.77 & +0.26 \\
-CF3 & L3 & 11.23 & 11.23 & \textbf{23.73} & 23.61 & 20.84 & 13.65 & 4 & -10.08 & -7.44 \\
-CF3 & L5 & 7.26 & 7.26 & \textbf{16.84} & 16.50 & 16.31 & 8.18 & 4 & -8.66 & -7.45 \\
-\midrule
-CF4 & L1 & 20.06 & 20.06 & 37.84 & \textbf{38.67} & 34.49 & 37.98 & 2 & -0.69 & -0.20 \\
-CF4 & L3 & 11.65 & 11.65 & 24.31 & \textbf{24.51} & 21.10 & 14.22 & 4 & -10.29 & -8.37 \\
-CF4 & L5 & 7.39 & 7.39 & 17.72 & \textbf{17.91} & 16.44 & 8.33 & 4 & -9.58 & -7.60 \\
-% END AUTO EXTERNAL
-\bottomrule
-\end{tabular}%
-}
+\caption{CSFR on the secondary corpora, hole PSNR (dB): rank among itself and the classical methods, and the difference to the strongest classical method and to LaMa, with intervals that resample source images.}
+\label{tab:external-v2}
+\footnotesize
+% BEGIN AUTO EXTERNAL_V2
+\textbf{[pending]}
+% END AUTO EXTERNAL_V2
 \end{table*}
 
-The primary pattern also appears on a corpus the method had not seen. The CF1 advantage and each family's result direction carry over, and the sign of the CSFR-minus-best-baseline gap agrees across the two corpora in most cells (Table~\ref{tab:external}). Disagreements occur in the low-severity cells where Section~\ref{sec:results:stats} found no reliable difference, which is the expected place for a small margin to change sign across corpora. The supported generalisation claim is therefore limited: CSFR leads under scattered loss and trails under burst and severe structured corruption on both evaluated corpora, while the low-severity comparisons remain ties.
+\subsection{Byte-corrupted JPEG files}
+\label{sec:results:jpeg}
 
-\paragraph{Full-resolution colour case study.} The quantitative evaluation uses grayscale $64\times64$ patches. We also applied CSFR independently to the colour channels of three full-resolution JPEGs signature-carved from the Nick Mikus DFTT disk images~\cite{mikus2005evaluation} at native resolution (up to $396\times396$), two to six times the development size. This small case study is not a benchmark and does not validate encoded-file reconstruction. Random-loss cases achieved $30$ to $34$\,dB. A top-half erasure produced an unreliable completion and triggered the Bounded-Unknown diagnostic because the missing region lacked adequate observed neighbourhood support (Section~\ref{sec:framework:warnings}). The diagnostic flags the output for review; it does not withhold reconstruction or prove irrecoverability.
+Baseline-sequential JPEG files are corrupted in their entropy-coded scan, as damage on a storage medium would corrupt them: the file is truncated, a run of foreign bytes overwrites part of the scan, or one byte is flipped. A standard decoder in tolerant mode turns each damaged file into an image. It fills an unreadable tail with mid-grey, and after a corrupted run the Huffman decoding loses synchronisation, so the blocks that follow carry garbage. The lost pixels are marked in three ways, from most to least informed: the blocks whose decode differs from the clean decode (oracle, an upper bound for any detector); the blocks the decoder filled with mid-grey (decoder); and every block row from the first corrupted byte onward (offset, what a carver who knows where the damage starts can build). Every method reconstructs from the decoded image and the mask, and is scored against the clean decode over the pixels the oracle marks lost. Exemplar inpainting is not run on these images because of its cost. Table~\ref{tab:jpeg} gives the results with the error rates of each mask.
 
+\resultpending{CSFR, the best classical method and LaMa per corruption and mask; the cost of an imperfect mask}
 
+\begin{table*}[!t]
+\centering
+\caption{Byte-corrupted JPEG files: hole PSNR (dB) over the pixels the oracle marks lost, per corruption and mask, and the false-positive and false-negative rates of each mask against the oracle.}
+\label{tab:jpeg}
+\footnotesize
+% BEGIN AUTO JPEG
+\textbf{[pending]}
+% END AUTO JPEG
+\end{table*}
 
-\subsection{Iteration-Budget Sensitivity}
-\label{sec:results:budget}
+\subsection{Errors in the mask}
+\label{sec:results:maskerr}
 
-The objective is still descending at the end of the 600-iteration budget under burst corruption, the family where CSFR is beaten by every baseline, which raises the question of whether the deficit is premature stopping. Re-solving five cells at budgets of 600, 1200, 2400 and 4800 iterations with everything else fixed (Table~S3, a 100-patch seed-0 subset) indicates that it largely is. On CF1 the objective has converged by 600 and further iterations move PSNR by hundredths of a decibel. On CF2 and the severe half-image masks it has not: at CF2~L5 CSFR trails bilinear by $4.6$\,dB at 600 iterations and leads it by $1.2$\,dB at 2400, at CF2~L3 a $0.8$\,dB deficit becomes a $1.5$\,dB lead, and the CF3/CF4~L5 gaps to the PDE inpainters fall from roughly $7$\,dB to $0.6$\,dB as the budget quadruples. Because the subset and the baseline values come from different samples, these gaps are descriptive rather than paired estimates.
+On the primary corpus at one mask seed, the true mask of CF1, CF2 and CF3 at L3 and L5 is eroded or dilated by one and two pixels, or has a share of its pixels flipped. Every method reconstructs from the wrong mask and is scored over the true hole. Table~\ref{tab:maskerr} gives the change in hole PSNR against the true mask.
 
-The main results stay at 600 iterations by choice, because a uniform audited budget applied identically to every method and cell avoids making the iteration count a function of the corruption. The statement is therefore twofold: at the audited budget CSFR loses on CF2 and the severe masks, and that loss is recoverable by spending computation, at the runtime cost Table~S2 already identifies as the method's main practical weakness.
+\resultpending{which errors cost most, and which methods degrade least}
 
+\begin{table*}[!t]
+\centering
+\caption{Mask errors on GovDocs1: change in hole PSNR (dB) relative to the true mask, paired by patch, per method and perturbation.}
+\label{tab:maskerr}
+\footnotesize
+% BEGIN AUTO MASKERR
+\textbf{[pending]}
+% END AUTO MASKERR
+\end{table*}
 
+\subsection{Full-resolution colour images}
+\label{sec:results:fullres}
 
+Kodak images at native size, colour JPEGs carved from the Mikus images and GovDocs1 pages are corrupted under CF1, CF2 and CF3 at L3, with one mask shared by the three channels. The methods run per channel; LaMa runs on the colour image at native resolution, which is its training regime. Dictionary learning and exemplar inpainting are not run at this size because of their cost.
 
+\resultpending{quality and cost per method at full resolution; LaMa in its own regime}
 
+\begin{table*}[!t]
+\centering
+\caption{Full-resolution colour images: hole PSNR (dB) per corruption, the mean over images and channels, with time and peak memory per image.}
+\label{tab:fullres}
+\footnotesize
+% BEGIN AUTO FULLRES
+\textbf{[pending]}
+% END AUTO FULLRES
+\end{table*}
 
+\subsection{Cost}
+\label{sec:results:cost}
 
-\subsection{Downstream Utility: Digit Classification on Corrupted SVHN}
+Table~\ref{tab:bench-v2} gives time and peak memory per patch on an otherwise idle machine, for a batch of 32 patches in three cells, because the cost of CSFR depends on the geometry of the hole. For CSFR it also gives the iterations and the time of one record row.
+
+\resultpending{cost of CSFR against the classical methods; cost of a record row}
+
+\begin{table}[!t]
+\centering
+\caption{Time and peak memory per patch, and for CSFR the median iterations and the time of one record row, on an otherwise idle machine.}
+\label{tab:bench-v2}
+\footnotesize
+% BEGIN AUTO BENCH_V2
+\textbf{[pending]}
+% END AUTO BENCH_V2
+\end{table}
+
+\subsection{Downstream tasks}
 \label{sec:results:downstream}
 
-Reconstruction quality alone does not establish utility, so the methods are also compared on a recognition task. Corrupted SVHN house-number digits are generated with the same mask generator (CF1--CF4, L1--L5, 1000 class-balanced test digits per cell), reconstructed by every method, and classified by a CNN frozen after training on clean images (clean top-1 $0.8783$ on the full SVHN test set, $0.8690$ on the 1000-digit evaluation subset against which accuracy recovery is computed). Table~\ref{tab:downstream} reports mixed results. CSFR recovers accuracy under light corruption but trails LaMa by $5$ to $10$ percentage points in most severe cells. On the joint confident-error rate $P(\text{wrong} \land \text{confidence} \ge 0.9)$ CSFR has the lower rate in several cells. On the conditional rate $P(\text{wrong} \mid \text{confidence} \ge 0.9)$ it leads in one cell (CF3~L4), trails in one (CF2~L5), and is otherwise indistinguishable.
+Two tasks test whether a reconstruction preserves what an examiner would read from it: digit classification on corrupted SVHN images with two classifiers trained on clean digits, and optical character recognition of GovDocs1 text lines, scored by the character error rate against the recognition of the clean line.
 
-The difference between the two rates is central to the result. The classifier assigns high confidence to CSFR reconstructions far less often than to LaMa's: at CF3~L5 it is confident on 16 of 1000 CSFR outputs against 135 of LaMa's, and the conditional error rates there are $0.250$ and $0.489$. This difference favours CSFR but is not significant at the available sample size. Much of CSFR's joint-rate advantage therefore reflects confidence frequency rather than reliability after confidence is induced. Neither rate is interpretable without the accompanying count $n_{\text{conf}}$, and a low joint rate should not be read as high reliability. The experiment does not establish why the classifier is more conservative on CSFR's outputs; the mechanisms suggested below are hypotheses, and confidence calibration of deep models is itself an open problem~\cite{mehrtash2020confidence}.
+\resultpending{accuracy and calibration per method; character error rates; confident errors}
 
-\begin{table*}[htbp]
+\begin{table*}[!t]
 \centering
-\caption{Downstream utility by corruption family and severity. CSFR is reported beside the strongest same-harness baseline in each cell, the baseline being the method with the highest accuracy there (LaMa included). The unit is the image patch ($N=1000$ class-balanced test digits per cell, one mask draw, seed 0). ``Acc.'' is top-1 accuracy and bold marks the higher of the pair. ``Recov.'' is CSFR's accuracy recovery, $(\mathrm{acc} - \mathrm{acc}_{\text{zero-fill}})/(\mathrm{acc}_{\text{clean}} - \mathrm{acc}_{\text{zero-fill}})$, measured from the no-reconstruction floor toward the clean ceiling of $0.8690$ on this 1000-digit subset. ``Joint'' is $P(\text{wrong} \land \text{confidence} \ge 0.9)$ over all 1000 patches. ``Cond.'' is $P(\text{wrong} \mid \text{confidence} \ge 0.9)$ with the confident count $n_{\text{conf}}$ in parentheses; the count is part of the number, since a conditional rate over sixteen predictions and one over six hundred are not comparable quantities. The two differences carry separate 95\,\% bootstrap intervals on the signal-covering subset and separate markers: $^{*}$ where the joint difference excludes zero, $^{\dagger}$ where the conditional difference does. They disagree, and that disagreement is the finding of this section. No winner is marked in the confident-error columns, because direction without the interval and the count would over-state what the comparison supports. Per-cell ECE and the abstention and signal-coverage counts are in the supplement.}
-\label{tab:downstream}
-\setlength{\tabcolsep}{4pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{llcccccccc}
-\toprule
-& & & \multicolumn{2}{c}{\textbf{Acc.} $\uparrow$} & & \multicolumn{2}{c}{\textbf{Joint conf-err} $\downarrow$} & \multicolumn{2}{c}{\textbf{Cond.\ conf-err} ($n_{\text{conf}}$)} \\
-\cmidrule(lr){4-5} \cmidrule(lr){7-8} \cmidrule(lr){9-10}
-\textbf{Fam.} & \textbf{Lvl} & \textbf{Strongest baseline} & \textbf{CSFR} & \textbf{Base} & \textbf{Recov.} & \textbf{CSFR} & \textbf{Base} & \textbf{CSFR} & \textbf{Base} \\
-\midrule
-% BEGIN AUTO DOWNSTREAM
-CF1 & L1 & LaMa (ext.) & 0.869 & \textbf{0.871} & +1.000 & 0.012 & 0.012 & 0.020 (599) & 0.020 (597) \\
-CF1 & L2 & Linear & 0.867 & \textbf{0.868} & +0.996 & 0.012 & 0.010 & 0.020 (595) & 0.017 (590) \\
-CF1 & L3 & Linear & \textbf{0.865} & 0.863 & +0.994 & 0.010 & 0.009 & 0.017 (592) & 0.015 (583) \\
-CF1 & L4 & Linear & \textbf{0.861} & 0.854 & +0.989 & 0.009 & 0.009 & 0.016 (578) & 0.016 (567) \\
-CF1 & L5 & Linear & \textbf{0.828} & 0.827 & +0.946 & 0.007 & 0.010 & 0.014 (497) & 0.020 (511) \\
-\midrule
-CF2 & L1 & LaMa (ext.) & 0.797 & \textbf{0.827} & +0.787 & 0.022 & 0.015 & 0.046 (476) & 0.028 (539) \\
-CF2 & L2 & LaMa (ext.) & 0.700 & \textbf{0.775} & +0.685 & 0.012 & 0.018 & 0.036 (335) & 0.038 (476) \\
-CF2 & L3 & LaMa (ext.) & 0.541 & \textbf{0.672} & +0.510 & 0.017$^{*}$ & 0.033 & 0.089 (190) & 0.090 (368) \\
-CF2 & L4 & LaMa (ext.) & 0.322 & \textbf{0.443} & +0.282 & 0.025 & 0.041 & 0.291 (86) & 0.217 (189) \\
-CF2 & L5 & LaMa (ext.) & 0.129 & \textbf{0.225} & +0.039 & 0.040 & 0.030 & 0.816$^{\dagger}$ (49) & 0.556 (54) \\
-\midrule
-CF3 & L1 & Dict. & 0.866 & \textbf{0.870} & +0.909 & 0.013 & 0.013 & 0.022 (600) & 0.022 (599) \\
-CF3 & L2 & Telea & 0.854 & \textbf{0.861} & +0.810 & 0.013 & 0.014 & 0.023 (571) & 0.024 (581) \\
-CF3 & L3 & Dict. & \textbf{0.765} & 0.763 & +0.467 & 0.008 & 0.015 & 0.021 (375) & 0.036 (418) \\
-CF3 & L4 & Telea & 0.510 & \textbf{0.556} & +0.153 & 0.004$^{*}$ & 0.046 & 0.053$^{\dagger}$ (76) & 0.146 (314) \\
-CF3 & L5 & LaMa (ext.) & 0.222 & \textbf{0.318} & +0.089 & 0.004$^{*}$ & 0.066 & 0.250 (16) & 0.489 (135) \\
-\midrule
-CF4 & L1 & Telea & 0.868 & 0.868 & +0.987 & 0.013 & 0.013 & 0.022 (602) & 0.022 (601) \\
-CF4 & L2 & LaMa (ext.) & 0.852 & \textbf{0.862} & +0.800 & 0.009 & 0.013 & 0.016 (565) & 0.022 (591) \\
-CF4 & L3 & LaMa (ext.) & 0.750 & \textbf{0.785} & +0.592 & 0.017 & 0.021 & 0.043 (391) & 0.044 (481) \\
-CF4 & L4 & LaMa (ext.) & 0.458 & \textbf{0.564} & +0.230 & 0.016$^{*}$ & 0.054 & 0.180 (89) & 0.192 (281) \\
-CF4 & L5 & LaMa (ext.) & 0.197 & \textbf{0.303} & +0.113 & 0.007$^{*}$ & 0.047 & 0.467 (15) & 0.448 (105) \\
-% END AUTO DOWNSTREAM
-\bottomrule
-\end{tabular}%
-}
+\caption{Digit classification on corrupted SVHN: accuracy and expected calibration error of two classifiers on the reconstructions of each method.}
+\label{tab:downstream-v2}
+\footnotesize
+% BEGIN AUTO DOWNSTREAM_V2
+\textbf{[pending]}
+% END AUTO DOWNSTREAM_V2
 \end{table*}
 
-The Bounded-Unknown abstention mechanism, intended to flag unrecoverable regions, saturates across cells; Table~S4 reports per-cell rates. The binary flag at the $0.5$ threshold on isolated-missing-fraction carries almost no per-patch information. It is zero for every CF1 cell and for CF3/CF4 at L1, and unity for CF3/CF4 from L2 upward and CF2 from L3 upward; only CF2 at L1 and L2 ($0.88$ and $0.99$) vary within a cell. CF3/CF4 at L1 are the clearest sign that the threshold is the problem: their isolated-missing-fraction is exactly $0.500$, so whether the whole cell flags turns on a strict rather than a non-strict inequality. In effect the flag is a family-and-level indicator, and the continuous isolated-missing-fraction distribution reported beside it is the statistic to use instead.
-
-The signal-covering subset is a separate device, defined on the corruption geometry rather than on constraint violations: it is the set of patches in which at least a quarter of the centre box is erased, so that the corruption actually overlaps the digit. It degenerates at both ends of the severity range. It is empty for CF1 at L1 and L2 and for CF3/CF4 at L1 through L3, where the mask leaves the digit untouched, and it saturates at all 1000 patches for every family from L4 upward. Only four cells carry within-cell variation, CF1~L3 (982) and CF2 at L1, L2 and L3 (352, 760, 991), which is why the bootstrap intervals computed on that subset are informative in the burst family and degenerate elsewhere.
-
-
-
-This experiment and the primary sweep of Section~\ref{sec:results:psnr} both ran on an NVIDIA T4, every method within a single job, so no method here was given a separate or more favourable run. The two PyTorch methods used the GPU and the OpenCV and scikit-learn baselines ran on CPU for want of a GPU implementation; the environment is recorded in \texttt{results/\allowbreak downstream/\allowbreak environment.json}. Device bears on runtime, reported separately on a uniform CPU path in Section~\ref{sec:results:cost}, and not on the reconstructions compared here.
-
-\paragraph{Interpretation.} Reconstruction-level PSNR and task-level accuracy measure different outcomes. Under random pixel loss (CF1), all methods recover accuracy near the ceiling, so the results do not identify a preferred method. Under burst and severe structured corruption (CF2--CF4, L3+), LaMa recovers higher accuracy, while the frozen CNN is less often confident on CSFR reconstructions: at CF3~L5 it makes 16 confident predictions of 1000 on CSFR's outputs against 135 on LaMa's. The joint confident-error rate combines reliability with confidence frequency. The conditional rate isolates reliability after confidence is induced; CSFR performs better in CF3~L4, worse in CF2~L5 and shows no advantage in the remaining cells. The joint-rate result therefore partly reflects how often each method induces high confidence. The experiment does not identify the mechanism. Distribution shift and uncertainty signals from CSFR's pixel-domain constraints are possible explanations, but they were not measured. Operational use should consider both confident-error frequency and coverage. Human review remains necessary for outputs tendered as evidence (Section~\ref{sec:discussion:recommendations}).
-
-Figure~\ref{fig:provenance} illustrates two approximate local sensitivity queries. For each sampled imputed pixel, the numerical procedure of Eq.~\eqref{eq:provenance} estimates how small perturbations in observed pixels would change the target solution locally. The maps are reproducible from the recorded configuration and manifest, so an examining laboratory can re-execute them, but they are not causal decompositions of the reconstructed pixel and do not establish semantic correctness.
-
-\begin{figure*}[htbp]
+\begin{table*}[!t]
 \centering
-\includegraphics[width=\textwidth]{figures/paper2_F12_provenance.png}
-\caption{Approximate local sensitivity at two distances from the observed boundary in a CF3~L5 case (band corruption, patch 5). Panels A and D locate the queried imputed pixels, one row from the observed region and 22 rows inside it. Panels B and E show the signed local sensitivity weights over the observed region, and Panels C and F report the numerical diagnostics of the conjugate-gradient solve. The weights are derivatives of the locally approximated target solution and must not be interpreted as causal contribution shares. Rendered by \texttt{scripts/render\allowbreak\_provenance\allowbreak\_walkthrough.py} from the released per-patch artefacts.}
-\label{fig:provenance}
-\end{figure*}
+\caption{Optical character recognition of GovDocs1 text lines: character error rate on the reconstructions of each method, against the recognition of the clean line.}
+\label{tab:ocr}
+\footnotesize
+% BEGIN AUTO OCR
+\textbf{[pending]}
+% END AUTO OCR
+\end{table*}
+
+\subsection{The Bounded-Unknown diagnostic}
+\label{sec:results:bu}
+
+The Bounded-Unknown diagnostic of Section~\ref{sec:framework:warnings} is computed from the mask alone. Two other mask statistics, the mean distance of the hole pixels to the nearest observed pixel and the hole fraction, are evaluated with it as predictors of a CSFR hole PSNR below \buThreshLow\ and below \buThreshHigh\,dB. The rule for keeping the diagnostic as a contribution was fixed before the data were seen. It is kept only if the pooled AUROC of the best predictor exceeds \buPooledMin\ and its AUROC within cells exceeds \buWithinMin\ in at least \buWithinShare\% of the cells where the outcome varies; otherwise it is reported as a description of the geometry of the corruption. Table~\ref{tab:bu} gives the AUROCs and the decision.
+
+\resultpending{AUROCs and the decision of the rule}
+
+\begin{table}[!t]
+\centering
+\caption{Mask statistics as predictors of reconstruction failure: AUROC pooled over cells, per family, and the median within cells; the decision of the pre-specified rule.}
+\label{tab:bu}
+\footnotesize
+% BEGIN AUTO BU
+\textbf{[pending]}
+% END AUTO BU
+\end{table}
 
 %%======================================================================
 \section{Discussion}
