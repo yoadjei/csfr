@@ -67,26 +67,45 @@ def _summary(sweep: Path) -> dict[tuple[str, str, str], dict] | None:
         return {(r["family"], r["level"], r["method"]): r for r in csv.DictReader(f)}
 
 
-def cap_note(s: dict, cells: list[tuple[str, str]], ncols: int) -> str:
-    """Table row reporting how many patch-runs reach the hole-PSNR cap: the
-    largest count of any method in any tabulated cell."""
+FALLBACKS = ROOT / "results" / "baseline_fallbacks" / "fallbacks.csv"
+DAGGER = r"$^{\dagger}$"
+
+
+def _note(text: str, ncols: int) -> str:
+    return rf"\multicolumn{{{ncols}}}{{@{{}}l}}{{\footnotesize {text}}} \\"
+
+
+def cap_note(s: dict, cells: list[tuple[str, str]]) -> str:
+    """How many patch-runs reach the hole-PSNR cap: the largest count of any
+    method in any tabulated cell."""
     rows = [r for (f, lv, _), r in s.items() if (f, lv) in cells]
     worst = max(rows, key=lambda r: int(r["n_at_cap"]))
     k = int(worst["n_at_cap"])
     if k == 0:
-        text = rf"No patch-run reaches the {CAP:g}\,dB cap."
-    else:
-        name = dict([*METHOD_ORDER, FLOOR])[worst["method"]]
-        text = (rf"Patch-runs at the {CAP:g}\,dB cap: at most {k} of {worst['n_patches']} per cell "
-                rf"({name}, {worst['family']}~{worst['level']}).")
-    return rf"\multicolumn{{{ncols}}}{{@{{}}l}}{{\footnotesize {text}}} \\"
+        return rf"No patch-run reaches the {CAP:g}\,dB cap."
+    name = dict([*METHOD_ORDER, FLOOR])[worst["method"]]
+    return (rf"Patch-runs at the {CAP:g}\,dB cap: at most {k} of {worst['n_patches']} per cell "
+            rf"({name}, {worst['family']}~{worst['level']}).")
+
+
+def fallback_cells(sweep: Path, path: Path = FALLBACKS) -> set[tuple[str, str, str]]:
+    """(family, level, method) where the method fell back to the observed mean
+    in most of its patch-runs (scripts/baseline_fallbacks.py)."""
+    import csv
+    if not path.exists():
+        return set()
+    with path.open(encoding="utf-8") as f:
+        return {(r["family"], r["level"], r["method"]) for r in csv.DictReader(f)
+                if r["sweep"] == sweep.name and float(r["frac_fallback"]) > 0.5}
 
 
 def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digits: int,
-                         levels: tuple[str, ...] = MAIN_LEVELS, with_cap_note: bool = False) -> str | None:
+                         levels: tuple[str, ...] = MAIN_LEVELS, with_cap_note: bool = False,
+                         fallbacks: Path = FALLBACKS) -> str | None:
     """Rows are methods, columns are (family, level) cells; the best value of
-    each column among the compared methods (not the floor) is bold. A cell a
-    method did not run in is a dash."""
+    each column among the compared methods (not the floor) is bold, and a value
+    a method mostly produced by its mean-fill fallback carries a dagger. A cell
+    a method did not run in is a dash."""
     s = _summary(sweep)
     if s is None:
         return None
@@ -97,6 +116,7 @@ def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digit
         if not vals:
             raise ValueError(f"{sweep.name}: no results for cell {c[0]} {c[1]}")
         best[c] = max(vals) if higher_is_better else min(vals)
+    fell_back = fallback_cells(sweep, fallbacks)
 
     def row(key: str, name: str, mark_best: bool) -> str:
         out = []
@@ -107,13 +127,21 @@ def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digit
                 continue
             v = float(r[f"{metric}_mean"])
             txt = f"{v:.{digits}f}"
-            out.append(rf"\textbf{{{txt}}}" if mark_best and txt == f"{best[c]:.{digits}f}" else txt)
+            if mark_best and txt == f"{best[c]:.{digits}f}":
+                txt = rf"\textbf{{{txt}}}"
+            out.append(txt + DAGGER if (*c, key) in fell_back else txt)
         return f"{name} & " + " & ".join(out) + r" \\"
 
     lines = [row(k, n, True) for k, n in METHOD_ORDER if any((*c, k) in s for c in cells)]
     lines += [r"\midrule", row(*FLOOR, False)]
+    notes = []
+    if any((*c, m) in fell_back for c in cells for m, _ in METHOD_ORDER):
+        notes.append(DAGGER + r" The method filled the hole with the observed mean in most patch-runs "
+                     r"(Section~\ref{sec:experiments:methods}).")
     if with_cap_note:
-        lines += [r"\midrule", cap_note(s, cells, 1 + len(cells))]
+        notes.append(cap_note(s, cells))
+    if notes:
+        lines += [r"\midrule", *(_note(t, 1 + len(cells)) for t in notes)]
     return "\n".join(lines)
 
 

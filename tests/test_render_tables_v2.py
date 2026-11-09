@@ -64,7 +64,8 @@ def test_method_by_cell_table_orders_bolds_and_dashes(tmp_path):
         if c != ("CF4", "L5"):
             values[(*c, "lama")] = 20.0
     _fixture_summary(tmp_path, values)
-    body = m.method_by_cell_table(tmp_path, "psnr_hole", True, 2)
+    none = tmp_path / "no_fallbacks.csv"
+    body = m.method_by_cell_table(tmp_path, "psnr_hole", True, 2, fallbacks=none)
     lines = body.splitlines()
     assert [ln.split(" & ")[0] for ln in lines] == ["CSFR", "Block-DCT thr.", "LaMa", r"\midrule",
                                                    "Zero-fill (floor)"]
@@ -73,12 +74,35 @@ def test_method_by_cell_table_orders_bolds_and_dashes(tmp_path):
     assert csfr[4] == r"\textbf{33.00}" and gul[4] == "32.00"         # CF2 L1: CSFR best
     assert lama[-1] == r"-- \\"                                      # did not run in CF4 L5
     assert r"\textbf" not in lines[-1]
-    lower = m.method_by_cell_table(tmp_path, "gmsd_hole", False, 3)
+    lower = m.method_by_cell_table(tmp_path, "gmsd_hole", False, 3, fallbacks=none)
     assert r"\textbf{0.032}" in lower.splitlines()[1]                 # 1/31, lower is better
-    noted = m.method_by_cell_table(tmp_path, "psnr_hole", True, 2, with_cap_note=True).splitlines()
+    noted = m.method_by_cell_table(tmp_path, "psnr_hole", True, 2, with_cap_note=True,
+                                   fallbacks=none).splitlines()
     assert noted[:-2] == lines
     assert noted[-1].startswith(r"\multicolumn{13}{@{}l}")
     assert "at most 7 of 900 per cell (Block-DCT thr., CF2~L3)" in noted[-1]
+
+
+def test_majority_fallback_cells_carry_a_dagger(tmp_path):
+    import csv
+    m = _mod()
+    cells = [(f, lv) for f in m.FAMILIES for lv in m.MAIN_LEVELS]
+    _fixture_summary(tmp_path, {(*c, meth): 30.0 for c in cells for meth in ("csfr", "dictlearn", "zero_fill")})
+    fb = tmp_path / "fallbacks.csv"
+    with fb.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["sweep", "family", "level", "method", "frac_fallback"])
+        w.writeheader()
+        w.writerow({"sweep": tmp_path.name, "family": "CF1", "level": "L1", "method": "dictlearn",
+                    "frac_fallback": 0.99})
+        w.writerow({"sweep": tmp_path.name, "family": "CF1", "level": "L3", "method": "dictlearn",
+                    "frac_fallback": 0.5})                    # not a majority
+        w.writerow({"sweep": "another_sweep", "family": "CF2", "level": "L1", "method": "dictlearn",
+                    "frac_fallback": 1.0})                    # another corpus
+    lines = m.method_by_cell_table(tmp_path, "psnr_hole", True, 2, fallbacks=fb).splitlines()
+    dl = lines[1].split(" & ")
+    assert dl[0] == r"Dict.\ learning"
+    assert dl[1] == r"\textbf{30.00}" + m.DAGGER and m.DAGGER not in "".join(dl[2:])
+    assert lines[-1].startswith(r"\multicolumn{13}{@{}l}{\footnotesize " + m.DAGGER)
 
 
 def test_missing_cell_is_an_error(tmp_path):
