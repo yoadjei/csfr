@@ -614,6 +614,78 @@ def maskerr(d: Path = MASKERR_DIR) -> str | None:
     return tabular(rf"@{{}}l*{{{len(methods) + 2}}}{{r}}@{{}}", header, body)
 
 
+CHILD_METHODS = {"shiftmap"}   # run in a fresh interpreter (src/baselines.py)
+CHILD_NOTE = ("Shift-map runs in a fresh interpreter per call: its time includes starting it, "
+              "and its memory is not in the peak shown.")
+
+
+def _cell_label(c: str) -> str:
+    return c.replace("_", "~")
+
+
+FULLRES_DIR = ROOT / "results" / "fullres"
+
+
+def fullres(d: Path = FULLRES_DIR) -> str | None:
+    """Per method: hole PSNR per corruption (mean over images and channels),
+    the median time per image and the largest rise in resident memory."""
+    summ, cost = _csv(d / "summary.csv"), _csv(d / "cost.csv")
+    if summ is None or cost is None:
+        return None
+    corrs = list(dict.fromkeys(r["corruption"] for r in summ))
+    by = {(r["corruption"], r["method"]): r for r in summ}
+    present = {r["method"] for r in summ}
+    methods = [(k, n) for k, n in METHOD_ORDER if k in present]
+    body = []
+    for k, name in methods:
+        q = [f"{float(by[(c, k)]['psnr_hole']):.2f}" if (c, k) in by else "--" for c in corrs]
+        cs = [r for r in cost if r["method"] == k]
+        secs = f"{np.median([float(r['seconds']) for r in cs]):.1f}" if cs else "--"
+        mem = f"{max(float(r['rss_peak_delta_mb']) for r in cs):.0f}" if cs else "--"
+        body.append(" & ".join([name, *q, secs, mem]) + r" \\")
+    if present & CHILD_METHODS:
+        body += [r"\midrule", _note(CHILD_NOTE, 3 + len(corrs))]
+    header = [rf" & \multicolumn{{{len(corrs)}}}{{c}}{{Hole PSNR (dB)}} & & \\",
+              rf"\cmidrule(lr){{2-{1 + len(corrs)}}}",
+              "Method & " + " & ".join(_cell_label(c) for c in corrs) + r" & s/image & MB \\"]
+    return tabular(rf"@{{}}l*{{{len(corrs) + 2}}}{{r}}@{{}}", header, body)
+
+
+BENCH_DIR = ROOT / "results" / "bench_v2"
+
+
+def bench_v2(d: Path = BENCH_DIR) -> str | None:
+    """Per method and bench cell: milliseconds per patch, with the largest rise
+    in resident memory; for CSFR also the median iterations and the time of one
+    record row."""
+    rows = _csv(d / "runtime_memory.csv")
+    if rows is None:
+        return None
+    cells = list(dict.fromkeys(r["cell"] for r in rows))
+    by = {(r["cell"], r["method"]): r for r in rows}
+    present = {r["method"] for r in rows}
+    methods = [(k, n) for k, n in METHOD_ORDER if k in present]
+    body = []
+    for k, name in methods:
+        ms = [f"{float(by[(c, k)]['ms_per_patch']):.1f}" if (c, k) in by else "--" for c in cells]
+        mem = max(float(by[(c, k)]["rss_peak_delta_mb"]) for c in cells if (c, k) in by)
+        body.append(" & ".join([name, *ms, f"{mem:.0f}"]) + r" \\")
+    csfr = [by[(c, "csfr")] for c in cells if (c, "csfr") in by]
+    notes = []
+    if csfr:
+        iters = " / ".join(f"{float(r['iterations_median']):.0f}" for r in csfr)
+        rec = " / ".join(f"{float(r['record_ms_per_query']):.1f}" for r in csfr)
+        notes.append(rf"CSFR, per cell: median iterations {iters}; one record row {rec}\,ms.")
+    if present & CHILD_METHODS:
+        notes.append(CHILD_NOTE)
+    if notes:
+        body += [r"\midrule", *(_note(t, 2 + len(cells)) for t in notes)]
+    header = [rf" & \multicolumn{{{len(cells)}}}{{c}}{{ms per patch}} & \\",
+              rf"\cmidrule(lr){{2-{1 + len(cells)}}}",
+              "Method & " + " & ".join(_cell_label(c) for c in cells) + r" & MB \\"]
+    return tabular(rf"@{{}}l*{{{len(cells) + 1}}}{{r}}@{{}}", header, body)
+
+
 def quality() -> str | None:
     return method_by_cell_table(SWEEP, "psnr_hole", higher_is_better=True, digits=2, with_cap_note=True)
 
@@ -625,7 +697,7 @@ def gmsd_table() -> str | None:
 TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_V2": paired_v2,
           "EXTERNAL_V2": external_v2, "ABLATION_V2": ablation_v2, "SOLVER_CMP": solver_cmp,
           "FIDELITY": fidelity, "RECORDS_CMP": records_cmp, "ORACLE": oracle, "BU": bu,
-          "JPEG": jpeg, "MASKERR": maskerr}
+          "JPEG": jpeg, "MASKERR": maskerr, "FULLRES": fullres, "BENCH_V2": bench_v2}
 
 
 def main() -> int:

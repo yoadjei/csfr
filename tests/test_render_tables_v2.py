@@ -382,6 +382,28 @@ def test_maskerr_averages_cells_per_perturbation(tmp_path):
                      r"Flip 5\% & $-$1.00 & $-$3.00 & $-$0.50 & 2.00 & 2.00 \\"]
 
 
+def test_fullres_and_bench_note_the_isolated_method(tmp_path):
+    m = _mod()
+    corrs = ("CF1_L3", "CF2_L3", "CF3_L3")
+    _write_csv(tmp_path / "summary.csv", [{"corruption": c, "method": k, "psnr_hole": 30.0}
+                                          for c in corrs for k in ("csfr", "shiftmap", "lama")])
+    _write_csv(tmp_path / "cost.csv", [{"corruption": c, "image": i, "method": k, "seconds": s, "rss_peak_delta_mb": mb}
+                                       for c in corrs for i in range(3) for k, s, mb in
+                                       (("csfr", 10.0 + i, 50.0 + i), ("shiftmap", 2.0, 5.0))])
+    lines = _body(m.fullres(tmp_path))
+    assert lines[0] == r"CSFR & 30.00 & 30.00 & 30.00 & 11.0 & 52 \\"
+    assert lines[2] == r"LaMa & 30.00 & 30.00 & 30.00 & -- & -- \\"     # cost recorded in its own environment
+    assert m.CHILD_NOTE in lines[-1]
+    bench = [{"cell": c, "method": k, "ms_per_patch": ms, "rss_peak_delta_mb": 12.0,
+              **({"iterations_median": 800.0, "record_ms_per_query": 4.25} if k == "csfr" else {})}
+             for c in ("CF1_L3", "CF2_L5", "CF3_L5") for k, ms in (("csfr", 40.0), ("bilinear", 1.25))]
+    _write_csv(tmp_path / "runtime_memory.csv", bench)
+    lines = _body(m.bench_v2(tmp_path))
+    assert lines[0] == r"CSFR & 40.0 & 40.0 & 40.0 & 12 \\"
+    assert "median iterations 800 / 800 / 800; one record row 4.2 / 4.2 / 4.2" in lines[-1]
+    assert m.CHILD_NOTE not in "".join(lines)                             # no shift-map in this bench
+
+
 def test_committed_tables_are_current():
     m = _mod()
     for tag, fn in m.TABLES.items():
