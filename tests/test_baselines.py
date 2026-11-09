@@ -36,12 +36,61 @@ def test_preserves_observed_pixels_and_fills_the_hole(name):
         assert float(np.abs(out[M == 0] - y[M == 0]).mean()) > 1.0
 
 
-@pytest.mark.parametrize("name", sorted(BASELINES))
+# shift-map is not a function of its input (see src/baselines.py); it is
+# isolated per call instead, which test_shiftmap_runs_in_a_fresh_interpreter checks
+DETERMINISTIC = sorted(set(BASELINES) - {"shiftmap"})
+
+
+@pytest.mark.parametrize("name", DETERMINISTIC)
 def test_is_deterministic(name):
     if name in NEEDS_XPHOTO and not xphoto_available():
         pytest.skip("opencv-contrib not installed")
     ref, y, M = _case("CF1", 0.3)
     assert np.array_equal(BASELINES[name](y, M, seed=0), BASELINES[name](y, M, seed=0))
+
+
+def test_outputs_do_not_depend_on_what_ran_before():
+    """The regression that exposed shift-map: a method's output must not change
+    after the other methods have run in the same process, in either order."""
+    if not xphoto_available():
+        pytest.skip("opencv-contrib not installed")
+    ref, y, M = _case("CF2", 0.3)
+    first = {n: BASELINES[n](y, M, seed=0) for n in DETERMINISTIC}
+    for n in reversed(DETERMINISTIC):
+        assert np.array_equal(BASELINES[n](y, M, seed=0), first[n]), n
+
+
+def test_shiftmap_runs_in_a_fresh_interpreter(monkeypatch):
+    import io
+    import subprocess
+
+    import baselines
+    calls = []
+
+    def fake_run(cmd, input, capture_output):
+        calls.append(cmd)
+        buf = io.BytesIO(input)
+        y = np.load(buf)
+        out = io.BytesIO()
+        np.save(out, y + 1)
+        return subprocess.CompletedProcess(cmd, 0, out.getvalue(), b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    ref, y, M = _case("CF2", 0.3)
+    out = baselines.baseline_shiftmap(y.astype(np.float64), M, seed=0)
+    assert len(calls) == 1 and calls[0][-2:] == [str(baselines.XPHOTO_CHILD), "INPAINT_SHIFTMAP"]
+    assert out.dtype == np.float64 and np.array_equal(out, y + 1)   # the child's array, input dtype
+
+
+def test_shiftmap_child_failure_is_reported(monkeypatch):
+    import subprocess
+
+    import baselines
+    monkeypatch.setattr(subprocess, "run",
+                        lambda cmd, input, capture_output: subprocess.CompletedProcess(cmd, 1, b"", b"boom"))
+    ref, y, M = _case()
+    with pytest.raises(RuntimeError, match="INPAINT_SHIFTMAP child failed: boom"):
+        baselines.baseline_shiftmap(y, M)
 
 
 def _hole_mse(out, ref, M):

@@ -10,8 +10,17 @@ shift-map (OpenCV contrib), and exemplar-based inpainting after Criminisi.
 Every function takes (y, M) as (B, H, W) float arrays with M = 1 on observed
 pixels, returns (B, H, W) float32 in [0, 255], and leaves observed pixels exact.
 BASELINES maps the harness name to a callable f(y, M, seed=0).
+
+Every method except shift-map is a function of its input alone, whatever else
+has run in the process (tests/test_baselines.py). OpenCV-contrib's shift-map is
+not: its output changes after other code has run in the same process, and it
+differs between fresh processes. It therefore runs in a fresh interpreter per
+call (src/xphoto_child.py), which removes the dependence on what the harness
+ran before it; the remaining run-to-run variation is measured and reported.
 """
 from __future__ import annotations
+
+from pathlib import Path
 
 import numpy as np
 
@@ -220,6 +229,26 @@ def _xphoto(y: np.ndarray, M: np.ndarray, flag_name: str) -> np.ndarray:
     return out
 
 
+XPHOTO_CHILD = Path(__file__).with_name("xphoto_child.py")
+
+
+def _xphoto_in_child(y: np.ndarray, M: np.ndarray, flag_name: str) -> np.ndarray:
+    """_xphoto in a fresh interpreter that runs nothing else, for a method whose
+    output depends on the state of the process it runs in. The child runs
+    isolated (-I) when the parent does."""
+    import io
+    import subprocess
+    import sys
+    buf = io.BytesIO()
+    np.save(buf, np.ascontiguousarray(y, np.float32), allow_pickle=False)
+    np.save(buf, np.ascontiguousarray(M, np.float32), allow_pickle=False)
+    cmd = [sys.executable, *(["-I"] if sys.flags.isolated else []), str(XPHOTO_CHILD), flag_name]
+    r = subprocess.run(cmd, input=buf.getvalue(), capture_output=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"{flag_name} child failed: {r.stderr.decode(errors='replace')[-2000:]}")
+    return np.load(io.BytesIO(r.stdout), allow_pickle=False).astype(y.dtype, copy=False)
+
+
 def baseline_fsr(y: np.ndarray, M: np.ndarray, seed: int = 0) -> np.ndarray:
     """Frequency-selective reconstruction (Seiler, Jonscher, Kaup), OpenCV-contrib, fast mode."""
     return _xphoto(y, M, "INPAINT_FSR_FAST")
@@ -227,8 +256,9 @@ def baseline_fsr(y: np.ndarray, M: np.ndarray, seed: int = 0) -> np.ndarray:
 
 def baseline_shiftmap(y: np.ndarray, M: np.ndarray, seed: int = 0) -> np.ndarray:
     """Shift-map inpainting (Pritch, Kav-Venaki, Peleg), OpenCV-contrib: a non-local
-    method that copies pixels from elsewhere in the image by graph-cut optimisation."""
-    return _xphoto(y, M, "INPAINT_SHIFTMAP")
+    method that copies pixels from elsewhere in the image by graph-cut optimisation.
+    Runs in a fresh interpreter per call (see the module docstring)."""
+    return _xphoto_in_child(y, M, "INPAINT_SHIFTMAP")
 
 
 def baseline_criminisi(y: np.ndarray, M: np.ndarray, seed: int = 0, patch: int = 9,

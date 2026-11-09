@@ -16,5 +16,8 @@ offset_margin_rows: 2
 # numerical controls only, as in the sweeps; tolerance and weights from src/csfr_solver.py
 solver: {max_iter: 50000}
 csfr_variants: [csfr, csfr_tv_only]
-baselines: [bilinear, inpaint_telea, inpaint_ns, dictlearn, biharmonic, guleryuz, fsr]
+# every classical baseline except exemplar inpainting (criminisi), whose exemplar
+# search grows with hole size times source size and is not run at up to
+# 512 x 512 for its cost, as in the full-resolution experiment (E11)
+baselines: [bilinear, inpaint_telea, inpaint_ns, dictlearn, biharmonic, guleryuz, fsr, shiftmap]
 external: [lama]
