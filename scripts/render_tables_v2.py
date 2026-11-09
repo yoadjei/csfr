@@ -361,6 +361,88 @@ def solver_cmp(d: Path = SOLVER_DIR) -> str | None:
     return tabular(r"@{}l*{4}{r}rrr@{}", header, body)
 
 
+FIDELITY_DIR = ROOT / "results" / "sensitivity_fidelity"
+FIDELITY_DELTA = 1.0
+
+
+def pct(x: float, sig: int = 3) -> str:
+    """A fraction as a percentage with `sig` significant digits."""
+    return f"{100 * x:.{sig}g}"
+
+
+def fidelity(d: Path = FIDELITY_DIR, delta: float = FIDELITY_DELTA) -> str | None:
+    """Per cell at perturbation `delta` and the default tolerance: queries,
+    median and 90th percentile relative error against the reference re-solve,
+    SRF against the reference and the operational re-solve, top-k sign
+    agreement, and the time of one record column."""
+    rows = _csv(d / "summary.csv")
+    if rows is None:
+        return None
+    tol = SolverConfig().tol
+    by = {(r["family"], r["level"]): r for r in rows
+          if float(r["delta"]) == delta and float(r["tol"]) == tol}
+    body = []
+    for fam in FAMILIES:
+        if body:
+            body.append(r"\midrule")
+        for lv in MAIN_LEVELS:
+            r = by.get((fam, lv))
+            if r is None:
+                raise ValueError(f"fidelity: no summary for {fam} {lv} at delta {delta:g}, tol {tol:g}")
+            body.append(" & ".join([f"{fam}~{lv}", r["n"], pct(float(r["rel_err_median_ref"])),
+                                    pct(float(r["rel_err_p90_ref"])), f"{100 * float(r['srf_ref']):.1f}",
+                                    f"{100 * float(r['srf_op']):.1f}",
+                                    f"{100 * float(r['sign_agreement_mean_ref']):.1f}",
+                                    f"{1000 * float(r['record_seconds_mean']):.0f}"]) + r" \\")
+    header = [r" & & \multicolumn{2}{c}{Rel.\ error (\%)} & \multicolumn{2}{c}{SRF (\%)} & & \\",
+              r"\cmidrule(lr){3-4}\cmidrule(lr){5-6}",
+              r"Cell & Queries & Median & P90 & ref & op & Sign (\%) & ms \\"]
+    return tabular(r"@{}l r r r r r r r@{}", header, body)
+
+
+RECORD_KINDS = [("csfr", "implicit_function", "CSFR"),
+                ("bilinear", "exact_barycentric", "Linear, exact"),
+                ("bilinear", "finite_difference_delta1", r"Linear, FD $\delta = 1$"),
+                ("bilinear", "finite_difference_delta4", r"Linear, FD $\delta = 4$"),
+                ("inpaint_telea", "finite_difference_delta1", r"Telea, FD $\delta = 1$"),
+                ("inpaint_telea", "finite_difference_delta4", r"Telea, FD $\delta = 4$"),
+                ("inpaint_ns", "finite_difference_delta1", r"Navier--Stokes, FD $\delta = 1$"),
+                ("inpaint_ns", "finite_difference_delta4", r"Navier--Stokes, FD $\delta = 4$")]
+RECORD_GROUPS = [("CF1--CF2", ("CF1", "CF2")), ("CF3--CF4", ("CF3", "CF4"))]
+
+
+def records_cmp(d: Path = FIDELITY_DIR) -> str | None:
+    """Per record kind and family group, medians over query pixels: L1 norm,
+    support size, |w|-weighted mean distance from the query, and for finite
+    differences the relative difference between delta 1 and 4. A kind with no
+    non-zero record in a group (linear interpolation outside its convex hull)
+    shows dashes."""
+    rows = _csv(d / "records_compare.csv")
+    if rows is None:
+        return None
+    body = []
+    for method, record, name in RECORD_KINDS:
+        out = []
+        for _, fams in RECORD_GROUPS:
+            rs = [r for r in rows if r["method"] == method and r["record"] == record
+                  and r["cell"].split("_")[0] in fams]
+            if not rs:
+                raise ValueError(f"records: no {method} {record} rows for {fams}")
+            nz = [r for r in rs if float(r["l1_norm"]) > 0]
+            if not nz:
+                out += ["--"] * 4
+                continue
+            med = lambda k, rr=nz: float(np.median([float(r[k]) for r in rr]))  # noqa: E731
+            fd = [float(r["fd_rel_diff_delta1_vs_4"]) for r in nz if r.get("fd_rel_diff_delta1_vs_4", "") != ""]
+            out += [f"{med('l1_norm'):.2f}", f"{med('support'):.0f}", f"{med('mean_distance'):.1f}",
+                    f"{np.median(fd):.2f}" if fd else "--"]
+        body.append(f"{name} & " + " & ".join(out) + r" \\")
+    header = [" & " + " & ".join(rf"\multicolumn{{4}}{{c}}{{{g}}}" for g, _ in RECORD_GROUPS) + r" \\",
+              r"\cmidrule(lr){2-5}\cmidrule(l){6-9}",
+              r"Record & $\ell_1$ & Supp. & Dist. & FD $1/4$ & $\ell_1$ & Supp. & Dist. & FD $1/4$ \\"]
+    return tabular(r"@{}l*{8}{r}@{}", header, body)
+
+
 def quality() -> str | None:
     return method_by_cell_table(SWEEP, "psnr_hole", higher_is_better=True, digits=2, with_cap_note=True)
 
@@ -370,7 +452,8 @@ def gmsd_table() -> str | None:
 
 
 TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_V2": paired_v2,
-          "EXTERNAL_V2": external_v2, "ABLATION_V2": ablation_v2, "SOLVER_CMP": solver_cmp}
+          "EXTERNAL_V2": external_v2, "ABLATION_V2": ablation_v2, "SOLVER_CMP": solver_cmp,
+          "FIDELITY": fidelity, "RECORDS_CMP": records_cmp}
 
 
 def main() -> int:

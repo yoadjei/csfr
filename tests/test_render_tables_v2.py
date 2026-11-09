@@ -212,7 +212,7 @@ def _write_csv(path, rows):
     import csv
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w = csv.DictWriter(fh, fieldnames=list(dict.fromkeys(k for r in rows for k in r)))
         w.writeheader()
         w.writerows(rows)
 
@@ -261,6 +261,43 @@ def test_solver_cmp_reports_time_only_for_the_cpu_rerun(tmp_path):
     assert lines[1] == r"Adam, 600 iterations (CPU) & -- & -- & -- & -- & 20 & 600 & -- \\"
     assert lines[3].endswith(r"& 33.00 & 40 & 750 & 99.0 \\")
     assert "at most 0.0021 grey levels" in lines[-1]
+
+
+def test_fidelity_reads_the_default_tolerance_at_one_grey_level(tmp_path):
+    m = _mod()
+    from csfr_solver import SolverConfig
+    tol = SolverConfig().tol
+    rows = []
+    for f in m.FAMILIES:
+        for lv in m.MAIN_LEVELS:
+            for delta, t in ((1.0, tol), (4.0, tol), (1.0, 1e-10)):
+                rows.append({"family": f, "level": lv, "delta": delta, "tol": t, "n": 30,
+                             "rel_err_median_ref": 0.00213 if (delta, t) == (1.0, tol) else 0.9,
+                             "rel_err_p90_ref": 0.0451, "srf_ref": 0.9667, "srf_op": 0.9333,
+                             "sign_agreement_mean_ref": 0.998, "record_seconds_mean": 0.0123})
+    _write_csv(tmp_path / "summary.csv", rows)
+    lines = _body(m.fidelity(tmp_path))
+    assert lines[0] == r"CF1~L1 & 30 & 0.213 & 4.51 & 96.7 & 93.3 & 99.8 & 12 \\"
+    assert sum(ln.startswith("CF") for ln in lines) == 12
+
+
+def test_records_cmp_dashes_an_empty_record_and_pools_family_groups(tmp_path):
+    m = _mod()
+    rows = []
+    for cell in ("CF1_L3", "CF2_L3", "CF3_L3", "CF4_L3"):
+        contiguous = cell[:3] in ("CF3", "CF4")
+        for method, record, _ in m.RECORD_KINDS:
+            empty = method == "bilinear" and record == "exact_barycentric" and contiguous
+            r = {"cell": cell, "method": method, "record": record, "l1_norm": 0.0 if empty else 1.5,
+                 "support": 0 if empty else 40, "mean_distance": "" if empty else 2.25}
+            if record.startswith("finite"):
+                r["fd_rel_diff_delta1_vs_4"] = 0.75 if method != "bilinear" else 0.0
+            rows.append(r)
+    _write_csv(tmp_path / "records_compare.csv", rows)
+    lines = _body(m.records_cmp(tmp_path))
+    assert lines[0] == r"CSFR & 1.50 & 40 & 2.2 & -- & 1.50 & 40 & 2.2 & -- \\"
+    assert lines[1] == r"Linear, exact & 1.50 & 40 & 2.2 & -- & -- & -- & -- & -- \\"
+    assert lines[2].endswith(r"& 0.00 \\") and lines[4].endswith(r"& 0.75 \\")
 
 
 def test_committed_tables_are_current():
