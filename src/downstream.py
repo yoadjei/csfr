@@ -317,8 +317,15 @@ def train_classifier(
     seed: int = DEFAULT_SEED,
     device: Optional[torch.device] = None,
     val_fraction: float = 0.1,
-) -> Tuple[DigitCNN, dict]:
-    """Train DigitCNN on clean digits. Returns (frozen model, info dict)."""
+    arch: str = "DigitCNN",
+    weight_decay: float = 0.0,
+    cosine: bool = False,
+) -> Tuple[nn.Module, dict]:
+    """Train a classifier on clean digits. Returns (frozen model, info dict).
+
+    The defaults reproduce the released DigitCNN training exactly; round 2
+    trains DigitResNet with weight decay and a cosine learning-rate schedule.
+    """
     set_seed(seed)
     device = device or torch.device("cpu")
     n = images.shape[0]
@@ -338,8 +345,10 @@ def train_classifier(
     )
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
-    model = DigitCNN().to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    model = ARCHS[arch]().to(device)
+    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    sched = (torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs * len(train_loader))
+             if cosine else None)
     history = {"train_loss": [], "val_acc": []}
 
     for epoch in range(epochs):
@@ -351,6 +360,8 @@ def train_classifier(
             loss = F.cross_entropy(model(xb), yb)
             loss.backward()
             opt.step()
+            if sched is not None:
+                sched.step()
             losses.append(loss.item())
         val_acc = _accuracy(model, val_loader, device)
         history["train_loss"].append(float(np.mean(losses)))
@@ -362,6 +373,7 @@ def train_classifier(
 
     freeze(model)
     info = {
+        "arch": arch, "weight_decay": weight_decay, "cosine": cosine, "lr": lr, "batch_size": batch_size,
         "seed": seed,
         "epochs": epochs,
         "n_train": int(len(train_idx)),
