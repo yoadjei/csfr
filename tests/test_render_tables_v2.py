@@ -404,6 +404,39 @@ def test_fullres_and_bench_note_the_isolated_method(tmp_path):
     assert m.CHILD_NOTE not in "".join(lines)                             # no shift-map in this bench
 
 
+def test_ocr_bolds_the_lowest_error_and_sets_the_input_apart(tmp_path):
+    m = _mod()
+    rows = [{"family": f, "level": lv, "method": k, "cer_mean": v}
+            for f in m.FAMILIES for lv in m.MAIN_LEVELS
+            for k, v in (("csfr", 0.12), ("guleryuz", 0.10), ("corrupted_input", 0.05))]
+    _write_csv(tmp_path / "summary.csv", rows)
+    lines = _body(m.ocr(tmp_path))
+    assert lines[1].split(" & ")[1] == r"\textbf{0.100}"            # lowest among compared methods
+    assert lines[-1].startswith("Corrupted input (floor) & 0.050") and r"\textbf" not in lines[-1]
+
+
+def test_downstream_v2_accuracy_ece_and_significance_counts(tmp_path):
+    m = _mod()
+    met, st = [], []
+    for clf, _ in m.CLASSIFIERS:
+        met.append({"classifier": clf, "family": "clean", "level": "", "method": "clean", "accuracy": 0.95,
+                    "ece_ts": 0.01})
+        for f in m.FAMILIES:
+            for lv in ("L1", "L5"):
+                for k, acc in (("csfr", 0.8 if lv == "L1" else 0.6), ("telea", 0.5)):
+                    met.append({"classifier": clf, "family": f, "level": lv, "method": k, "accuracy": acc,
+                                "ece_ts": 0.05})
+                st.append({"classifier": clf, "family": f, "level": lv, "method": "telea",
+                           "statistic": 30 if f != "CF4" else -3, "p_holm": 0.001 if f != "CF4" else 0.6})
+    _write_csv(tmp_path / "metrics.csv", met)
+    _write_csv(tmp_path / "stats.csv", st)
+    lines = _body(m.downstream_v2(tmp_path))
+    assert lines[0] == (r"CSFR & 0.700 & 0.700 & 0.700 & 0.700 & 0.050 & -- & 0.700 & 0.700 & 0.700 & 0.700 "
+                        r"& 0.050 & -- \\")
+    assert lines[1].startswith("Telea & 0.500") and lines[1].endswith(r"& 0.050 & 6/0 \\")
+    assert "CNN 0.950, ResNet 0.950" in lines[-1]
+
+
 def test_committed_tables_are_current():
     m = _mod()
     for tag, fn in m.TABLES.items():

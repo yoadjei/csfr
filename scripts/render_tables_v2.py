@@ -143,13 +143,28 @@ def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digit
     if s is None:
         return None
     cells = [(f, lv) for f in FAMILIES for lv in levels]
+    fell_back = fallback_cells(sweep, fallbacks)
+    notes = []
+    if any((*c, m) in fell_back for c in cells for m, _ in METHOD_ORDER):
+        notes.append(DAGGER + r" The method filled the hole with the observed mean in most patch-runs "
+                     r"(Section~\ref{sec:experiments:methods}).")
+    if with_cap_note:
+        notes.append(cap_note(s, cells))
+    return cell_table(s, metric, higher_is_better, digits, levels, fell_back, notes, FLOOR, sweep.name)
+
+
+def cell_table(s: dict, metric: str, higher_is_better: bool, digits: int, levels: tuple[str, ...],
+               marked: set, notes: list[str], floor: tuple[str, str], where: str) -> str:
+    """The method-by-cell tabular of summary rows s keyed (family, level,
+    method) with a `{metric}_mean` column: best compared value bold per column,
+    `marked` cells daggered, the floor row set apart, `notes` at the foot."""
+    cells = [(f, lv) for f in FAMILIES for lv in levels]
     best = {}
     for c in cells:
         vals = [float(s[(*c, m)][f"{metric}_mean"]) for m, _ in METHOD_ORDER if (*c, m) in s]
         if not vals:
-            raise ValueError(f"{sweep.name}: no results for cell {c[0]} {c[1]}")
+            raise ValueError(f"{where}: no results for cell {c[0]} {c[1]}")
         best[c] = max(vals) if higher_is_better else min(vals)
-    fell_back = fallback_cells(sweep, fallbacks)
 
     def row(key: str, name: str, mark_best: bool) -> str:
         out = []
@@ -157,20 +172,67 @@ def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digit
             txt = f"{float(s[(*c, key)][f'{metric}_mean']):.{digits}f}"
             if mark_best and txt == f"{best[c]:.{digits}f}":
                 txt = rf"\textbf{{{txt}}}"
-            out.append(txt + DAGGER if (*c, key) in fell_back else txt)
+            out.append(txt + DAGGER if (*c, key) in marked else txt)
         return f"{name} & " + " & ".join(out) + r" \\"
 
     lines = [row(k, n, True) for k, n in METHOD_ORDER if any((*c, k) in s for c in cells)]
-    lines += [r"\midrule", row(*FLOOR, False)]
-    notes = []
-    if any((*c, m) in fell_back for c in cells for m, _ in METHOD_ORDER):
-        notes.append(DAGGER + r" The method filled the hole with the observed mean in most patch-runs "
-                     r"(Section~\ref{sec:experiments:methods}).")
-    if with_cap_note:
-        notes.append(cap_note(s, cells))
+    lines += [r"\midrule", row(*floor, False)]
     if notes:
         lines += [r"\midrule", *(_note(t, 1 + len(cells)) for t in notes)]
     return tabular(rf"@{{}}l*{{{len(cells)}}}{{r}}@{{}}", family_level_header(levels), lines)
+
+
+OCR_DIR = ROOT / "results" / "ocr"
+OCR_FLOOR = ("corrupted_input", "Corrupted input (floor)")
+
+
+def ocr(d: Path = OCR_DIR) -> str | None:
+    """Character error rate per method and cell (lower is better), with the
+    recognition of the corrupted input as the floor."""
+    rows = _csv(d / "summary.csv")
+    if rows is None:
+        return None
+    s = {(r["family"], r["level"], r["method"]): r for r in rows}
+    return cell_table(s, "cer", False, 3, MAIN_LEVELS, set(), [], OCR_FLOOR, "ocr")
+
+
+DOWNSTREAM_DIR = ROOT / "results" / "downstream_v2" / "stats"
+CLASSIFIERS = [("cnn", "CNN"), ("resnet", "ResNet")]
+DOWNSTREAM_ALIAS = {"telea": "inpaint_telea", "ns": "inpaint_ns"}   # harness names -> sweep names
+
+
+def downstream_v2(d: Path = DOWNSTREAM_DIR) -> str | None:
+    """Per method and classifier: accuracy per family (mean over levels), the
+    mean ECE of the temperature-scaled confidence over cells, and the cells
+    where CSFR is ahead or behind the method (Holm-adjusted McNemar p < ALPHA)."""
+    met, st = _csv(d / "metrics.csv"), _csv(d / "stats.csv")
+    if met is None or st is None:
+        return None
+    alias = lambda m: DOWNSTREAM_ALIAS.get(m, m)  # noqa: E731
+    present = {alias(r["method"]) for r in met if r["family"] != "clean"}
+    methods = [(k, n) for k, n in [*METHOD_ORDER, FLOOR] if k in present]
+    body = []
+    for k, name in methods:
+        out = [name]
+        for clf, _ in CLASSIFIERS:
+            mr = [r for r in met if r["classifier"] == clf and alias(r["method"]) == k]
+            out += [f"{np.mean([float(r['accuracy']) for r in mr if r['family'] == f]):.3f}" for f in FAMILIES]
+            out.append(f"{np.mean([float(r['ece_ts']) for r in mr]):.3f}")
+            sr = [r for r in st if r["classifier"] == clf and alias(r["method"]) == k]
+            ahead = sum(float(r["p_holm"]) < ALPHA and int(r["statistic"]) > 0 for r in sr)
+            behind = sum(float(r["p_holm"]) < ALPHA and int(r["statistic"]) < 0 for r in sr)
+            out.append(f"{ahead}/{behind}" if sr else "--")
+        body.append(" & ".join(out) + r" \\")
+    span = len(FAMILIES) + 2                      # accuracy per family, ECE, significance counts
+    clean = {r["classifier"]: float(r["accuracy"]) for r in met if r["family"] == "clean"}
+    body += [r"\midrule", _note("Clean images: accuracy " + ", ".join(
+        f"{n} {clean[c]:.3f}" for c, n in CLASSIFIERS if c in clean) +
+        rf". $\pm$: cells where CSFR is ahead / behind (Holm-adjusted McNemar $p < {ALPHA:g}$).",
+        1 + len(CLASSIFIERS) * span)]
+    header = [" & " + " & ".join(rf"\multicolumn{{{span}}}{{c}}{{{n}}}" for _, n in CLASSIFIERS) + r" \\",
+              rf"\cmidrule(lr){{2-{1 + span}}}\cmidrule(l){{{2 + span}-{1 + 2 * span}}}",
+              "Method" + (" & " + " & ".join(FAMILIES) + r" & ECE & $\pm$") * len(CLASSIFIERS) + r" \\"]
+    return tabular(rf"@{{}}l*{{{2 * span}}}{{r}}@{{}}", header, body)
 
 
 ALL_LEVELS = ("L1", "L2", "L3", "L4", "L5")
@@ -697,7 +759,8 @@ def gmsd_table() -> str | None:
 TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_V2": paired_v2,
           "EXTERNAL_V2": external_v2, "ABLATION_V2": ablation_v2, "SOLVER_CMP": solver_cmp,
           "FIDELITY": fidelity, "RECORDS_CMP": records_cmp, "ORACLE": oracle, "BU": bu,
-          "JPEG": jpeg, "MASKERR": maskerr, "FULLRES": fullres, "BENCH_V2": bench_v2}
+          "JPEG": jpeg, "MASKERR": maskerr, "FULLRES": fullres, "BENCH_V2": bench_v2,
+          "DOWNSTREAM_V2": downstream_v2, "OCR": ocr}
 
 
 def main() -> int:
