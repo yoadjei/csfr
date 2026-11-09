@@ -261,6 +261,44 @@ class DigitCNN(nn.Module):
         return self.classifier(self.features(x))
 
 
+class _BasicBlock(nn.Module):
+    def __init__(self, c_in: int, c_out: int, stride: int = 1) -> None:
+        super().__init__()
+        self.conv1 = nn.Conv2d(c_in, c_out, 3, stride, 1, bias=False)
+        self.bn1 = nn.BatchNorm2d(c_out)
+        self.conv2 = nn.Conv2d(c_out, c_out, 3, 1, 1, bias=False)
+        self.bn2 = nn.BatchNorm2d(c_out)
+        self.short = (nn.Sequential() if stride == 1 and c_in == c_out else
+                      nn.Sequential(nn.Conv2d(c_in, c_out, 1, stride, bias=False), nn.BatchNorm2d(c_out)))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        return F.relu(out + self.short(x))
+
+
+class DigitResNet(nn.Module):
+    """Residual classifier for 32x32 grayscale digits (round 2, second classifier):
+    3x3 stem (1 -> 64), three stages of two basic blocks (64, 128, 256 channels,
+    stride 2 at the entry of stages two and three), global average pool, linear."""
+
+    def __init__(self, n_classes: int = 10) -> None:
+        super().__init__()
+        self.stem = nn.Sequential(nn.Conv2d(1, 64, 3, 1, 1, bias=False), nn.BatchNorm2d(64), nn.ReLU(inplace=True))
+        self.stages = nn.Sequential(
+            _BasicBlock(64, 64), _BasicBlock(64, 64),
+            _BasicBlock(64, 128, 2), _BasicBlock(128, 128),
+            _BasicBlock(128, 256, 2), _BasicBlock(256, 256))
+        self.head = nn.Linear(256, n_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.stages(self.stem(x))
+        return self.head(F.adaptive_avg_pool2d(h, 1).flatten(1))
+
+
+ARCHS = {"DigitCNN": DigitCNN, "DigitResNet": DigitResNet}
+
+
 def freeze(model: nn.Module) -> nn.Module:
     """Disable gradients and put the model in eval mode."""
     model.eval()
@@ -352,10 +390,13 @@ def save_classifier(
 ) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    arch = type(model).__name__
+    if arch not in ARCHS:
+        raise ValueError(f"unregistered architecture {arch}")
     payload = {
         "state_dict": model.state_dict(),
         "meta": meta or {},
-        "arch": "DigitCNN",
+        "arch": arch,
     }
     torch.save(payload, path)
     return path
@@ -365,11 +406,13 @@ def load_classifier(
     path: PathLike = DEFAULT_CKPT,
     device: Optional[torch.device] = None,
     freeze_weights: bool = True,
-) -> DigitCNN:
-    """Load a saved DigitCNN; frozen by default."""
+) -> nn.Module:
+    """Load a saved classifier of the architecture its checkpoint records
+    (DigitCNN when it records none, as the released checkpoint); frozen by default."""
     device = device or torch.device("cpu")
     payload = torch.load(path, map_location=device, weights_only=False)
-    model = DigitCNN()
+    arch = payload.get("arch", "DigitCNN") if isinstance(payload, dict) else "DigitCNN"
+    model = ARCHS[arch]()
     state = payload["state_dict"] if isinstance(payload, dict) and "state_dict" in payload else payload
     model.load_state_dict(state)
     model.to(device)
@@ -416,6 +459,56 @@ def predict(
         labels_out.append(lab.cpu())
         conf_out.append(conf.cpu())
     return torch.cat(labels_out), torch.cat(conf_out)
+
+
+def classifier_meta(path: PathLike) -> dict:
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    return dict(payload.get("meta", {})) if isinstance(payload, dict) else {}
+
+
+@torch.no_grad()
+def predict_logits(model: nn.Module, images: torch.Tensor, *, device: Optional[torch.device] = None,
+                   batch_size: int = 256) -> torch.Tensor:
+    """Raw logits [N, 10] for images [N, 1, H, W] (or [N, H, W])."""
+    device = device or next(model.parameters()).device
+    model.eval()
+    if images.ndim == 3:
+        images = images.unsqueeze(1)
+    out = [model(images[s:s + batch_size].to(device)).cpu() for s in range(0, images.shape[0], batch_size)]
+    return torch.cat(out)
+
+
+def fit_temperature(logits: torch.Tensor, labels: torch.Tensor, max_iter: int = 200) -> float:
+    """Temperature scaling (Guo et al. 2017): the T > 0 minimising the negative
+    log-likelihood of softmax(logits / T), fitted by L-BFGS on log T."""
+    logits = logits.detach().double()
+    labels = labels.long()
+    log_t = torch.zeros(1, dtype=torch.float64, requires_grad=True)
+    opt = torch.optim.LBFGS([log_t], lr=0.5, max_iter=max_iter, line_search_fn="strong_wolfe")
+
+    def closure():
+        opt.zero_grad()
+        loss = F.cross_entropy(logits / log_t.exp(), labels)
+        loss.backward()
+        return loss
+
+    opt.step(closure)
+    return float(log_t.exp())
+
+
+def expected_calibration_error(conf: np.ndarray, correct: np.ndarray, n_bins: int = 15) -> float:
+    """ECE with equal-width confidence bins on [0, 1]: sum over bins of the bin
+    weight times |accuracy - mean confidence|."""
+    conf = np.asarray(conf, dtype=np.float64)
+    correct = np.asarray(correct, dtype=np.float64)
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    idx = np.clip(np.digitize(conf, edges[1:-1], right=True), 0, n_bins - 1)
+    ece = 0.0
+    for b in range(n_bins):
+        sel = idx == b
+        if sel.any():
+            ece += sel.mean() * abs(correct[sel].mean() - conf[sel].mean())
+    return float(ece)
 
 
 @torch.no_grad()

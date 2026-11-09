@@ -119,3 +119,41 @@ def test_load_digit_dataset_svhn_or_fallback():
     # SVHN zero-as-10 mapping: labels must be 0..9
     assert int(labels.min()) >= 0
     assert int(labels.max()) <= 9
+
+
+# ── round 2: second classifier and calibration ──────────────────────────
+def test_resnet_forward_shape_and_roundtrip(tmp_path):
+    from downstream import DigitResNet, load_classifier, save_classifier
+    m = DigitResNet().eval()
+    x = torch.rand(5, 1, 32, 32)
+    assert m(x).shape == (5, 10)
+    p = save_classifier(m, tmp_path / "r.pt", meta={"temperature": 1.7})
+    back = load_classifier(p)
+    assert isinstance(back, DigitResNet)
+    assert torch.allclose(back(x), m(x))
+
+
+def test_released_checkpoint_still_loads_as_cnn(tmp_path):
+    from downstream import DigitCNN, load_classifier, save_classifier
+    p = save_classifier(DigitCNN(), tmp_path / "c.pt")
+    assert isinstance(load_classifier(p), DigitCNN)
+    torch.save({"state_dict": DigitCNN().state_dict(), "meta": {}}, tmp_path / "old.pt")   # no arch key
+    assert isinstance(load_classifier(tmp_path / "old.pt"), DigitCNN)
+
+
+def test_temperature_recovers_a_known_scale():
+    from downstream import fit_temperature
+    g = torch.Generator().manual_seed(0)
+    true_logits = torch.randn(4000, 10, generator=g) * 3
+    labels = torch.distributions.Categorical(logits=true_logits).sample()
+    T = fit_temperature(true_logits * 2.5, labels)      # overconfident by a factor 2.5
+    assert abs(T - 2.5) < 0.25
+
+
+def test_ece_of_perfect_and_bad_calibration():
+    from downstream import expected_calibration_error
+    rng = np.random.default_rng(0)
+    conf = rng.uniform(0.1, 1.0, 20000)
+    correct = rng.random(20000) < conf                  # calibrated by construction
+    assert expected_calibration_error(conf, correct, n_bins=15) < 0.02
+    assert abs(expected_calibration_error(np.full(1000, 0.9), np.zeros(1000, bool)) - 0.9) < 1e-12
