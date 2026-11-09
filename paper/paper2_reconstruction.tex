@@ -157,7 +157,7 @@ with $\lambda_{\ell_1} = \csfrLamLone$, $\lambda_{\mathrm{TV}} = \csfrLamTV$, $\
   \item The weights are those of the released configuration (\texttt{configs/\allowbreak csfr\allowbreak\_sweep\allowbreak\_2d.yaml}). They were fixed before the GovDocs1 and Kodak corpora of this paper were assembled, and no weight was changed for any experiment reported here.
 \end{enumerate}
 
-Table~\ref{tab:constraints} maps the four constraint families of the method onto Eq.~\eqref{eq:objective}. C1 and C3 are hard constraints that every iterate satisfies; C2 and C4 are penalty terms of Eq.~\eqref{eq:J}, so a reconstruction can have any amount of variation or high-frequency energy at a cost. For that reason constraint-violation rates are reported only within the CSFR ablation (Section~\ref{sec:results:ablation}) and never as a comparison across methods, which would reward CSFR for the terms it optimises.
+Table~\ref{tab:constraints} maps the four constraint families of the method onto Eq.~\eqref{eq:objective}. C1 and C3 are hard constraints that every iterate satisfies; C2 and C4 are penalty terms of Eq.~\eqref{eq:J}, so a reconstruction can have any amount of variation or high-frequency energy at a cost. For that reason constraint violations are never compared across methods, which would reward CSFR for the terms it optimises. The one violation figure reported is internal to the ablation: the fraction of imputed pixels that leave the range when C3 is removed (Section~\ref{sec:results:ablation}).
 
 \begin{table}[htbp]
 \centering
@@ -365,7 +365,7 @@ Quality is scored over the hole only. Every method reproduces the observed pixel
   \item \textbf{Hole SSIM}~\cite{wang2004image}: the mean of the SSIM map over $\Omega^{c}$, with window 7 and data range 255.
   \item \textbf{GMSD}~\cite{xue2014gradient}: the standard deviation over $\Omega^{c}$ of the gradient-magnitude similarity map (Prewitt gradients, $c = 170$). It measures edge fidelity on the structured masks; lower is better.
 \end{itemize}
-Whole-patch PSNR is kept in the released files but not tabulated. The Hallucination Risk Proxy (HRP) is the mean absolute deviation of the imputed pixels from the mean of the observed region, in units of its standard deviation (floored at one grey level). It is reported as a descriptive statistic only: it flags imputations outside the intensity distribution of the fragment, but cannot detect wrong values inside it. Constraint-violation rates appear only in the ablation (Section~\ref{sec:results:ablation}), for the reason given in Section~\ref{sec:problem:objective}. The record is scored by SRF (Section~\ref{sec:framework:audit}), and the downstream tasks by their own measures (Section~\ref{sec:results:downstream}).
+Whole-patch PSNR is kept in the released files but not tabulated. The Hallucination Risk Proxy (HRP) is the mean absolute deviation of the imputed pixels from the mean of the observed region, in units of its standard deviation (floored at one grey level). It is reported as a descriptive statistic only: it flags imputations outside the intensity distribution of the fragment, but cannot detect wrong values inside it. Constraint-violation rates are not compared across methods, for the reason given in Section~\ref{sec:problem:objective}. The record is scored by SRF (Section~\ref{sec:framework:audit}), and the downstream tasks by their own measures (Section~\ref{sec:results:downstream}).
 
 \subsection{Statistics}
 \label{sec:experiments:stats}
