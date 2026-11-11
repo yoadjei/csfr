@@ -60,17 +60,25 @@ def main(argv=None) -> int:
     ap.add_argument("--sweep-dir", default="results/sweep_v2_dfrws")
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--force", action="store_true",
+                    help="measure again although the output exists (shift-map is not deterministic, "
+                         "so a second measurement gives new realisations)")
+    ap.add_argument("--out-dir", default=str(OUT))
     args = ap.parse_args(argv)
     sweep = Path(args.sweep_dir)
     if not sweep.is_absolute():
         sweep = ROOT / sweep
+    out = Path(args.out_dir)
+    path = out / f"{sweep.name}.csv"
+    if path.exists() and not args.force:
+        print(f"[shiftmap_replicates] {path} exists; kept (--force to measure again)")
+        return 0
     cfg = json.loads((sweep / "run_metadata.json").read_text(encoding="utf-8"))["config"]
     ref = np.load(ROOT / cfg["patches_path"]).astype(np.float32)
     jobs = [(sweep / f"{f}_{lv}" / f"seed{SEED}", ref, args.runs) for f in cfg["families"] for lv in cfg["levels"]]
     with ProcessPoolExecutor(max(1, args.workers)) as pool:
         rows = list(pool.map(_cell, jobs))
-    OUT.mkdir(parents=True, exist_ok=True)
-    path = OUT / f"{sweep.name}.csv"
+    out.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0]))
         w.writeheader()

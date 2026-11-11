@@ -30,3 +30,16 @@ def test_spread_counts_differing_patches_and_the_spread_of_cell_means():
     assert abs(s["patch_range_max"] - (p1 - p2)) < 1e-9
     assert abs(s["cell_mean_range"] - (p1 - p2) / 3) < 1e-9
     assert s["cell_mean_sd"] > 0
+
+
+def test_an_existing_measurement_is_kept(tmp_path):
+    """Shift-map is not deterministic, so measuring again gives new numbers; a
+    resumed campaign must keep the measurement the paper quotes."""
+    m = _mod()
+    sweep = tmp_path / "sweep_v2_dfrws"
+    sweep.mkdir()
+    (tmp_path / "out").mkdir()
+    kept = tmp_path / "out" / "sweep_v2_dfrws.csv"
+    kept.write_text("family,level\nCF1,L1\n")
+    assert m.main(["--sweep-dir", str(sweep), "--out-dir", str(tmp_path / "out")]) == 0
+    assert kept.read_text() == "family,level\nCF1,L1\n"      # no run_metadata.json was needed either
