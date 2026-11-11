@@ -45,7 +45,7 @@ def test_every_macro_the_manuscript_uses_is_generated():
     import re
     tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
     generated = set(re.findall(r"\\providecommand\{\\([A-Za-z]+)\}", m.render()))
-    used = set(re.findall(r"\\((?:csfr|rec|calib|oracle|corpus|methods|env|sweep|stats|fallback|bu)[A-Z][A-Za-z]*)", tex))
+    used = set(re.findall(r"\\((?:csfr|rec|calib|oracle|corpus|methods|env|sweep|stats|fallback|bu|shiftmap)[A-Z][A-Za-z]*)", tex))
     assert used, "the manuscript uses no number macros; the regex has rotted"
     assert used <= generated, f"manuscript uses undefined number macros: {sorted(used - generated)}"
 
@@ -64,6 +64,26 @@ def test_word_build_inlines_the_number_macros():
     body = inspect.getsource(d.prepare)
     assert body.index("inline_inputs(") < body.index("resolve_anonymous("), \
         "prepare() must inline the inputs before any other step reads the tex"
+
+
+def test_shiftmap_macros_take_the_worst_cell_of_both_corpora(tmp_path):
+    m = _mod()
+    import csv
+
+    def write(sweep, rows):
+        with (tmp_path / f"{sweep}.csv").open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=["family", "level", "n_realisations", "frac_patches_differ",
+                                              "cell_mean_range"])
+            w.writeheader()
+            w.writerows(rows)
+
+    write("sweep_v2_govdocs1", [{"family": "CF1", "level": "L1", "n_realisations": 4,
+                                 "frac_patches_differ": 0.10, "cell_mean_range": 0.05}])
+    assert set(m.shiftmap_macros(tmp_path).values()) == {m.PLACEHOLDER}      # one corpus is not enough
+    write("sweep_v2_dfrws", [{"family": "CF2", "level": "L5", "n_realisations": 4,
+                              "frac_patches_differ": 0.42, "cell_mean_range": 0.013}])
+    assert m.shiftmap_macros(tmp_path) == {"shiftmapRealisations": "4", "shiftmapDifferMax": "42",
+                                           "shiftmapCellRangeMax": "0.05"}
 
 
 def test_sci_formatting():
