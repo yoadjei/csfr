@@ -27,10 +27,6 @@ SECTIONS = {
     "discussion": (r"\section{Discussion}", r"\section{Scope and Limitations}"),
     "conclusion": (r"\section{Conclusion}", r"\section*{Acknowledgements}"),
 }
-REWRITE_PENDING = pytest.mark.xfail(strict=True, reason="still the round-1 text; rewritten when the "
-                                                        "round-2 results exist, then remove this marker")
-
-
 def prose(tex: str, name: str) -> str:
     """One section without its generated tables and comments."""
     start, end = SECTIONS[name]
@@ -46,8 +42,7 @@ def test_prose_strips_generated_tables_and_comments():
     assert DECIMAL.findall(prose(tex, "results")) == ["0.75"]
 
 
-@pytest.mark.parametrize("name", ["abstract", "results", "discussion",
-                                  pytest.param("conclusion", marks=REWRITE_PENDING)])
+@pytest.mark.parametrize("name", ["abstract", "results", "discussion", "conclusion"])
 def test_no_hand_typed_decimals(name):
     hits = DECIMAL.findall(prose(TEX.read_text(encoding="utf-8"), name))
     assert not hits, f"{name} types numbers by hand ({hits[:5]}); generate them in render_numbers_v2.py"
