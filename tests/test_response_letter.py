@@ -72,6 +72,45 @@ def test_unready_comment_is_reported(tmp_path, over, reason):
     assert "DRAFT" in m.render(_doc(**over), labels, draft=True)
 
 
+NUMBERS = "\n".join([r"% GENERATED", r"\providecommand{\csfrTol}{10^{-6}}",
+                     r"\providecommand{\buPooledMin}{0.80}",
+                     r"\providecommand{\fallbackDictCFoneMin}{\textbf{[pending]}}"]) + "\n"
+
+
+def _inputs(tmp_path):
+    m = _mod()
+    (tmp_path / "a.aux").write_text(AUX, encoding="utf-8")
+    (tmp_path / "n.tex").write_text(NUMBERS, encoding="utf-8")
+    return m, m.aux_labels(tmp_path / "a.aux"), m.macro_values(tmp_path / "n.tex")
+
+
+def test_inline_labels_and_numbers_resolve_from_the_build(tmp_path):
+    """A section number or a result typed into a response goes stale when the
+    paper moves; [[label]] and {{macro}} are resolved at build time instead."""
+    m, labels, values = _inputs(tmp_path)
+    assert values["csfrTol"] == "10^{-6}" and values["fallbackDictCFoneMin"] == m.PLACEHOLDER
+    doc = _doc(response="The solver of [[sec:framework:solver]] stops at {{csfrTol}}; AUROC {{buPooledMin}}.",
+               action="Rewrote [[tab:constraints]].")
+    out = m.render(doc, labels, draft=False, values=values)
+    assert "**Response.** The solver of Section IV-A stops at $10^{-6}$; AUROC 0.80." in out
+    assert "**Action.** Rewrote Table 1. (Section IV-A; Eq. (5))" in out
+    assert m.problems(doc["entries"][1], labels, values) == []
+
+
+@pytest.mark.parametrize("response,reason", [
+    ("Rate {{fallbackDictCFoneMin}} percent.", "pending number fallbackDictCFoneMin"),
+    ("Rate {{noSuchMacro}}.", "unknown number noSuchMacro"),
+    ("See [[sec:gone]].", "unknown label sec:gone"),
+    ("Section IV-A now states it.", "hand-typed reference 'Section IV'"),
+    ("Proposition 2 adds an identity.", "hand-typed reference 'Proposition 2'"),
+    ("The cap is shown in Eq. (3).", "hand-typed reference 'Eq. (3'"),
+])
+def test_unresolved_or_hand_typed_items_in_the_text_block(tmp_path, response, reason):
+    m, labels, values = _inputs(tmp_path)
+    entry = _doc(response=response)["entries"][1]
+    assert reason in m.problems(entry, labels, values)
+
+
 def test_every_comment_in_the_letter_has_exactly_one_entry():
     m = _mod()
     if not m.YAML.exists():
