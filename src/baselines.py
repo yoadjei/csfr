@@ -66,7 +66,10 @@ def baseline_dictlearn(y: np.ndarray, M: np.ndarray, rng_seed: int,
     SAME corrupted image, then reconstruct each incomplete tile by
     orthogonal matching pursuit on the observed pixels only. Tiles with no
     observations fall back to the observed-region mean."""
+    import warnings
+
     from sklearn.decomposition import MiniBatchDictionaryLearning
+    from sklearn.exceptions import ConvergenceWarning
 
     def omp_numpy(D_obs: np.ndarray, target: np.ndarray, k: int) -> np.ndarray:
         """Bounded orthogonal matching pursuit (numpy only — sklearn's OMP can
@@ -111,7 +114,13 @@ def baseline_dictlearn(y: np.ndarray, M: np.ndarray, rng_seed: int,
             n_components=n_atoms, alpha=1.0, batch_size=32, max_iter=30,
             random_state=rng_seed, fit_algorithm="cd",
             transform_algorithm="lasso_cd", transform_max_iter=200)
-        dl.fit(X - mu)
+        # the released configuration caps the coordinate-descent sparse coding
+        # inside fit at 200 iterations (sklearn uses transform_max_iter there),
+        # and the cap is often reached; scripts/dictlearn_inner_cap.py measures
+        # its effect. Filtering the warning leaves the computation unchanged.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ConvergenceWarning)
+            dl.fit(X - mu)
         Dt = dl.components_.T  # (tile*tile, n_atoms)
 
         acc = np.zeros((h, w), dtype=np.float64)

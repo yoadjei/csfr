@@ -97,6 +97,23 @@ def _hole_mse(out, ref, M):
     return float(((out - ref) ** 2)[M == 0].mean())
 
 
+def test_dictlearn_does_not_flood_the_log_with_convergence_warnings():
+    """The released configuration caps the coordinate-descent sparse coding of
+    the dictionary fit at 200 iterations, and the cap is often reached; every
+    miss printed a warning, 2.5 GB of log on one corpus. The baseline filters
+    that one warning (filtering cannot change the computation);
+    scripts/dictlearn_inner_cap.py measures what the cap does to the output."""
+    import warnings
+
+    from sklearn.exceptions import ConvergenceWarning
+    ref = np.load(Path(__file__).resolve().parent.parent / "data" / "patches.npy")[:2].astype(np.float32)
+    M = make_mask(ref.shape, "CF2", 0.3, np.random.default_rng(0))     # natural content reaches the cap
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        BASELINES["dictlearn"](ref * M, M)
+    assert not [w for w in caught if issubclass(w.category, ConvergenceWarning)]
+
+
 def test_guleryuz_beats_zero_fill_on_scattered_loss():
     ref, y, M = _case()
     assert _hole_mse(baseline_guleryuz(y, M), ref, M) < _hole_mse(y, ref, M) / 4
