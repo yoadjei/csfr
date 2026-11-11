@@ -4,6 +4,7 @@
 \usepackage[hidelinks]{hyperref}
 \renewcommand{\thetable}{S\arabic{table}}
 \renewcommand{\thefigure}{S\arabic{figure}}
+\renewcommand{\thesection}{S\arabic{section}}
 
 \title{Supplementary Material\\
 Constraint-Driven Sparse Reconstruction of Forensic Image Fragments with a Validated Sensitivity Record}
@@ -12,142 +13,203 @@ Constraint-Driven Sparse Reconstruction of Forensic Image Fragments with a Valid
 \begin{document}
 \maketitle
 
-This supplement holds evidence that supports the main paper without carrying a
-headline claim. Every table is generated from the released CSVs by
-\texttt{scripts/render\_stats\_tables.py} and
-\texttt{scripts/update\_paper\_tables.py}, the same generators that populate the
-main paper, so the numbers here are tied to the artefacts they come from.
-Throughout, C3 denotes global $[0,255]$ clipping, and Audit Record Coverage
-measures whether the evaluated implementation produced a finite, non-empty
-approximate local sensitivity record for the declared queries; it is not a
-measure of legal admissibility or intrinsic algorithmic traceability.
+This supplement holds the tables that support the main paper without carrying
+one of its findings. Every table is generated from the released result files by
+\texttt{scripts/render\_tables\_v2.py}, the generator of the main paper's tables,
+and a test fails if a table here differs from what its source file gives.
+Numbers prefixed with S refer to this document. Unless a caption says
+otherwise, the corpus is GovDocs1, the primary corpus of the paper, and every
+value is a mean over its patches and mask seeds.
 
-\section{Constraint ablation}
-The contribution of each implemented component, averaged over all 20 cells. C3
-denotes global 8-bit intensity clipping, not neighbourhood-derived bounds.
+%%======================================================================
+\section{Reconstruction quality at every severity level}
+\label{sec:supp:quality}
 
-
-\begin{table*}[htbp]
-\centering
-\caption{Constraint ablation, averaged over the full 20-cell sweep and seeds $\{0,1,2\}$. Every variant retains the C1 data term, the $\ell_1$ sparsity prior, and the final C1 projection (so C1 $=0$ throughout, omitted). CVR columns in \%.}
-\label{tab:ablation}
-\setlength{\tabcolsep}{6pt}
-\resizebox{0.95\textwidth}{!}{%
-\begin{tabular}{lcccccc}
-\toprule
-\textbf{Variant} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{HRP} & \textbf{CVR C2} & \textbf{CVR C3} & \textbf{CVR C4} \\
-\midrule
-% BEGIN AUTO ABLATION
-C1 only & 24.41 & 0.716 & 1.76 & 1.55 & 5.18 & 2.69 \\
-C1+C2 (TV) & 25.56 & 0.752 & 1.76 & 1.59 & 0.08 & 2.08 \\
-C1+C3 (bounds) & 25.09 & 0.727 & 1.58 & 1.52 & 0.00 & 2.66 \\
-C1+C4 (freq.) & 24.07 & 0.725 & 1.83 & 1.68 & 5.38 & 1.69 \\
-Full CSFR & 25.68 & 0.757 & 1.73 & 1.46 & 0.00 & 1.85 \\
-% END AUTO ABLATION
-\bottomrule
-\end{tabular}%
-}
-\end{table*}
-
-\section{Runtime and memory}
-Wall-clock time and Python-tracked peak allocation per patch, measured on the
-CPU reference machine. The \texttt{tracemalloc} values exclude some native
-allocations and should not be interpreted as complete process-memory
-measurements.
-
+The paper tabulates three of the five severity levels. Tables~\ref{tab:supp:psnr}
+and~\ref{tab:supp:ssim} give hole PSNR and hole SSIM at all five.
+Table~\ref{tab:supp:hrp} gives the hallucination risk proxy (HRP), which the paper
+uses as a descriptive statistic only: it flags imputed values outside the
+intensity distribution of the fragment, but it cannot detect wrong values inside
+it, so no value is marked as best. Table~\ref{tab:supp:cap} counts the
+patch-runs at the hole-PSNR cap, the counts behind the cap-free analysis of the
+paper.
 
 \begin{table}[htbp]
 \centering
-\caption{Per-patch runtime and peak memory, CPU, $64\times64$ patches. ms/patch and per-batch mean$\pm$SD over five repeats of a 32-patch batch; peak is Python allocation recorded by \texttt{tracemalloc} and excludes some native library allocations. Full environment in \texttt{results/bench/environment.json}.}
-\label{tab:bench}
-\setlength{\tabcolsep}{5pt}
-\begin{tabular}{lccccc}
-\toprule
-\textbf{Method} & \textbf{ms/patch} & \textbf{mean (s)} & \textbf{SD (s)} & \textbf{median (s)} & \textbf{peak (MB)} \\
-\midrule
-% BEGIN AUTO BENCH
-Zero-fill & 0.03 & 0.001 & 0.000 & 0.001 & 1.6 \\
-Linear interpolation & 84.64 & 2.708 & 0.290 & 2.596 & 2.4 \\
-Inpainting (Telea) & 1.61 & 0.052 & 0.006 & 0.049 & 1.5 \\
-Inpainting (Navier--Stokes) & 1.18 & 0.038 & 0.001 & 0.038 & 1.5 \\
-Dictionary learning & 1.46 & 0.047 & 0.001 & 0.047 & 1.5 \\
-CSFR (proposed) & 44.35 & 1.419 & 0.105 & 1.435 & 1.0 \\
-% END AUTO BENCH
-\bottomrule
-\end{tabular}
+\caption{Hole PSNR (dB) at every severity level. Bold: the best compared method in each column; zero-fill is the floor and is not compared. $^{\dagger}$: the method filled the hole with the observed mean in most patch-runs of the cell (Table~\ref{tab:supp:fallbacks}).}
+\label{tab:supp:psnr}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+% BEGIN AUTO SUPP_PSNR
+\textbf{[pending]}
+% END AUTO SUPP_PSNR
 \end{table}
-
-\section{Iteration-budget sensitivity}
-CSFR PSNR is shown across four solver budgets on a 100-patch, seed-0 subset.
-The Gap@4800 column compares that subset with a baseline value computed on a
-different 300-patch sample. It is descriptive and not a paired estimate. A
-controlled comparison requires all methods to be rerun on the identical subset
-and masks.
-
 
 \begin{table}[htbp]
 \centering
-\caption{Iteration-budget sensitivity. CSFR PSNR (dB) is recomputed on a 100-patch, seed-0 subset at each budget; the ``Gap@4800'' column is CSFR at $T{=}4800$ minus the strongest baseline's full-cell (300-patch, seed-0) PSNR in that cell, so it slightly understates CSFR where the subset is easier than the full cell. Extending the budget closes most of the CF3/CF4 deficit and reverses the CF2 deficit, indicating that under-convergence contributes to the reported 600-iteration losses. Because the baseline and CSFR values use different samples, this table does not establish a paired advantage.}
-\label{tab:budget}
-\setlength{\tabcolsep}{5pt}
-\begin{tabular}{lccccc}
-\toprule
-\textbf{Cell} & \textbf{T=600} & \textbf{T=1200} & \textbf{T=2400} & \textbf{T=4800} & \textbf{Gap@4800} \\
-\midrule
-% BEGIN AUTO BUDGET_SENS
-CF1~L5 & 28.15 & 28.15 & 28.15 & 28.15 & +0.10 \\
-CF2~L3 & 25.78 & 27.81 & 28.00 & 28.00 & +1.46 \\
-CF2~L5 & 16.57 & 20.44 & 22.32 & 22.45 & +1.32 \\
-CF3~L5 & 11.21 & 12.36 & 14.56 & 17.44 & -0.61 \\
-CF4~L5 & 11.03 & 12.14 & 14.39 & 17.62 & -0.61 \\
-% END AUTO BUDGET_SENS
-\bottomrule
-\end{tabular}
+\caption{Hole SSIM at every severity level. Bold: the best compared method in each column.}
+\label{tab:supp:ssim}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+% BEGIN AUTO SUPP_SSIM
+\textbf{[pending]}
+% END AUTO SUPP_SSIM
 \end{table}
 
-\section{Bounded-Unknown and the signal-covering subset}
-Abstention rates and the continuous isolated-missing-fraction per cell. The
-binary Bounded-Unknown diagnostic saturates by family and level, so the
-continuous statistic is more informative and is the one reported in the main
-paper. The diagnostic flags a reconstruction for review; it does not mean that
-the solver withheld the numerical output or proved the region irrecoverable.
-
-
-\begin{table*}[htbp]
+\begin{table}[htbp]
 \centering
-\caption{Bounded-Unknown and abstention rates by cell. The binary Bounded-Unknown flag at threshold $0.5$ on isolated-missing-fraction saturates: it is zero for every CF1 cell and for CF3/CF4~L1, unity for CF3/CF4 from L2 upward and CF2 from L3 upward, and varies within a cell only at CF2~L1 and L2. It is a family-and-level indicator rather than a per-patch signal. The continuous isolated-missing-fraction (columns: mean, SD, median) is reported beside it and should be preferred for analysis. The signal-covering subset count $n_{\text{sig}}$ is the number of patches in which at least a quarter of the centre box is erased, so that the corruption overlaps the digit; it is defined on the corruption geometry, not on constraint violations. It is empty for CF1 at L1--L2 and for CF3/CF4 at L1--L3, and saturates to 1000 for every family from L4 upward, leaving CF1~L3 and CF2~L1--L3 as the only cells with within-cell variation.}
-\label{tab:downstream-abstain}
-\setlength{\tabcolsep}{3pt}
-\resizebox{0.95\textwidth}{!}{%
-\begin{tabular}{llccccc}
+\caption{Hallucination risk proxy at every severity level: the mean absolute deviation of the imputed pixels from the mean of the observed region, in units of its standard deviation. Descriptive only; no value is marked.}
+\label{tab:supp:hrp}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+% BEGIN AUTO SUPP_HRP
+\textbf{[pending]}
+% END AUTO SUPP_HRP
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Patch-runs at the 100\,dB hole-PSNR cap, per method and cell, summed over the mask seeds.}
+\label{tab:supp:cap}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+% BEGIN AUTO SUPP_CAP
+\textbf{[pending]}
+% END AUTO SUPP_CAP
+\end{table}
+
+%%======================================================================
+\section{What the comparison methods compute}
+\label{sec:supp:baselines}
+
+Two classical methods fill the hole with the observed mean when their own
+procedure cannot run: dictionary learning when the patch has fewer fully observed
+tiles than atoms, and exemplar inpainting when no fully observed exemplar exists
+at its smallest size. Table~\ref{tab:supp:fallbacks} gives how often that
+happened in every cell. Dictionary learning also runs at the settings of the
+released baseline, whose cap on the coordinate-descent sparse coding inside the
+dictionary fit is often reached; Table~\ref{tab:supp:dictcap} compares it with a
+larger cap. The shift-map implementation is not a function of its input, and
+Table~\ref{tab:supp:shiftmap} measures how much its output varies between runs.
+
+\begin{table}[htbp]
+\centering
+\caption{Share of patch-runs (\%) in which a method filled the hole with the observed mean.}
+\label{tab:supp:fallbacks}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+% BEGIN AUTO SUPP_FALLBACKS
+\textbf{[pending]}
+% END AUTO SUPP_FALLBACKS
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{The inner iteration cap of dictionary learning, at mask seed~0: patches whose dictionary was learned, mean hole PSNR at the released cap and at the reference cap, and their difference, released minus reference (mean, and the largest per patch), on the first patches of each cell (\texttt{scripts/dictlearn\_inner\_cap.py}).}
+\label{tab:supp:dictcap}
+\footnotesize
+% BEGIN AUTO SUPP_DICTCAP
+\textbf{[pending]}
+% END AUTO SUPP_DICTCAP
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Run-to-run variation of shift-map at mask seed~0 (\texttt{scripts/shiftmap\_replicates.py}): the share of patches whose output differs between realisations, the standard deviation and the range of the cell's mean hole PSNR across realisations (dB), and the largest range of a single patch's hole PSNR (dB).}
+\label{tab:supp:shiftmap}
+\footnotesize
+\setlength{\tabcolsep}{5pt}
+% BEGIN AUTO SUPP_SHIFTMAP
+\textbf{[pending]}
+% END AUTO SUPP_SHIFTMAP
+\end{table}
+
+%%======================================================================
+\section{Stopping rule}
+\label{sec:supp:calibration}
+
+The gap tolerance of the solver was calibrated against reference solves on cells
+of the DFRWS 2006 corpus. The criterion
+compares each solve with the minimiser, not with the ground truth, so it fixes
+numerical accuracy and cannot tune reconstruction quality.
+Table~\ref{tab:supp:calibration} gives the full grid.
+
+\begin{table}[htbp]
+\centering
+\caption{Calibration of the gap tolerance on DFRWS 2006: per cell and tolerance, the median and 99th percentile over patches of the largest pixel error against the reference solve (grey levels), the largest difference in hole PSNR to it (dB), the median and largest iteration counts, and the patches that reached the iteration cap.}
+\label{tab:supp:calibration}
+\footnotesize
+% BEGIN AUTO SUPP_CALIBRATION
+\begin{tabular}{@{}l c r r r r r r@{}}
 \toprule
-\textbf{Fam.} & \textbf{Lvl} & \textbf{BU rate} & \textbf{IMF mean} & \textbf{IMF SD} & \textbf{IMF median} & \textbf{$n_{\text{sig}}$} \\
+ & & \multicolumn{2}{c}{Max.\ error} & & \multicolumn{2}{c}{Iterations} & \\
+\cmidrule(lr){3-4}\cmidrule(lr){6-7}
+Cell & Gap tol. & Median & P99 & $|\Delta\mathrm{PSNR}|$ & Median & Max & Capped \\
 \midrule
-% BEGIN AUTO DOWNSTREAM_ABSTAIN
-CF1 & L1 & 0.000 & 0.000 & 0.001 & 0.000 & 0 \\
-CF1 & L2 & 0.000 & 0.001 & 0.003 & 0.000 & 0 \\
-CF1 & L3 & 0.000 & 0.010 & 0.006 & 0.010 & 982 \\
-CF1 & L4 & 0.000 & 0.070 & 0.012 & 0.070 & 1000 \\
-CF1 & L5 & 0.000 & 0.253 & 0.016 & 0.252 & 1000 \\
-CF2 & L1 & 0.880 & 0.612 & 0.091 & 0.619 & 352 \\
-CF2 & L2 & 0.992 & 0.662 & 0.067 & 0.664 & 760 \\
-CF2 & L3 & 1.000 & 0.710 & 0.050 & 0.713 & 991 \\
-CF2 & L4 & 1.000 & 0.778 & 0.036 & 0.781 & 1000 \\
-CF2 & L5 & 1.000 & 0.849 & 0.022 & 0.851 & 1000 \\
-CF3 & L1 & 0.000 & 0.500 & 0.000 & 0.500 & 0 \\
-CF3 & L2 & 1.000 & 0.800 & 0.000 & 0.800 & 0 \\
-CF3 & L3 & 1.000 & 0.900 & 0.000 & 0.900 & 0 \\
-CF3 & L4 & 1.000 & 0.938 & 0.000 & 0.938 & 1000 \\
-CF3 & L5 & 1.000 & 0.955 & 0.000 & 0.955 & 1000 \\
-CF4 & L1 & 0.000 & 0.500 & 0.000 & 0.500 & 0 \\
-CF4 & L2 & 1.000 & 0.800 & 0.000 & 0.800 & 0 \\
-CF4 & L3 & 1.000 & 0.900 & 0.000 & 0.900 & 0 \\
-CF4 & L4 & 1.000 & 0.938 & 0.000 & 0.938 & 1000 \\
-CF4 & L5 & 1.000 & 0.955 & 0.000 & 0.955 & 1000 \\
-% END AUTO DOWNSTREAM_ABSTAIN
+CF1~L3 & $10^{-3}$ & 0.052 & 0.32 & 0.017 & 150 & 320 & 0 \\
+CF1~L3 & $10^{-4}$ & $6.7 \times 10^{-3}$ & 0.035 & $3.7 \times 10^{-3}$ & 190 & 360 & 0 \\
+CF1~L3 & $10^{-5}$ & $6.6 \times 10^{-4}$ & $3.6 \times 10^{-3}$ & $2.2 \times 10^{-4}$ & 220 & 410 & 0 \\
+CF1~L3 & $10^{-6}$$^{*}$ & $6.9 \times 10^{-5}$ & $4.1 \times 10^{-4}$ & $3.8 \times 10^{-5}$ & 260 & 470 & 0 \\
+CF1~L3 & $10^{-7}$ & $7.8 \times 10^{-6}$ & $4.4 \times 10^{-5}$ & $2.1 \times 10^{-6}$ & 300 & 510 & 0 \\
+CF1~L3 & $10^{-8}$ & $8.1 \times 10^{-7}$ & $4.3 \times 10^{-6}$ & $1.8 \times 10^{-7}$ & 330 & 570 & 0 \\
+CF1~L3 & $10^{-9}$ & $7.3 \times 10^{-8}$ & $3.8 \times 10^{-7}$ & $2.9 \times 10^{-8}$ & 370 & 600 & 0 \\
+CF1~L3 & $10^{-10}$ & $7.8 \times 10^{-9}$ & $4.3 \times 10^{-8}$ & $4.3 \times 10^{-9}$ & 400 & 670 & 0 \\
+CF1~L3 & $10^{-11}$ & $4.4 \times 10^{-10}$ & $3.9 \times 10^{-9}$ & $1.4 \times 10^{-10}$ & 440 & 710 & 0 \\
+\midrule
+CF2~L3 & $10^{-3}$ & 0.1 & 1.1 & 0.071 & 470 & 980 & 0 \\
+CF2~L3 & $10^{-4}$ & 0.011 & 0.12 & 0.012 & 580 & 1430 & 0 \\
+CF2~L3 & $10^{-5}$ & $1.1 \times 10^{-3}$ & 0.013 & $1.1 \times 10^{-3}$ & 710 & 1740 & 0 \\
+CF2~L3 & $10^{-6}$$^{*}$ & $1.3 \times 10^{-4}$ & $1.1 \times 10^{-3}$ & $1.4 \times 10^{-4}$ & 820 & 1890 & 0 \\
+CF2~L3 & $10^{-7}$ & $1.1 \times 10^{-5}$ & $1.6 \times 10^{-4}$ & $1.7 \times 10^{-5}$ & 950 & 2260 & 0 \\
+CF2~L3 & $10^{-8}$ & $1.4 \times 10^{-6}$ & $1.3 \times 10^{-5}$ & $1.3 \times 10^{-6}$ & 1070 & 2540 & 0 \\
+CF2~L3 & $10^{-9}$ & $1.4 \times 10^{-7}$ & $1.7 \times 10^{-6}$ & $3.4 \times 10^{-7}$ & 1175 & 2770 & 0 \\
+CF2~L3 & $10^{-10}$ & $1.2 \times 10^{-8}$ & $1.5 \times 10^{-7}$ & $1.3 \times 10^{-8}$ & 1295 & 3200 & 0 \\
+CF2~L3 & $10^{-11}$ & $7.3 \times 10^{-10}$ & $1.2 \times 10^{-8}$ & $1.1 \times 10^{-9}$ & 1430 & 3450 & 0 \\
+\midrule
+CF2~L5 & $10^{-3}$ & 0.091 & 0.79 & 0.091 & 640 & 1330 & 0 \\
+CF2~L5 & $10^{-4}$ & $8.6 \times 10^{-3}$ & 0.071 & $6.3 \times 10^{-3}$ & 800 & 1640 & 0 \\
+CF2~L5 & $10^{-5}$ & $9.6 \times 10^{-4}$ & $9.6 \times 10^{-3}$ & $1.7 \times 10^{-3}$ & 970 & 2020 & 0 \\
+CF2~L5 & $10^{-6}$$^{*}$ & $9.2 \times 10^{-5}$ & $9.1 \times 10^{-4}$ & $8.6 \times 10^{-5}$ & 1120 & 2430 & 0 \\
+CF2~L5 & $10^{-7}$ & $8.7 \times 10^{-6}$ & $1.6 \times 10^{-4}$ & $1.4 \times 10^{-5}$ & 1265 & 2800 & 0 \\
+CF2~L5 & $10^{-8}$ & $9.5 \times 10^{-7}$ & $1.2 \times 10^{-5}$ & $1.1 \times 10^{-6}$ & 1450 & 3240 & 0 \\
+CF2~L5 & $10^{-9}$ & $1.0 \times 10^{-7}$ & $1.1 \times 10^{-6}$ & $1.2 \times 10^{-7}$ & 1600 & 3680 & 0 \\
+CF2~L5 & $10^{-10}$ & $9.7 \times 10^{-9}$ & $9.7 \times 10^{-8}$ & $1.3 \times 10^{-8}$ & 1745 & 3960 & 0 \\
+CF2~L5 & $10^{-11}$ & $5.6 \times 10^{-10}$ & $7.0 \times 10^{-9}$ & $5.7 \times 10^{-10}$ & 1925 & 4580 & 0 \\
+\midrule
+CF3~L5 & $10^{-3}$ & 0.12 & 0.71 & 0.41 & 830 & 1380 & 0 \\
+CF3~L5 & $10^{-4}$ & 0.012 & 0.13 & 0.036 & 1040 & 2200 & 0 \\
+CF3~L5 & $10^{-5}$ & $9.5 \times 10^{-4}$ & 0.012 & $1.5 \times 10^{-3}$ & 1200 & 2750 & 0 \\
+CF3~L5 & $10^{-6}$$^{*}$ & $1.1 \times 10^{-4}$ & $9.2 \times 10^{-4}$ & $3.2 \times 10^{-4}$ & 1385 & 2830 & 0 \\
+CF3~L5 & $10^{-7}$ & $1.3 \times 10^{-5}$ & $1.2 \times 10^{-4}$ & $5.9 \times 10^{-5}$ & 1590 & 3210 & 0 \\
+CF3~L5 & $10^{-8}$ & $1.1 \times 10^{-6}$ & $1.2 \times 10^{-5}$ & $5.1 \times 10^{-6}$ & 1760 & 4330 & 0 \\
+CF3~L5 & $10^{-9}$ & $1.2 \times 10^{-7}$ & $1.4 \times 10^{-6}$ & $2.2 \times 10^{-6}$ & 1940 & 4550 & 0 \\
+CF3~L5 & $10^{-10}$ & $1.2 \times 10^{-8}$ & $9.6 \times 10^{-8}$ & $2.2 \times 10^{-6}$ & 2130 & 4830 & 0 \\
+CF3~L5 & $10^{-11}$ & $5.6 \times 10^{-10}$ & $7.5 \times 10^{-9}$ & $1.0 \times 10^{-9}$ & 2330 & 5070 & 0 \\
+\midrule
+\multicolumn{8}{@{}l}{\footnotesize $^{*}$ The default: the loosest tolerance whose 99th percentile is below 0.01 grey levels in every cell.} \\
 \bottomrule
-\end{tabular}%
-}
-\end{table*}
+\end{tabular}
+% END AUTO SUPP_CALIBRATION
+\end{table}
+
+%%======================================================================
+\section{Sensitivity record fidelity across perturbations and tolerances}
+\label{sec:supp:fidelity}
+
+The paper reports the fidelity of the record at a perturbation of one grey level
+and the default tolerance. Table~\ref{tab:supp:fidelity} gives the other
+perturbations at the default tolerance and, for the cells of the tolerance study,
+the fidelity at looser and tighter tolerances of the re-solve.
+
+\begin{table}[htbp]
+\centering
+\caption{Sensitivity record fidelity. Top: per cell and perturbation $\delta$ (grey levels) at the default tolerance, the median relative error against the reference re-solve and SRF against the reference (ref) and the operational (op) re-solve. Bottom: the same at $\delta = 1$ per gap tolerance of the operational re-solve, with the share of re-solves that met it.}
+\label{tab:supp:fidelity}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+% BEGIN AUTO SUPP_FIDELITY
+\textbf{[pending]}
+% END AUTO SUPP_FIDELITY
+\end{table}
 
 \end{document}

@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TEX = ROOT / "paper" / "paper2_reconstruction.tex"
+SUPP = ROOT / "paper" / "paper2_supplementary.tex"
 
 
 def _mod():
@@ -16,10 +17,11 @@ def _mod():
 
 
 def _block(tag: str) -> str:
-    t = TEX.read_text(encoding="utf-8")
-    m = re.search(rf"% BEGIN AUTO {tag}\n(.*?)\n% END AUTO {tag}", t, re.S)
-    assert m, f"AUTO {tag} markers missing from the manuscript"
-    return m.group(1)
+    """The AUTO block of `tag` in the manuscript or the supplement (exactly one)."""
+    hits = [m.group(1) for p in (TEX, SUPP)
+            if (m := re.search(rf"% BEGIN AUTO {tag}\n(.*?)\n% END AUTO {tag}", p.read_text(encoding="utf-8"), re.S))]
+    assert len(hits) == 1, f"AUTO {tag} markers appear in {len(hits)} documents, not one"
+    return hits[0]
 
 
 def test_rule_to_latex():
@@ -435,6 +437,113 @@ def test_downstream_v2_accuracy_ece_and_significance_counts(tmp_path):
                         r"& 0.050 & -- \\")
     assert lines[1].startswith("Telea & 0.500") and lines[1].endswith(r"& 0.050 & 6/0 \\")
     assert "CNN 0.950, ResNet 0.950" in lines[-1]
+
+
+def _write_rows(path, rows):
+    import csv
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(dict.fromkeys(k for r in rows for k in r)))
+        w.writeheader()
+        w.writerows(rows)
+
+
+def _five_level_sweep(tmp_path, n_seeds=3):
+    import json
+    m = _mod()
+    rows = [{"family": f, "level": lv, "method": meth, "n_seeds": n_seeds, "n_patches": 600,
+             "psnr_hole_mean": v, "ssim_hole_mean": v / 100, "hrp_mean": v / 10,
+             "n_at_cap": 3 if meth == "guleryuz" else 0}
+            for f in m.FAMILIES for lv in m.ALL_LEVELS
+            for meth, v in (("csfr", 30.0), ("guleryuz", 31.0), ("zero_fill", 8.0))]
+    _write_rows(tmp_path / "summary.csv", rows)
+    cfg = {"seeds": [0, 1, 2], "families": list(m.FAMILIES), "levels": {lv: 0.0 for lv in m.ALL_LEVELS},
+           "csfr_variants": ["csfr"], "baselines": ["guleryuz", "zero_fill"], "external": []}
+    (tmp_path / "run_metadata.json").write_text(json.dumps({"config": cfg}))
+
+
+def test_num_sig():
+    m = _mod()
+    assert (m.num_sig(0.318), m.num_sig(0.0), m.num_sig(42.0)) == ("0.32", "0", "42")
+    assert m.num_sig(6.7e-4) == r"$6.7 \times 10^{-4}$" and m.num_sig(1234.0) == r"$1.2 \times 10^{3}$"
+
+
+def test_five_level_panels_split_the_families_and_leave_descriptive_values_unbolded(tmp_path):
+    m = _mod()
+    _five_level_sweep(tmp_path)
+    none = tmp_path / "no_fallbacks.csv"
+    a, b = m.five_level_panels(tmp_path, "psnr_hole", True, 2, fallbacks=none).split(m.PANEL_SEP)
+    assert a.startswith(r"\begin{tabular}{@{}l*{10}{r}@{}}") and "{CF2}" in a and "CF3" not in a
+    assert "{CF3}" in b and "{CF4}" in b and "CF1" not in b
+    assert _body(a)[1].split(" & ")[1] == r"\textbf{31.00}"            # Guleryuz best everywhere
+    hrp = m.five_level_panels(tmp_path, "hrp", None, 2, fallbacks=none)
+    assert r"\textbf" not in hrp and _body(hrp.split(m.PANEL_SEP)[0])[0].startswith("CSFR & 3.00 &")
+    cap = m.five_level_panels(tmp_path, "n_at_cap", None, 0, column="n_at_cap", fallbacks=none)
+    assert _body(cap.split(m.PANEL_SEP)[0])[1] == "Block-DCT thr. & " + " & ".join(["3"] * 10) + r" \\"
+    _five_level_sweep(tmp_path, n_seeds=2)
+    assert m.five_level_panels(tmp_path, "psnr_hole", True, 2, fallbacks=none) is None
+
+
+def test_supp_fallbacks_wait_for_every_seed_and_print_percent(tmp_path):
+    m = _mod()
+    _five_level_sweep(tmp_path)
+    rows = [{"sweep": tmp_path.name, "family": f, "level": lv, "method": meth, "n_seeds": 3,
+             "frac_fallback": 0.995 if meth == "dictlearn" and f == "CF1" else 0.0}
+            for f in m.FAMILIES for lv in m.ALL_LEVELS for meth in ("dictlearn", "criminisi")]
+    _write_rows(tmp_path / "fb.csv", rows[:-1] + [{**rows[-1], "n_seeds": 2}])
+    assert m.supp_fallbacks(tmp_path, tmp_path / "fb.csv") is None
+    _write_rows(tmp_path / "fb.csv", rows)
+    a, _ = m.supp_fallbacks(tmp_path, tmp_path / "fb.csv").split(m.PANEL_SEP)
+    assert _body(a)[0] == r"Dict.\ learning & " + " & ".join(["99.5"] * 5 + ["0.0"] * 5) + r" \\"
+
+
+def test_supp_calibration_lists_tolerances_loosest_first_and_marks_the_default(tmp_path):
+    m = _mod()
+    from csfr_solver import SolverConfig
+    base = {"cell": "CF1_L3", "max_err_median": 0.0067, "max_err_p99": 0.035, "psnr_abs_diff_max": 0.0037,
+            "iters_median": 190, "iters_max": 360, "n_capped": 0}
+    _write_rows(tmp_path / "tolerance.csv", [{**base, "tol": SolverConfig().tol}, {**base, "tol": 1e-4}])
+    rows = _body(m.supp_calibration(tmp_path))
+    assert rows[0] == r"CF1~L3 & $10^{-4}$ & $6.7 \times 10^{-3}$ & 0.035 & $3.7 \times 10^{-3}$ & 190 & 360 & 0 \\"
+    assert rows[1].split(" & ")[1] == m.tex_pow10(SolverConfig().tol) + r"$^{*}$"
+
+
+def test_supp_shiftmap_needs_both_corpora(tmp_path):
+    m = _mod()
+    rows = [{"family": f, "level": lv, "n_realisations": 4, "frac_patches_differ": 0.25, "cell_mean_sd": 0.0123,
+             "cell_mean_range": 0.031, "patch_range_max": 1.234} for f in m.FAMILIES for lv in m.ALL_LEVELS]
+    _write_rows(tmp_path / "sweep_v2_govdocs1.csv", rows)
+    assert m.supp_shiftmap(tmp_path) is None
+    _write_rows(tmp_path / "sweep_v2_dfrws.csv", rows)
+    body = _body(m.supp_shiftmap(tmp_path))
+    assert body[0] == r"CF1~L1 & 25 & 0.012 & 0.031 & 1.23 & 25 & 0.012 & 0.031 & 1.23 \\"
+    assert "4 realisations per cell: the sweep's output and 3 runs" in body[-1]
+
+
+def test_supp_dictcap_signs_the_difference(tmp_path):
+    m = _mod()
+    rows = [{"family": "CF2", "level": "L3", "n_patches": 200, "n_learned": 180, "cap_released": 200,
+             "cap_reference": 20000, "psnr_released": 18.21, "psnr_reference": 18.26, "diff_mean": -0.049,
+             "diff_abs_max": 1.15, "matches_sweep": True}]
+    _write_rows(tmp_path / "sweep_x.csv", rows)
+    tab = m.supp_dictcap(tmp_path, tmp_path / "sweep_x")
+    assert _body(tab) == [r"CF2~L3 & 180/200 & 18.21 & 18.26 & $-$0.049 & 1.15 \\"]
+    assert "cap 200 & cap 20000" in tab
+
+
+def test_supp_fidelity_has_a_delta_panel_and_a_tolerance_panel(tmp_path):
+    m = _mod()
+    from csfr_solver import SolverConfig
+    tol = SolverConfig().tol
+    r = {"family": "CF1", "level": "L3", "rel_err_median_ref": 0.0123, "srf_ref": 0.98, "srf_op": 0.95,
+         "converged_frac_op": 1.0}
+    _write_rows(tmp_path / "summary.csv", [{**r, "delta": dl, "tol": tol} for dl in (0.25, 1.0, 4.0)])
+    _write_rows(tmp_path / "tol_study_summary.csv", [{**r, "delta": 1.0, "tol": t} for t in (1e-8, 1e-4)]
+                + [{**r, "delta": 4.0, "tol": 1e-4}])
+    a, b = m.supp_fidelity(tmp_path).split(m.PANEL_SEP)
+    assert r"\multicolumn{3}{c}{$\delta = 0.25$}" in a
+    assert a.splitlines()[-3] == r"CF1~L3 & 1.23 & 98.0 & 95.0 & 1.23 & 98.0 & 95.0 & 1.23 & 98.0 & 95.0 \\"
+    rows_b = [ln for ln in b.splitlines() if ln.startswith("CF1")]
+    assert [ln.split(" & ")[1] for ln in rows_b] == ["$10^{-4}$", "$10^{-8}$"]     # delta 1 only, loosest first
 
 
 def test_committed_tables_are_current():

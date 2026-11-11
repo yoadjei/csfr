@@ -121,28 +121,32 @@ def tabular(colspec: str, header: list[str], body: list[str]) -> str:
                       r"\bottomrule", r"\end{tabular}"])
 
 
-def family_level_header(levels: tuple[str, ...], first: str = "Method") -> list[str]:
+def family_level_header(levels: tuple[str, ...], first: str = "Method",
+                        families: tuple[str, ...] = FAMILIES) -> list[str]:
     """Two header rows: the families over their levels."""
     k = len(levels)
-    spans = [(2 + i * k, 1 + (i + 1) * k) for i in range(len(FAMILIES))]
+    spans = [(2 + i * k, 1 + (i + 1) * k) for i in range(len(families))]
     rules = "".join(rf"\cmidrule({'lr' if i < len(spans) - 1 else 'l'}){{{a}-{b}}}"
                     for i, (a, b) in enumerate(spans))
-    return [" & " + " & ".join(rf"\multicolumn{{{k}}}{{c}}{{{f}}}" for f in FAMILIES) + r" \\",
+    return [" & " + " & ".join(rf"\multicolumn{{{k}}}{{c}}{{{f}}}" for f in families) + r" \\",
             rules,
-            f"{first} & " + " & ".join(lv for _ in FAMILIES for lv in levels) + r" \\"]
+            f"{first} & " + " & ".join(lv for _ in families for lv in levels) + r" \\"]
 
 
-def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digits: int,
+def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool | None, digits: int,
                          levels: tuple[str, ...] = MAIN_LEVELS, with_cap_note: bool = False,
-                         fallbacks: Path = FALLBACKS) -> str | None:
-    """Rows are methods, columns are (family, level) cells; the best value of
-    each column among the compared methods (not the floor) is bold, and a value
-    a method mostly produced by its mean-fill fallback carries a dagger. Methods
+                         fallbacks: Path = FALLBACKS, families: tuple[str, ...] = FAMILIES,
+                         column: str | None = None) -> str | None:
+    """Rows are methods, columns are (family, level) cells of the summary
+    column `{metric}_mean` (or `column`, for a count such as n_at_cap). The best
+    value of each column among the compared methods (not the floor) is bold,
+    unless higher_is_better is None (a descriptive statistic), and a value a
+    method mostly produced by its mean-fill fallback carries a dagger. Methods
     the sweep does not configure have no row. Returns the complete tabular."""
     s = _summary(sweep)
     if s is None:
         return None
-    cells = [(f, lv) for f in FAMILIES for lv in levels]
+    cells = [(f, lv) for f in families for lv in levels]
     fell_back = fallback_cells(sweep, fallbacks)
     notes = []
     if any((*c, m) in fell_back for c in cells for m, _ in METHOD_ORDER):
@@ -150,18 +154,21 @@ def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool, digit
                      r"(Section~\ref{sec:experiments:methods}).")
     if with_cap_note:
         notes.append(cap_note(s, cells))
-    return cell_table(s, metric, higher_is_better, digits, levels, fell_back, notes, FLOOR, sweep.name)
+    return cell_table(s, column or f"{metric}_mean", higher_is_better, digits, levels, fell_back, notes,
+                      FLOOR, sweep.name, families)
 
 
-def cell_table(s: dict, metric: str, higher_is_better: bool, digits: int, levels: tuple[str, ...],
-               marked: set, notes: list[str], floor: tuple[str, str], where: str) -> str:
+def cell_table(s: dict, column: str, higher_is_better: bool | None, digits: int, levels: tuple[str, ...],
+               marked: set, notes: list[str], floor: tuple[str, str], where: str,
+               families: tuple[str, ...] = FAMILIES) -> str:
     """The method-by-cell tabular of summary rows s keyed (family, level,
-    method) with a `{metric}_mean` column: best compared value bold per column,
-    `marked` cells daggered, the floor row set apart, `notes` at the foot."""
-    cells = [(f, lv) for f in FAMILIES for lv in levels]
+    method), showing `column`: best compared value bold per column (none when
+    higher_is_better is None), `marked` cells daggered, the floor row set
+    apart, `notes` at the foot."""
+    cells = [(f, lv) for f in families for lv in levels]
     best = {}
     for c in cells:
-        vals = [float(s[(*c, m)][f"{metric}_mean"]) for m, _ in METHOD_ORDER if (*c, m) in s]
+        vals = [float(s[(*c, m)][column]) for m, _ in METHOD_ORDER if (*c, m) in s]
         if not vals:
             raise ValueError(f"{where}: no results for cell {c[0]} {c[1]}")
         best[c] = max(vals) if higher_is_better else min(vals)
@@ -169,17 +176,18 @@ def cell_table(s: dict, metric: str, higher_is_better: bool, digits: int, levels
     def row(key: str, name: str, mark_best: bool) -> str:
         out = []
         for c in cells:
-            txt = f"{float(s[(*c, key)][f'{metric}_mean']):.{digits}f}"
+            txt = f"{float(s[(*c, key)][column]):.{digits}f}"
             if mark_best and txt == f"{best[c]:.{digits}f}":
                 txt = rf"\textbf{{{txt}}}"
             out.append(txt + DAGGER if (*c, key) in marked else txt)
         return f"{name} & " + " & ".join(out) + r" \\"
 
-    lines = [row(k, n, True) for k, n in METHOD_ORDER if any((*c, k) in s for c in cells)]
+    compared = higher_is_better is not None
+    lines = [row(k, n, compared) for k, n in METHOD_ORDER if any((*c, k) in s for c in cells)]
     lines += [r"\midrule", row(*floor, False)]
     if notes:
         lines += [r"\midrule", *(_note(t, 1 + len(cells)) for t in notes)]
-    return tabular(rf"@{{}}l*{{{len(cells)}}}{{r}}@{{}}", family_level_header(levels), lines)
+    return tabular(rf"@{{}}l*{{{len(cells)}}}{{r}}@{{}}", family_level_header(levels, families=families), lines)
 
 
 OCR_DIR = ROOT / "results" / "ocr"
@@ -193,7 +201,7 @@ def ocr(d: Path = OCR_DIR) -> str | None:
     if rows is None:
         return None
     s = {(r["family"], r["level"], r["method"]): r for r in rows}
-    return cell_table(s, "cer", False, 3, MAIN_LEVELS, set(), [], OCR_FLOOR, "ocr")
+    return cell_table(s, "cer_mean", False, 3, MAIN_LEVELS, set(), [], OCR_FLOOR, "ocr")
 
 
 DOWNSTREAM_DIR = ROOT / "results" / "downstream_v2" / "stats"
@@ -748,6 +756,201 @@ def bench_v2(d: Path = BENCH_DIR) -> str | None:
     return tabular(rf"@{{}}l*{{{len(cells) + 1}}}{{r}}@{{}}", header, body)
 
 
+# ------------------------------------------------------------------ supplement
+
+FAMILY_PANELS = (("CF1", "CF2"), ("CF3", "CF4"))
+PANEL_SEP = "\n\\par\\medskip\n"
+
+
+def num_sig(x: float, sig: int = 2) -> str:
+    """`sig` significant digits, with a power of ten outside [0.01, 10^sig):
+    0.318 -> 0.32; 6.7e-4 -> $6.7 \\times 10^{-4}$."""
+    if x == 0:
+        return "0"
+    if 0.01 <= abs(x) < 10 ** sig:
+        return f"{x:.{sig}g}"
+    m, e = f"{x:.{sig - 1}e}".split("e")
+    return rf"${m} \times 10^{{{int(e)}}}$"
+
+
+def five_level_panels(sweep: Path, metric: str, higher_is_better: bool | None, digits: int,
+                      with_cap_note: bool = False, column: str | None = None,
+                      fallbacks: Path = FALLBACKS) -> str | None:
+    """A method-by-cell table at every severity level, in two panels (CF1 and
+    CF2, then CF3 and CF4) so that each fits the page width."""
+    parts = [method_by_cell_table(sweep, metric, higher_is_better, digits, ALL_LEVELS, with_cap_note,
+                                  fallbacks, families=fams, column=column) for fams in FAMILY_PANELS]
+    return None if parts[0] is None else PANEL_SEP.join(parts)
+
+
+def supp_psnr() -> str | None:
+    return five_level_panels(SWEEP, "psnr_hole", True, 2, with_cap_note=True)
+
+
+def supp_ssim() -> str | None:
+    return five_level_panels(SWEEP, "ssim_hole", True, 3)
+
+
+def supp_hrp() -> str | None:
+    """Descriptive only: no value is marked best (Section V-D of the paper)."""
+    return five_level_panels(SWEEP, "hrp", None, 2)
+
+
+def supp_cap() -> str | None:
+    """Patch-runs per cell at the hole-PSNR cap, the counts behind the cap-free analysis."""
+    return five_level_panels(SWEEP, "n_at_cap", None, 0, column="n_at_cap")
+
+
+FALLBACK_ROWS = [("dictlearn", "Dict.\\ learning"), ("criminisi", "Exemplar")]
+
+
+def supp_fallbacks(sweep: Path = SWEEP, path: Path = FALLBACKS) -> str | None:
+    """Share of patch-runs (%) in which a method filled the hole with the
+    observed mean, per cell of the sweep; pending until every cell has every
+    seed (a resumed sweep leaves a partial file)."""
+    import json
+    rows, meta = _csv(path), sweep / "run_metadata.json"
+    if rows is None or not meta.exists():
+        return None
+    n_seeds = len(json.loads(meta.read_text(encoding="utf-8"))["config"]["seeds"])
+    by = {(r["family"], r["level"], r["method"]): r for r in rows if r["sweep"] == sweep.name}
+    if not all(int(by.get((f, lv, m), {}).get("n_seeds", 0)) == n_seeds
+               for f in FAMILIES for lv in ALL_LEVELS for m, _ in FALLBACK_ROWS):
+        return None
+    parts = []
+    for fams in FAMILY_PANELS:
+        cells = [(f, lv) for f in fams for lv in ALL_LEVELS]
+        body = [f"{name} & " + " & ".join(f"{100 * float(by[(*c, m)]['frac_fallback']):.1f}" for c in cells)
+                + r" \\" for m, name in FALLBACK_ROWS]
+        parts.append(tabular(rf"@{{}}l*{{{len(cells)}}}{{r}}@{{}}",
+                             family_level_header(ALL_LEVELS, families=fams), body))
+    return PANEL_SEP.join(parts)
+
+
+CALIB_DIR = ROOT / "results" / "solver_calibration"
+
+
+def supp_calibration(d: Path = CALIB_DIR) -> str | None:
+    """Stopping-rule calibration per probe cell and gap tolerance: median and
+    99th percentile of the per-patch maximum pixel error against the reference
+    solve (grey levels), the largest hole-PSNR difference to it (dB), median
+    and largest iterations, and patches at the iteration cap."""
+    rows = _csv(d / "tolerance.csv")
+    if rows is None:
+        return None
+    default = SolverConfig().tol
+    body = []
+    for cell in dict.fromkeys(r["cell"] for r in rows):
+        if body:
+            body.append(r"\midrule")
+        for r in sorted((r for r in rows if r["cell"] == cell), key=lambda r: -float(r["tol"])):
+            tol = float(r["tol"])
+            body.append(" & ".join([cell.replace("_", "~"), tex_pow10(tol) + (r"$^{*}$" if tol == default else ""),
+                                    num_sig(float(r["max_err_median"])), num_sig(float(r["max_err_p99"])),
+                                    num_sig(float(r["psnr_abs_diff_max"])), r["iters_median"], r["iters_max"],
+                                    r["n_capped"]]) + r" \\")
+    body += [r"\midrule", _note(r"$^{*}$ The default: the loosest tolerance whose 99th percentile is below "
+                                r"0.01 grey levels in every cell.", 8)]
+    header = [r" & & \multicolumn{2}{c}{Max.\ error} & & \multicolumn{2}{c}{Iterations} & \\",
+              r"\cmidrule(lr){3-4}\cmidrule(lr){6-7}",
+              r"Cell & Gap tol. & Median & P99 & $|\Delta\mathrm{PSNR}|$ & Median & Max & Capped \\"]
+    return tabular(r"@{}l c r r r r r r@{}", header, body)
+
+
+SHIFTMAP_DIR = ROOT / "results" / "shiftmap_replicates"
+SHIFTMAP_CORPORA = [("sweep_v2_govdocs1", "GovDocs1"), ("sweep_v2_dfrws", "DFRWS 2006")]
+
+
+def supp_shiftmap(d: Path = SHIFTMAP_DIR) -> str | None:
+    """Run-to-run variation of shift-map per cell at mask seed 0, per corpus:
+    the share of patches whose output differs between realisations, the SD and
+    range of the cell's mean hole PSNR across realisations, and the largest
+    range of one patch's hole PSNR (dB)."""
+    data = {s: _csv(d / f"{s}.csv") for s, _ in SHIFTMAP_CORPORA}
+    if any(v is None for v in data.values()):
+        return None
+    by = {(s, r["family"], r["level"]): r for s, rows in data.items() for r in rows}
+    body = []
+    for fam in FAMILIES:
+        if body:
+            body.append(r"\midrule")
+        for lv in ALL_LEVELS:
+            out = [f"{fam}~{lv}"]
+            for s, _ in SHIFTMAP_CORPORA:
+                r = by.get((s, fam, lv))
+                if r is None:
+                    raise ValueError(f"shift-map replicates: no row for {s} {fam} {lv}")
+                out += [f"{100 * float(r['frac_patches_differ']):.0f}", f"{float(r['cell_mean_sd']):.3f}",
+                        f"{float(r['cell_mean_range']):.3f}", f"{float(r['patch_range_max']):.2f}"]
+            body.append(" & ".join(out) + r" \\")
+    k = sorted({int(r["n_realisations"]) for rows in data.values() for r in rows})
+    body += [r"\midrule", _note(f"{'/'.join(map(str, k))} realisations per cell: the sweep's output and "
+                                f"{'/'.join(str(n - 1) for n in k)} runs in fresh interpreters.", 9)]
+    header = [" & " + " & ".join(rf"\multicolumn{{4}}{{c}}{{{n}}}" for _, n in SHIFTMAP_CORPORA) + r" \\",
+              r"\cmidrule(lr){2-5}\cmidrule(l){6-9}",
+              "Cell" + r" & Differ (\%) & SD & Range & Patch" * len(SHIFTMAP_CORPORA) + r" \\"]
+    return tabular(r"@{}l*{8}{r}@{}", header, body)
+
+
+DICTCAP_DIR = ROOT / "results" / "dictlearn_inner_cap"
+
+
+def supp_dictcap(d: Path = DICTCAP_DIR, sweep: Path = SWEEP) -> str | None:
+    """The inner coordinate-descent cap of dictionary learning per cell: the
+    patches whose dictionary was learned, mean hole PSNR at the released and
+    the reference cap, and their difference (mean and largest per patch)."""
+    rows = _csv(d / f"{sweep.name}.csv")
+    if rows is None:
+        return None
+    body = []
+    for fam in dict.fromkeys(r["family"] for r in rows):
+        if body:
+            body.append(r"\midrule")
+        for r in (r for r in rows if r["family"] == fam):
+            body.append(" & ".join([f"{fam}~{r['level']}", f"{r['n_learned']}/{r['n_patches']}",
+                                    f"{float(r['psnr_released']):.2f}", f"{float(r['psnr_reference']):.2f}",
+                                    signed(float(r["diff_mean"]), 3), f"{float(r['diff_abs_max']):.2f}"]) + r" \\")
+    released, reference = rows[0]["cap_released"], rows[0]["cap_reference"]
+    header = [rf" & & \multicolumn{{2}}{{c}}{{Hole PSNR (dB)}} & \multicolumn{{2}}{{c}}{{Difference (dB)}} \\",
+              r"\cmidrule(lr){3-4}\cmidrule(l){5-6}",
+              rf"Cell & Learned & cap {released} & cap {reference} & Mean & Max $|\cdot|$ \\"]
+    return tabular(r"@{}l r r r r r@{}", header, body)
+
+
+def supp_fidelity(d: Path = FIDELITY_DIR, delta: float = FIDELITY_DELTA) -> str | None:
+    """Panel A: per cell and perturbation at the default tolerance, the median
+    relative error against the reference re-solve and SRF against the reference
+    and the operational re-solve. Panel B: the same at perturbation `delta`
+    per gap tolerance on the tolerance-study cells."""
+    rows, tol_rows = _csv(d / "summary.csv"), _csv(d / "tol_study_summary.csv")
+    if rows is None or tol_rows is None:
+        return None
+    default = SolverConfig().tol
+    at_default = [r for r in rows if float(r["tol"]) == default]
+    deltas = sorted({float(r["delta"]) for r in at_default})
+    cells = list(dict.fromkeys((r["family"], r["level"]) for r in at_default))
+    by = {(r["family"], r["level"], float(r["delta"])): r for r in at_default}
+
+    def triple(r: dict) -> list[str]:
+        return [pct(float(r["rel_err_median_ref"])), f"{100 * float(r['srf_ref']):.1f}",
+                f"{100 * float(r['srf_op']):.1f}"]
+
+    body_a = [" & ".join([f"{f}~{lv}", *(v for dl in deltas for v in triple(by[(f, lv, dl)]))]) + r" \\"
+              for f, lv in cells]
+    spans = "".join(rf"\cmidrule({'lr' if i < len(deltas) - 1 else 'l'}){{{2 + 3 * i}-{4 + 3 * i}}}"
+                    for i in range(len(deltas)))
+    header_a = [" & " + " & ".join(rf"\multicolumn{{3}}{{c}}{{$\delta = {dl:g}$}}" for dl in deltas) + r" \\",
+                spans, "Cell" + r" & Med.\ (\%) & SRF ref & SRF op" * len(deltas) + r" \\"]
+    panel_a = tabular(rf"@{{}}l*{{{3 * len(deltas)}}}{{r}}@{{}}", header_a, body_a)
+    body_b = [" & ".join([f"{r['family']}~{r['level']}", tex_pow10(float(r["tol"])), *triple(r),
+                          f"{100 * float(r['converged_frac_op']):.0f}"]) + r" \\"
+              for r in sorted((r for r in tol_rows if float(r["delta"]) == delta),
+                              key=lambda r: (r["family"], r["level"], -float(r["tol"])))]
+    header_b = [rf"Cell & Gap tol. & Med.\ (\%) & SRF ref & SRF op & Converged (\%) \\"]
+    panel_b = tabular(r"@{}l c r r r r@{}", header_b, body_b)
+    return PANEL_SEP.join([panel_a, panel_b])
+
+
 def quality() -> str | None:
     return method_by_cell_table(SWEEP, "psnr_hole", higher_is_better=True, digits=2, with_cap_note=True)
 
@@ -760,7 +963,11 @@ TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_
           "EXTERNAL_V2": external_v2, "ABLATION_V2": ablation_v2, "SOLVER_CMP": solver_cmp,
           "FIDELITY": fidelity, "RECORDS_CMP": records_cmp, "ORACLE": oracle, "BU": bu,
           "JPEG": jpeg, "MASKERR": maskerr, "FULLRES": fullres, "BENCH_V2": bench_v2,
-          "DOWNSTREAM_V2": downstream_v2, "OCR": ocr}
+          "DOWNSTREAM_V2": downstream_v2, "OCR": ocr,
+          # supplement
+          "SUPP_PSNR": supp_psnr, "SUPP_SSIM": supp_ssim, "SUPP_HRP": supp_hrp, "SUPP_CAP": supp_cap,
+          "SUPP_FALLBACKS": supp_fallbacks, "SUPP_CALIBRATION": supp_calibration,
+          "SUPP_SHIFTMAP": supp_shiftmap, "SUPP_DICTCAP": supp_dictcap, "SUPP_FIDELITY": supp_fidelity}
 
 
 def main() -> int:
