@@ -102,6 +102,8 @@ def test_methods_section_parameters_match_the_code(tex):
     d = inspect.signature(b.baseline_dictlearn).parameters
     assert (d["n_atoms"].default, d["n_nonzero"].default) == (64, 8)
     assert "$64$ atoms of $8 \\times 8$ pixels" in sec and "$8$ non-zero coefficients" in sec
+    assert (d["fit_passes"].default, d["fit_batch"].default, d["fit_cd_max_iter"].default) == (30, 32, 200)
+    assert "$30$ passes in batches of $32$ tiles" in sec and "capped at $200$ iterations" in sec
     assert inspect.signature(b.baseline_criminisi).parameters["patch"].default == 9
     assert "with $9 \\times 9$ patches, reduced to $7$, $5$ and $3$" in sec
     assert "inpaintRadius=3" in inspect.getsource(b.baseline_inpaint_cv)

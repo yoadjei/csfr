@@ -60,12 +60,18 @@ def baseline_inpaint_cv(y: np.ndarray, M: np.ndarray, flag: int) -> np.ndarray:
 
 def baseline_dictlearn(y: np.ndarray, M: np.ndarray, rng_seed: int,
                        tile: int = 8, stride: int = 8,
-                       n_atoms: int = 64, n_nonzero: int = 8) -> np.ndarray:
+                       n_atoms: int = 64, n_nonzero: int = 8,
+                       fit_passes: int = 30, fit_batch: int = 32,
+                       fit_cd_max_iter: int = 200) -> np.ndarray:
     """Per-image dictionary-learning inpainting (online dictionary learning,
     Mairal et al. 2009 style): learn atoms from fully-observed tiles of the
     SAME corrupted image, then reconstruct each incomplete tile by
     orthogonal matching pursuit on the observed pixels only. Tiles with no
-    observations fall back to the observed-region mean."""
+    observations fall back to the observed-region mean.
+
+    The fit settings are those of the released baseline: fit_passes passes over
+    the tiles in batches of fit_batch, with the coordinate-descent sparse coding
+    inside each step capped at fit_cd_max_iter iterations."""
     import warnings
 
     from sklearn.decomposition import MiniBatchDictionaryLearning
@@ -111,13 +117,13 @@ def baseline_dictlearn(y: np.ndarray, M: np.ndarray, rng_seed: int,
             X = X[np.random.default_rng(rng_seed).choice(len(X), 400, replace=False)]
         mu = X.mean(axis=0)
         dl = MiniBatchDictionaryLearning(
-            n_components=n_atoms, alpha=1.0, batch_size=32, max_iter=30,
+            n_components=n_atoms, alpha=1.0, batch_size=fit_batch, max_iter=fit_passes,
             random_state=rng_seed, fit_algorithm="cd",
-            transform_algorithm="lasso_cd", transform_max_iter=200)
-        # the released configuration caps the coordinate-descent sparse coding
-        # inside fit at 200 iterations (sklearn uses transform_max_iter there),
-        # and the cap is often reached; scripts/dictlearn_inner_cap.py measures
-        # its effect. Filtering the warning leaves the computation unchanged.
+            transform_algorithm="lasso_cd", transform_max_iter=fit_cd_max_iter)
+        # sklearn applies transform_max_iter to the coordinate-descent sparse
+        # coding inside fit, and the released cap is often reached;
+        # scripts/dictlearn_inner_cap.py measures its effect. Filtering the
+        # warning leaves the computation unchanged.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", ConvergenceWarning)
             dl.fit(X - mu)

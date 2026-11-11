@@ -45,7 +45,7 @@ def test_every_macro_the_manuscript_uses_is_generated():
     import re
     tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
     generated = set(re.findall(r"\\providecommand\{\\([A-Za-z]+)\}", m.render()))
-    used = set(re.findall(r"\\((?:csfr|rec|calib|oracle|corpus|methods|env|sweep|stats|fallback|bu|shiftmap)[A-Z][A-Za-z]*)", tex))
+    used = set(re.findall(r"\\((?:csfr|rec|calib|oracle|corpus|methods|env|sweep|stats|fallback|bu|shiftmap|dictlearn)[A-Z][A-Za-z]*)", tex))
     assert used, "the manuscript uses no number macros; the regex has rotted"
     assert used <= generated, f"manuscript uses undefined number macros: {sorted(used - generated)}"
 
@@ -84,6 +84,52 @@ def test_shiftmap_macros_take_the_worst_cell_of_both_corpora(tmp_path):
                               "frac_patches_differ": 0.42, "cell_mean_range": 0.013}])
     assert m.shiftmap_macros(tmp_path) == {"shiftmapRealisations": "4", "shiftmapDifferMax": "42",
                                            "shiftmapCellRangeMax": "0.05"}
+
+
+def test_fallback_macros_wait_for_a_complete_primary_sweep(tmp_path):
+    """A resumed sweep leaves fallbacks.csv with some cells at fewer seeds and
+    others missing; the macros must stay pending, not fail or report a part."""
+    m = _mod()
+    import csv
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("seeds: [0, 1]\nfamilies: [CF1]\nlevels: {L1: 0.05, L5: 0.7}\n")
+    fields = ["sweep", "family", "level", "method", "n_seeds", "n", "n_fallback", "frac_fallback"]
+
+    def write(rows):
+        with (tmp_path / "fb.csv").open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            w.writerows([dict(zip(fields, (m.SWEEPS[0], *r))) for r in rows])
+
+    full = [("CF1", "L1", "dictlearn", 2, 10, 9, 0.9), ("CF1", "L1", "criminisi", 2, 10, 0, 0.0),
+            ("CF1", "L5", "dictlearn", 2, 10, 10, 1.0), ("CF1", "L5", "criminisi", 2, 10, 4, 0.4)]
+    write(full[:3] + [("CF1", "L5", "criminisi", 1, 5, 2, 0.4)])           # one cell at one seed
+    assert set(m.fallback_macros(tmp_path / "fb.csv", cfg).values()) == {m.PLACEHOLDER}
+    write(full)
+    assert m.fallback_macros(tmp_path / "fb.csv", cfg) == {
+        "fallbackDictCFoneMin": "90.0", "fallbackDictCFoneMax": "100.0", "fallbackExemplarCFoneLfive": "40.0"}
+
+
+def test_dictlearn_cap_macros_take_the_largest_shift_and_refuse_a_mismatch(tmp_path):
+    m = _mod()
+    import csv
+    import pytest
+
+    def write(rows):
+        with (tmp_path / f"{m.SWEEPS[0]}.csv").open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0]))
+            w.writeheader()
+            w.writerows(rows)
+
+    assert set(m.dictlearn_cap_macros(tmp_path).values()) == {m.PLACEHOLDER}
+    row = {"cap_released": 200, "cap_reference": 20000, "n_patches": 200, "matches_sweep": "True"}
+    write([{**row, "diff_mean": -0.031, "diff_abs_max": 1.26}, {**row, "diff_mean": 0.012, "diff_abs_max": 0.4}])
+    assert m.dictlearn_cap_macros(tmp_path) == {
+        "dictlearnCapFactor": "100", "dictlearnCapCells": "2", "dictlearnCapPatches": "200",
+        "dictlearnCapMaxCellShift": "0.03", "dictlearnCapMaxPatchShift": "1.3"}
+    write([{**row, "diff_mean": 0.0, "diff_abs_max": 0.0, "matches_sweep": "False"}])
+    with pytest.raises(ValueError, match="did not reproduce"):
+        m.dictlearn_cap_macros(tmp_path)
 
 
 def test_sci_formatting():

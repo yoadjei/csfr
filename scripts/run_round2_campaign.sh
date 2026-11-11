@@ -41,8 +41,9 @@ stage_analysis() {
   for s in $SWEEPS; do
     python scripts/run_stats_v2.py --sweep-dir "results/sweep_v2_$s" >> "results/sweep_v2_$s/run_stats.log" 2>&1
   done
-  mkdir -p results/baseline_fallbacks results/shiftmap_replicates
+  mkdir -p results/baseline_fallbacks results/shiftmap_replicates results/dictlearn_inner_cap
   python scripts/baseline_fallbacks.py >> results/baseline_fallbacks/run.log 2>&1
+  python scripts/dictlearn_inner_cap.py >> results/dictlearn_inner_cap/run.log 2>&1
   python scripts/ablation_range.py --sweep-dir results/sweep_v2_govdocs1 >> results/sweep_v2_govdocs1/run_ablation_range.log 2>&1
   for s in dfrws govdocs1; do
     python scripts/shiftmap_replicates.py --sweep-dir "results/sweep_v2_$s" >> "results/shiftmap_replicates/run_$s.log" 2>&1
