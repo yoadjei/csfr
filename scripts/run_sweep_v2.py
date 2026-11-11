@@ -43,6 +43,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, replace
 from multiprocessing import get_context
@@ -350,13 +351,35 @@ def _git() -> dict:
         return {"git_commit": "unknown", "git_dirty": None}
 
 
-def write_metadata(cfg: dict, outdir: Path, patches: np.ndarray, clusters, args) -> None:
+def _invocations(path: Path, this: dict) -> list[dict]:
+    """Every invocation that has written into this results directory, oldest
+    first, with this one replacing its own earlier entry (each run writes the
+    metadata at its start and its end). A file written before the history was
+    kept contributes one entry with what it recorded."""
+    if not path.exists():
+        return [this]
+    old = json.loads(path.read_text(encoding="utf-8"))
+    previous = old.get("invocations")
+    if previous is None:
+        previous = [{"git_commit": old.get("git_commit"), "git_dirty": old.get("git_dirty"),
+                     "written": old.get("written"), "recorded_before_invocation_history": True}]
+    return [e for e in previous if e.get("id") != this["id"]] + [this]
+
+
+def write_metadata(cfg: dict, outdir: Path, patches: np.ndarray, clusters, args,
+                   invocation: dict) -> None:
+    """Environment, corpus hashes and objectives of the sweep. `invocation`
+    identifies this run (id, start time, arguments, and finish time once done);
+    the top-level git fields are those of the latest invocation."""
     from run_csfr_sweep import capture_environment
     env = capture_environment()
     import cv2
     env["opencv_contrib_xphoto"] = hasattr(cv2, "xphoto")
     h, w = patches.shape[-2:]
-    meta = {"schema": SCHEMA, "config": cfg, "environment": env, **_git(),
+    git = _git()
+    path = outdir / "run_metadata.json"
+    meta = {"schema": SCHEMA, "config": cfg, "environment": env, **git,
+            "invocations": _invocations(path, {**invocation, **git}),
             "patches_sha256": _sha256(patches),
             "cluster_sha256": _sha256(clusters) if clusters is not None else None,
             "n_patches": int(len(patches)),
@@ -367,7 +390,7 @@ def write_metadata(cfg: dict, outdir: Path, patches: np.ndarray, clusters, args)
             "stopping_rule": STOPPING_RULE,
             "workers": args.workers, "torch_threads": args.threads,
             "written": time.strftime("%Y-%m-%dT%H:%M:%S")}
-    _write_json(outdir / "run_metadata.json", meta)
+    _write_json(path, meta)
 
 
 # ------------------------------------------------------------------------ main
@@ -417,7 +440,9 @@ def main(argv=None) -> int:
     only = set(args.only_method) if args.only_method else None
     print(f"[sweep_v2] {cfg['experiment']}: {len(patches)} patches, {len(cells)} cells x "
           f"{len(seeds)} seeds, workers {args.workers}, threads {args.threads}", flush=True)
-    write_metadata(cfg, outdir, patches, clusters, args)
+    invocation = {"id": uuid.uuid4().hex, "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                  "finished": None, "args": vars(args)}
+    write_metadata(cfg, outdir, patches, clusters, args, invocation)
     pool = _make_pool(max(1, args.workers))
     try:
         for i, (fam, lvl) in enumerate(cells):
@@ -430,7 +455,8 @@ def main(argv=None) -> int:
     finally:
         pool.shutdown()
     write_summary(cfg, outdir)
-    write_metadata(cfg, outdir, patches, clusters, args)
+    invocation["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    write_metadata(cfg, outdir, patches, clusters, args, invocation)
     print(f"[sweep_v2] wrote {outdir / 'summary.csv'}", flush=True)
     return 0
 

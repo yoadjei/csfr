@@ -74,6 +74,35 @@ def test_summary_and_metadata(tiny):
         assert k in meta
 
 
+def test_metadata_keeps_one_entry_per_invocation(tiny):
+    """A resumed sweep is computed by several invocations, possibly at different
+    commits. The metadata keeps every invocation, not only the last one."""
+    cfg, out = tiny
+    h = _harness()
+    h.main(["--config", str(cfg), "--workers", "1"])
+    h.main(["--config", str(cfg), "--workers", "1", "--only-method", "bilinear", "--force"])
+    meta = json.loads((out / "run_metadata.json").read_text())
+    first, second = meta["invocations"]                    # start and end writes of one run are one entry
+    for e in (first, second):
+        assert {"id", "git_commit", "git_dirty", "started", "finished", "args"} <= set(e)
+        assert e["finished"] is not None
+    assert first["args"]["only_method"] is None and first["args"]["force"] is False
+    assert second["args"]["only_method"] == ["bilinear"] and second["args"]["force"] is True
+    assert meta["git_commit"] == second["git_commit"]
+
+
+def test_metadata_written_before_invocation_history_is_carried_forward(tiny):
+    cfg, out = tiny
+    out.mkdir()
+    (out / "run_metadata.json").write_text(json.dumps({"git_commit": "abc", "git_dirty": True,
+                                                       "written": "2026-11-09T21:35:15"}))
+    _harness().main(["--config", str(cfg), "--workers", "1", "--only-method", "zero_fill"])
+    legacy, current = json.loads((out / "run_metadata.json").read_text())["invocations"]
+    assert legacy == {"git_commit": "abc", "git_dirty": True, "written": "2026-11-09T21:35:15",
+                      "recorded_before_invocation_history": True}
+    assert current["args"]["only_method"] == ["zero_fill"]
+
+
 def test_external_outputs_are_scored_on_a_second_pass(tiny):
     cfg, out = tiny
     h = _harness()
