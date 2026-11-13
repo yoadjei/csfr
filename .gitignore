@@ -102,3 +102,7 @@ paper/.docx_build/
 data/kodak/*.png
 data/jpeg_corruption/src/
 data/ocr/
+
+# detached campaign: live process id and the copy of the campaign script it runs
+results/campaign.pid
+results/campaign_snapshot.sh
