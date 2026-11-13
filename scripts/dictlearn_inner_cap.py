@@ -13,7 +13,9 @@ cap does not touch (scripts/baseline_fallbacks.py).
 The run at the released cap must reproduce the sweep's saved output for those
 patches exactly; matches_sweep records that it does.
 
-Output: results/dictlearn_inner_cap/<sweep>.csv, one row per cell.
+Output: results/dictlearn_inner_cap/<sweep>.csv, one row per cell. Each cell is
+saved when it finishes (results/dictlearn_inner_cap/units/<sweep>/), so an
+interrupted run resumes at the cells it had not finished.
 """
 from __future__ import annotations
 
@@ -34,6 +36,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 from baseline_fallbacks import dictlearn_falls_back  # noqa: E402
 from baselines import baseline_dictlearn, limit_threads  # noqa: E402
+from checkpoint import UnitStore, digests  # noqa: E402
 from quality import psnr_hole  # noqa: E402
 
 OUT = ROOT / "results" / "dictlearn_inner_cap"
@@ -70,6 +73,14 @@ def cell_row(pool, cell_dir: Path, ref: np.ndarray, n: int, factor: int, workers
             "matches_sweep": bool(np.array_equal(outs[RELEASED_CAP], saved))}
 
 
+def _store(units: Path, cell_dir: Path, args, ref_path: Path) -> UnitStore:
+    """A cell's row is reused only for the same inputs, sweep output, settings and code."""
+    return UnitStore(units, {"seed": SEED, "patches": args.patches, "reference_factor": args.reference_factor,
+                             "inputs": digests([cell_dir / "y.npy", cell_dir / "mask.npy",
+                                                cell_dir / "x_hat_dictlearn.npy", ref_path]),
+                             "code": digests([ROOT / "src" / "baselines.py", Path(__file__)])})
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sweep-dir", default="results/sweep_v2_govdocs1")
@@ -82,18 +93,22 @@ def main(argv=None) -> int:
     if not sweep.is_absolute():
         sweep = ROOT / sweep
     cfg = json.loads((sweep / "run_metadata.json").read_text(encoding="utf-8"))["config"]
-    ref = np.load(ROOT / cfg["patches_path"]).astype(np.float32)
+    ref_path = ROOT / cfg["patches_path"]
+    ref = np.load(ref_path).astype(np.float32)
+    out = Path(args.out_dir)
+    units = out / "units" / sweep.name
     cells = [sweep / f"{f}_{lv}" / f"seed{SEED}" for f in cfg["families"] if f in FAMILIES
              for lv in cfg["levels"]]
     with ProcessPoolExecutor(max(1, args.workers), mp_context=get_context("spawn"),
                              initializer=limit_threads) as pool:
         rows = []
         for c in cells:
-            rows.append(cell_row(pool, c, ref, args.patches, args.reference_factor, args.workers))
+            rows += _store(units, c, args, ref_path).rows(
+                c.parent.name, lambda c=c: [cell_row(pool, c, ref, args.patches, args.reference_factor,
+                                                     args.workers)])
             print(f"[dictlearn_inner_cap] {c.parent.name}: diff_mean {rows[-1]['diff_mean']:+.4f} dB, "
                   f"max |diff| {rows[-1]['diff_abs_max']:.3f}, matches_sweep {rows[-1]['matches_sweep']}",
                   flush=True)
-    out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{sweep.name}.csv"
     with path.open("w", newline="", encoding="utf-8") as fh:

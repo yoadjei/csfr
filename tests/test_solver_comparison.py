@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -58,3 +59,34 @@ def test_arms_traces_and_summary(tmp_path):
     tr = list(csv.DictReader((out / "trace_CF2_L5.csv").open()))
     assert {r["arm"] for r in tr} == {"adam", "fista"}
     assert {int(r["iter"]) for r in tr if r["arm"] == "fista"} == {10, 20}
+
+
+def test_an_interrupted_comparison_resumes_where_it_stopped(tmp_path, monkeypatch):
+    m = _mod()
+    base = _released(tmp_path, n=2)
+    out = tmp_path / "out"
+    args = ["--released", str(base / "released"), "--patches", str(base / "patches.npy"),
+            "--cells", "CF1_L3", "CF2_L5", "--seeds", "0", "--adam-budgets", "20", "--tols", "1e-3",
+            "--retime-seed", "1", "--trace-cell", "CF2_L5", "--trace-iters", "10", "20", "--out", str(out)]
+    real_adam = m.adam
+    budgets = []
+
+    def adam(y, M, budget, ckpt=None, resume=False):
+        budgets.append(budget)
+        if ckpt is not None and budget == 20 and budgets.count(20) == 3:
+            raise RuntimeError("killed")      # in the second point of the trace
+        return real_adam(y, M, budget, ckpt=ckpt, resume=resume)
+
+    monkeypatch.setattr(m, "adam", adam)
+    with pytest.raises(RuntimeError):
+        m.main(args)
+    assert budgets == [20, 20, 10, 20]           # both cells, then the trace up to the kill
+    first = list(csv.DictReader((out / "per_cell.csv").open()))
+    budgets.clear()
+    assert m.main(args) == 0
+    assert budgets == [20]                        # only the unfinished trace point ran again
+    again = list(csv.DictReader((out / "per_cell.csv").open()))
+    assert again == first
+    tr = list(csv.DictReader((out / "trace_CF2_L5.csv").open()))
+    assert [(r["arm"], r["iter"]) for r in tr] == [("adam", "10"), ("adam", "20"), ("fista", "10"), ("fista", "20")]
+    assert not list((out / "units").rglob("*.pt"))    # the trace's continuation state is cleaned up

@@ -38,6 +38,12 @@ Telea and Navier-Stokes. Per record: L1 and L2 norm, maximum, support size,
 differences the relative difference between delta 1 and delta 4 (zero for a
 linear method; large for the 8-bit PDE methods, whose output is piecewise
 constant in the input).
+
+Every unit of work (a cell at one tolerance; a cell, for the record comparison)
+is saved when it finishes, under <out>/units/{fidelity,tol_study,records}/, and
+reused by a later run with the same inputs, settings and code. The CSVs are
+assembled from the saved units, so an interrupted run resumes where it stopped
+and writes what an uninterrupted run would.
 """
 from __future__ import annotations
 
@@ -57,6 +63,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from baseline_jacobians import bilinear_weights, finite_difference_column  # noqa: E402
 from baselines import BASELINES  # noqa: E402
+from checkpoint import UnitStore, digests  # noqa: E402
 from csfr_solver import SolverConfig, solve  # noqa: E402
 from sensitivity import (RecordConfig, fidelity_patch,  # noqa: E402
                          sensitivity_column, write_manifest)
@@ -65,6 +72,9 @@ ALL_CELLS = [f"CF{f}_L{l}" for f in range(1, 5) for l in range(1, 6)]
 QUERY_DISTANCES = (1, 3, 8)       # the last means ">= 8"
 SRF_THRESHOLD = 0.10
 TOL_STUDY = {"cells": ["CF1_L3", "CF3_L5"], "tols": [1e-4, 1e-6, 1e-8, 1e-10]}
+# the code that computes a unit: a change to any of it invalidates the saved units
+FIDELITY_CODE = [ROOT / "src" / "csfr_solver.py", ROOT / "src" / "sensitivity.py", Path(__file__).resolve()]
+RECORDS_CODE = FIDELITY_CODE + [ROOT / "src" / "baseline_jacobians.py", ROOT / "src" / "baselines.py"]
 
 
 # ---------------------------------------------------------------- query pixels
@@ -127,6 +137,14 @@ def _cell_inputs(sweep: Path, cell: str, seed: int, n: int):
     return y, M, (np.load(xs)[:n].astype(np.float64) if xs.exists() else None), d
 
 
+def _store(units: Path, args, cell: str, code: list[Path]) -> UnitStore:
+    """A unit is reused only for the same inputs, settings and code."""
+    d = Path(args.sweep_dir) / cell / f"seed{args.seed}"
+    return UnitStore(units, {"sweep": str(args.sweep_dir), "seed": args.seed, "patches": args.patches,
+                             "deltas": list(args.deltas), "inputs": digests([d / "y.npy", d / "mask.npy"]),
+                             "code": digests(code)})
+
+
 def _sweep_tol(cell_dir: Path) -> float | None:
     m = cell_dir / "metrics.json"
     if not m.exists():
@@ -166,47 +184,62 @@ def summarise(rows: list[dict], keys: list[str]) -> list[dict]:
 
 # ------------------------------------------------------------------ fidelity
 
-def run_fidelity(args, cells: list[str], tols: list[float], out: Path, manifests: bool) -> list[dict]:
+def fidelity_unit(args, cell: str, tol: float, inputs: tuple, manifest: Path | None,
+                  rc: RecordConfig) -> list[dict]:
+    """Every fidelity row of one cell at one solver tolerance; writes the cell's
+    patch-0 manifest when manifest is given."""
+    fam, lvl = cell.split("_")
+    y, M, x_sweep, cell_dir = inputs
+    rows: list[dict] = []
+    cfg = replace(SolverConfig(), tol=tol)
+    t0 = time.time()
+    X, cert = solve(torch.from_numpy(y), torch.from_numpy(M), cfg)
+    recon_s = (time.time() - t0) / len(y)
+    if x_sweep is not None and _sweep_tol(cell_dir) == tol:
+        dev = float(np.abs(X.numpy() - x_sweep).max())
+        if dev > 1e-3:
+            raise RuntimeError(f"{cell}: re-solved patches differ from the sweep by {dev}")
+    for i in range(len(y)):
+        Mb = torch.from_numpy(M[i] == 1)
+        yi = torch.from_numpy(y[i])
+        qs = observed_queries(M[i] == 1)
+        if not qs:
+            continue
+        res = fidelity_patch(X[i], yi, Mb, [p for _, p in qs], cfg, rc,
+                             deltas=tuple(args.deltas), operational=True)
+        for r in res:
+            r.update({"cell": cell, "family": fam, "level": lvl, "seed": args.seed,
+                      "patch": i, "query_distance": qs[r["query"]][0], "tol": tol,
+                      "reconstruction_seconds": recon_s,
+                      "patch_converged": bool(cert.converged[i]),
+                      "patch_iterations": int(cert.iterations[i])})
+            r["query_pixel"] = f"{r['query_pixel'][0]},{r['query_pixel'][1]}"
+        rows.extend(res)
+        if manifest is not None and i == 0:
+            one = replace(cert, iterations=cert.iterations[:1], converged=cert.converged[:1],
+                          gap=cert.gap[:1], rel_gap=cert.rel_gap[:1],
+                          final_step_inf=cert.final_step_inf[:1], objective=cert.objective[:1])
+            write_manifest(manifest, x_hat=X[i], y=yi, Mb=Mb,
+                           solver_cfg=cfg, certificate=one,
+                           queries=imputed_queries(M[i] == 1),
+                           patch_id=f"{args.sweep_dir}:{cell}:seed{args.seed}:patch0",
+                           rc=rc, fidelity=res)
+    return rows
+
+
+def run_fidelity(args, cells: list[str], tols: list[float], out: Path, manifests: bool,
+                 units: Path) -> list[dict]:
     rc = RecordConfig()
     rows: list[dict] = []
     for cell in cells:
-        fam, lvl = cell.split("_")
-        y, M, x_sweep, cell_dir = _cell_inputs(Path(args.sweep_dir), cell, args.seed, args.patches)
+        inputs = _cell_inputs(Path(args.sweep_dir), cell, args.seed, args.patches)
+        store = _store(units, args, cell, FIDELITY_CODE)
+        manifest = out / "manifests" / f"{cell}_patch0.json" if manifests else None
         for tol in tols:
-            cfg = replace(SolverConfig(), tol=tol)
-            t0 = time.time()
-            X, cert = solve(torch.from_numpy(y), torch.from_numpy(M), cfg)
-            recon_s = (time.time() - t0) / len(y)
-            if x_sweep is not None and _sweep_tol(cell_dir) == tol:
-                dev = float(np.abs(X.numpy() - x_sweep).max())
-                if dev > 1e-3:
-                    raise RuntimeError(f"{cell}: re-solved patches differ from the sweep by {dev}")
-            for i in range(len(y)):
-                Mb = torch.from_numpy(M[i] == 1)
-                yi = torch.from_numpy(y[i])
-                qs = observed_queries(M[i] == 1)
-                if not qs:
-                    continue
-                res = fidelity_patch(X[i], yi, Mb, [p for _, p in qs], cfg, rc,
-                                     deltas=tuple(args.deltas), operational=True)
-                for r in res:
-                    r.update({"cell": cell, "family": fam, "level": lvl, "seed": args.seed,
-                              "patch": i, "query_distance": qs[r["query"]][0], "tol": tol,
-                              "reconstruction_seconds": recon_s,
-                              "patch_converged": bool(cert.converged[i]),
-                              "patch_iterations": int(cert.iterations[i])})
-                    r["query_pixel"] = f"{r['query_pixel'][0]},{r['query_pixel'][1]}"
-                rows.extend(res)
-                if manifests and i == 0:
-                    one = replace(cert, iterations=cert.iterations[:1], converged=cert.converged[:1],
-                                  gap=cert.gap[:1], rel_gap=cert.rel_gap[:1],
-                                  final_step_inf=cert.final_step_inf[:1], objective=cert.objective[:1])
-                    write_manifest(out / "manifests" / f"{cell}_patch0.json", x_hat=X[i], y=yi, Mb=Mb,
-                                   solver_cfg=cfg, certificate=one,
-                                   queries=imputed_queries(M[i] == 1),
-                                   patch_id=f"{args.sweep_dir}:{cell}:seed{args.seed}:patch0",
-                                   rc=rc, fidelity=res)
-            done = [r for r in rows if r["cell"] == cell and r["tol"] == tol]
+            done = store.rows(f"{cell}_tol{tol:g}",
+                              lambda tol=tol: fidelity_unit(args, cell, tol, inputs, manifest, rc),
+                              outputs=[manifest] if manifest else [])
+            rows += done
             e = [r["rel_l2_error_ref"] for r in done if r["delta"] == 1.0]
             print(f"[fidelity] {cell} tol {tol:g}: {len(done)} rows, median rel err (delta 1) "
                   f"{_q(e, 50):.3g}, SRF {np.mean([v <= SRF_THRESHOLD for v in e]):.2f}", flush=True)
@@ -227,43 +260,50 @@ def _record_stats(col: np.ndarray, k: tuple[int, int], hole: np.ndarray) -> dict
             "mean_distance": float((w * d).sum() / w.sum()) if w.sum() > 0 else float("nan")}
 
 
-def run_records_compare(args, cells: list[str], out: Path) -> list[dict]:
+def records_unit(args, cell: str) -> list[dict]:
+    """Every record-comparison row of one cell."""
     rc = RecordConfig()
     cfg = SolverConfig()
     methods = {m: BASELINES[m] for m in ("bilinear", "inpaint_telea", "inpaint_ns")}
-    rows = []
+    rows: list[dict] = []
+    y, M, _, _ = _cell_inputs(Path(args.sweep_dir), cell, args.seed, args.patches)
+    X, _ = solve(torch.from_numpy(y), torch.from_numpy(M), cfg)
+    for i in range(len(y)):
+        Mb = M[i] == 1
+        hole = ~Mb
+        W = bilinear_weights(M[i])
+        y1, M1 = y[i:i + 1].astype(np.float32), M[i:i + 1]
+        for dist, k in observed_queries(Mb):
+            base = {"cell": cell, "patch": i, "query_pixel": f"{k[0]},{k[1]}",
+                    "query_distance": dist}
+            col, _ = sensitivity_column(X[i], torch.from_numpy(y[i]), torch.from_numpy(Mb), k, cfg, rc)
+            rows.append({**base, "method": "csfr", "record": "implicit_function",
+                         **_record_stats(col.numpy(), k, hole)})
+            exact = np.zeros(Mb.shape)
+            for p, entries in W.items():
+                for q, wt in entries:
+                    if q == k:
+                        exact[p] = wt
+            rows.append({**base, "method": "bilinear", "record": "exact_barycentric",
+                         **_record_stats(exact, k, hole)})
+            for name, fn in methods.items():
+                fd = {dl: finite_difference_column(lambda a, b, fn=fn: fn(a, b), y1, M1, k, dl)
+                      for dl in (1.0, 4.0)}
+                n4 = float(np.linalg.norm(fd[4.0]))
+                consistency = (float(np.linalg.norm(fd[1.0] - fd[4.0])) / n4) if n4 > 0 else float("nan")
+                for dl, c in fd.items():
+                    rows.append({**base, "method": name, "record": f"finite_difference_delta{dl:g}",
+                                 **_record_stats(c, k, hole), "fd_rel_diff_delta1_vs_4": consistency})
+                if name == "bilinear":
+                    rows[-1]["fd_vs_exact_rel_l2"] = (float(np.linalg.norm(fd[1.0] - exact))
+                                                      / max(float(np.linalg.norm(exact)), 1e-300))
+    return rows
+
+
+def run_records_compare(args, cells: list[str], units: Path) -> list[dict]:
+    rows: list[dict] = []
     for cell in cells:
-        y, M, _, _ = _cell_inputs(Path(args.sweep_dir), cell, args.seed, args.patches)
-        X, _ = solve(torch.from_numpy(y), torch.from_numpy(M), cfg)
-        for i in range(len(y)):
-            Mb = M[i] == 1
-            hole = ~Mb
-            W = bilinear_weights(M[i])
-            y1, M1 = y[i:i + 1].astype(np.float32), M[i:i + 1]
-            for dist, k in observed_queries(Mb):
-                base = {"cell": cell, "patch": i, "query_pixel": f"{k[0]},{k[1]}",
-                        "query_distance": dist}
-                col, _ = sensitivity_column(X[i], torch.from_numpy(y[i]), torch.from_numpy(Mb), k, cfg, rc)
-                rows.append({**base, "method": "csfr", "record": "implicit_function",
-                             **_record_stats(col.numpy(), k, hole)})
-                exact = np.zeros(Mb.shape)
-                for p, entries in W.items():
-                    for q, wt in entries:
-                        if q == k:
-                            exact[p] = wt
-                rows.append({**base, "method": "bilinear", "record": "exact_barycentric",
-                             **_record_stats(exact, k, hole)})
-                for name, fn in methods.items():
-                    fd = {dl: finite_difference_column(lambda a, b, fn=fn: fn(a, b), y1, M1, k, dl)
-                          for dl in (1.0, 4.0)}
-                    n4 = float(np.linalg.norm(fd[4.0]))
-                    consistency = (float(np.linalg.norm(fd[1.0] - fd[4.0])) / n4) if n4 > 0 else float("nan")
-                    for dl, c in fd.items():
-                        rows.append({**base, "method": name, "record": f"finite_difference_delta{dl:g}",
-                                     **_record_stats(c, k, hole), "fd_rel_diff_delta1_vs_4": consistency})
-                    if name == "bilinear":
-                        rows[-1]["fd_vs_exact_rel_l2"] = (float(np.linalg.norm(fd[1.0] - exact))
-                                                          / max(float(np.linalg.norm(exact)), 1e-300))
+        rows += _store(units, args, cell, RECORDS_CODE).rows(cell, lambda cell=cell: records_unit(args, cell))
         print(f"[records] {cell}: {len(rows)} rows so far", flush=True)
     return rows
 
@@ -290,16 +330,17 @@ def main(argv=None) -> int:
     out = ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
     if args.records_compare:
-        rows = run_records_compare(args, args.cells, out)
+        rows = run_records_compare(args, args.cells, out / "units" / "records")
         _write_csv(out / "records_compare.csv", rows)
         return 0
     if args.tol_study:
-        rows = run_fidelity(args, TOL_STUDY["cells"], TOL_STUDY["tols"], out, manifests=False)
+        rows = run_fidelity(args, TOL_STUDY["cells"], TOL_STUDY["tols"], out, manifests=False,
+                            units=out / "units" / "tol_study")
         _write_csv(out / "tol_study.csv", rows)
         _write_csv(out / "tol_study_summary.csv",
                    summarise(rows, ["family", "level", "delta", "tol"]))
         return 0
-    rows = run_fidelity(args, args.cells, args.tols, out, manifests=True)
+    rows = run_fidelity(args, args.cells, args.tols, out, manifests=True, units=out / "units" / "fidelity")
     _write_csv(out / "fidelity.csv", rows)
     _write_csv(out / "summary.csv", summarise(rows, ["family", "level", "delta", "tol"]))
     _write_csv(out / "summary_by_distance.csv",

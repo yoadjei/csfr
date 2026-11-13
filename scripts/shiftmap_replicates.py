@@ -11,15 +11,18 @@ patches whose output differs in any run, the cell's mean hole PSNR in every
 realisation, its standard deviation and range across realisations, and the
 largest range of a single patch's hole PSNR.
 
-Output: results/shiftmap_replicates/<sweep>.csv.
+Output: results/shiftmap_replicates/<sweep>.csv. Each cell is saved when it
+finishes (results/shiftmap_replicates/units/<sweep>/), so an interrupted run
+resumes at the cells it had not finished.
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import json
+import shutil
 import sys
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +30,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from baselines import baseline_shiftmap  # noqa: E402
+from checkpoint import UnitStore, digests  # noqa: E402
 from quality import psnr_hole  # noqa: E402
 
 OUT = ROOT / "results" / "shiftmap_replicates"
@@ -55,6 +59,38 @@ def _cell(args: tuple) -> dict:
     return {"family": fam, "level": lvl, "seed": SEED, **spread(ref, outs, M)}
 
 
+def _store(units: Path, cell_dir: Path, runs: int, ref_path: Path) -> UnitStore:
+    """A cell's measurement is reused only for the same inputs, sweep output and code."""
+    return UnitStore(units, {"seed": SEED, "runs": runs,
+                             "inputs": digests([cell_dir / "y.npy", cell_dir / "mask.npy",
+                                                cell_dir / "x_hat_shiftmap.npy", ref_path]),
+                             "code": digests([ROOT / "src" / "baselines.py", Path(__file__)])})
+
+
+def measure(jobs: list[tuple], stores: dict, workers: int) -> None:
+    """Measure the cells that have not finished, saving each as it finishes. With
+    one worker the cells run here, one after another (every shift-map call runs
+    in its own interpreter either way)."""
+    todo = [j for j in jobs if stores[j[0]].load(j[0].parent.name) is None]
+    if workers <= 1:
+        for j in todo:
+            stores[j[0]].save(j[0].parent.name, [_cell(j)])
+            print(f"[shiftmap_replicates] {j[0].parent.name} done", flush=True)
+        return
+    failed = []
+    with ProcessPoolExecutor(workers) as pool:
+        futures = {pool.submit(_cell, j): j[0] for j in todo}
+        for f in as_completed(futures):
+            cell_dir = futures[f]
+            try:
+                stores[cell_dir].save(cell_dir.parent.name, [f.result()])
+                print(f"[shiftmap_replicates] {cell_dir.parent.name} done", flush=True)
+            except Exception as e:                 # the other cells still finish and are saved
+                failed.append(f"{cell_dir.parent.name}: {e!r}")
+    if failed:
+        raise RuntimeError("cells failed: " + "; ".join(failed))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sweep-dir", default="results/sweep_v2_dfrws")
@@ -70,14 +106,20 @@ def main(argv=None) -> int:
         sweep = ROOT / sweep
     out = Path(args.out_dir)
     path = out / f"{sweep.name}.csv"
-    if path.exists() and not args.force:
+    units = out / "units" / sweep.name
+    if args.force:                                   # new realisations, from the first cell
+        path.unlink(missing_ok=True)
+        shutil.rmtree(units, ignore_errors=True)
+    if path.exists():
         print(f"[shiftmap_replicates] {path} exists; kept (--force to measure again)")
         return 0
     cfg = json.loads((sweep / "run_metadata.json").read_text(encoding="utf-8"))["config"]
-    ref = np.load(ROOT / cfg["patches_path"]).astype(np.float32)
+    ref_path = ROOT / cfg["patches_path"]
+    ref = np.load(ref_path).astype(np.float32)
     jobs = [(sweep / f"{f}_{lv}" / f"seed{SEED}", ref, args.runs) for f in cfg["families"] for lv in cfg["levels"]]
-    with ProcessPoolExecutor(max(1, args.workers)) as pool:
-        rows = list(pool.map(_cell, jobs))
+    stores = {j[0]: _store(units, j[0], args.runs, ref_path) for j in jobs}
+    measure(jobs, stores, args.workers)
+    rows = [stores[j[0]].load(j[0].parent.name)[0] for j in jobs]
     out.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0]))

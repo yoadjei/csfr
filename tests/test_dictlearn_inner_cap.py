@@ -9,6 +9,7 @@ from multiprocessing import get_context
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -59,3 +60,34 @@ def test_reproduces_the_sweep_at_the_released_cap(tmp_path):
     assert (row["family"], row["level"], row["matches_sweep"]) == ("CF2", "L3", "True")
     assert int(row["cap_reference"]) == 2 * int(row["cap_released"]) == 400
     assert 0 <= int(row["n_learned"]) <= int(row["n_patches"]) == 3
+
+
+def test_an_interrupted_study_resumes_at_the_cell_it_stopped_on(tmp_path, monkeypatch):
+    m = _mod()
+    sweep = tmp_path / "sweep_tiny"
+    for lvl in ("L1", "L2"):
+        cell = sweep / f"CF2_{lvl}" / "seed0"
+        cell.mkdir(parents=True)
+        for f in ("y.npy", "mask.npy", "x_hat_dictlearn.npy"):
+            np.save(cell / f, np.zeros((1, 4, 4), np.float32))
+    np.save(tmp_path / "p.npy", np.zeros((1, 4, 4), np.float32))
+    (sweep / "run_metadata.json").write_text(json.dumps(
+        {"config": {"patches_path": str(tmp_path / "p.npy"), "families": ["CF2"],
+                    "levels": {"L1": 0.1, "L2": 0.2}}}))
+    args = ["--sweep-dir", str(sweep), "--workers", "1", "--out-dir", str(tmp_path / "out")]
+    calls = []
+
+    def row(pool, cell_dir, ref, n, factor, workers):
+        calls.append(cell_dir.parent.name)
+        if calls == ["CF2_L1", "CF2_L2"]:
+            raise RuntimeError("killed")
+        return {"family": "CF2", "level": cell_dir.parent.name[-2:], "diff_mean": 0.0,
+                "diff_abs_max": 0.0, "matches_sweep": True}
+
+    monkeypatch.setattr(m, "cell_row", row)
+    with pytest.raises(RuntimeError):
+        m.main(args)
+    assert m.main(args) == 0
+    assert calls == ["CF2_L1", "CF2_L2", "CF2_L2"]           # CF2_L1 was not run again
+    rows = list(csv.DictReader((tmp_path / "out" / "sweep_tiny.csv").open()))
+    assert [r["level"] for r in rows] == ["L1", "L2"]

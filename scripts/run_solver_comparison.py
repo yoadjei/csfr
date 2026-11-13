@@ -28,6 +28,12 @@ Outputs (--out, default results/solver_comparison):
                           each of --trace-iters iterations (FISTA run without a
                           tolerance, so every patch takes every iteration), and
                           the Adam loss and FISTA gap at those points
+
+Every (cell, seed) and every trace point is saved when it finishes, under
+<out>/units/, and reused by a later run with the same inputs, settings and code,
+so an interrupted run resumes where it stopped. The Adam trace continues one run
+from point to point; its state is kept in units/trace/ under a name tied to the
+settings until the trace finishes.
 """
 from __future__ import annotations
 
@@ -47,6 +53,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from csfr_reconstruct_2d import reconstruct  # noqa: E402
+from checkpoint import UnitStore, digests  # noqa: E402
 from csfr_solver import SolverConfig, solve  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("_sweep_v2", ROOT / "scripts" / "run_sweep_v2.py")
@@ -56,6 +63,9 @@ score = _sweep.score
 
 ALL_CELLS = [f"CF{f}_L{l}" for f in range(1, 5) for l in range(1, 6)]
 RELEASED_CFG = ROOT / "configs" / "csfr_sweep_2d.yaml"
+# the code that computes a unit: a change to any of it invalidates the saved units
+CODE = [Path(__file__).resolve(), ROOT / "src" / "csfr_solver.py", ROOT / "src" / "csfr_reconstruct_2d.py",
+        ROOT / "src" / "quality.py", ROOT / "scripts" / "run_sweep_v2.py", RELEASED_CFG]
 
 
 def _released_solver() -> dict:
@@ -91,26 +101,65 @@ def _write(path: Path, rows: list[dict]) -> None:
         w.writerows(rows)
 
 
-def trace(cell_dir: Path, ref: np.ndarray, iters: list[int], tmp: Path) -> list[dict]:
+def _adam_point(y, M, ref, k: int, ckpt: Path) -> dict:
+    """Adam at budget k, continuing the trace's run from its saved state."""
+    x, info = adam(y, M, k, ckpt=ckpt, resume=True)
+    loss = info["history"][-1]["loss"] if info["history"] else float("nan")
+    return {"arm": "adam", "iter": k, "psnr_hole": float(score(ref, x, y, M)["psnr_hole"].mean()),
+            "objective": loss, "objective_kind": "released loss (data + l1 + tv + fc)", "gap_max": ""}
+
+
+def _fista_point(y, M, ref, k: int) -> dict:
+    x, cert = solve(torch.from_numpy(y), torch.from_numpy(M), replace(SolverConfig(), tol=0.0, max_iter=k))
+    return {"arm": "fista", "iter": k, "psnr_hole": float(score(ref, x.numpy(), y, M)["psnr_hole"].mean()),
+            "objective": float(cert.objective.mean()),
+            "objective_kind": "round-2 objective J", "gap_max": float(cert.gap.max())}
+
+
+def trace(cell_dir: Path, ref: np.ndarray, iters: list[int], units: Path, params: dict) -> list[dict]:
     y = np.load(cell_dir / "y.npy").astype(np.float64)
     M = np.load(cell_dir / "mask.npy")
-    rows = []
-    ckpt = tmp / "trace_adam.pt"
-    if ckpt.exists():
-        ckpt.unlink()
-    for k in sorted(iters):
-        x, info = adam(y, M, k, ckpt=ckpt, resume=True)
-        loss = info["history"][-1]["loss"] if info["history"] else float("nan")
-        rows.append({"arm": "adam", "iter": k, "psnr_hole": float(score(ref, x, y, M)["psnr_hole"].mean()),
-                     "objective": loss, "objective_kind": "released loss (data + l1 + tv + fc)",
-                     "gap_max": ""})
+    iters = sorted(iters)
+    store = UnitStore(units, {**params, "iters": iters,
+                              "inputs": digests([cell_dir / "y.npy", cell_dir / "mask.npy"])})
+    # the Adam run continues from point to point; its state belongs to these settings only
+    ckpt = units / f"trace_adam_{store.key()}.pt"
+    ckpt.parent.mkdir(parents=True, exist_ok=True)
+    rows = [r for k in iters for r in store.rows(f"adam_{k}", lambda k=k: [_adam_point(y, M, ref, k, ckpt)])]
     ckpt.unlink(missing_ok=True)
-    for k in sorted(iters):
-        x, cert = solve(torch.from_numpy(y), torch.from_numpy(M), replace(SolverConfig(), tol=0.0, max_iter=k))
-        rows.append({"arm": "fista", "iter": k,
-                     "psnr_hole": float(score(ref, x.numpy(), y, M)["psnr_hole"].mean()),
-                     "objective": float(cert.objective.mean()),
-                     "objective_kind": "round-2 objective J", "gap_max": float(cert.gap.max())})
+    rows += [r for k in iters for r in store.rows(f"fista_{k}", lambda k=k: [_fista_point(y, M, ref, k)])]
+    return rows
+
+
+def cell_unit(args, cell: str, seed: int, d: Path, ref: np.ndarray, tols: list[float]) -> list[dict]:
+    """Every arm on one cell at one mask seed."""
+    y = np.load(d / "y.npy")
+    M = np.load(d / "mask.npy")
+    if not np.array_equal(y, ref * M):
+        raise RuntimeError(f"{d}: released y differs from patches * mask")
+    y64 = y.astype(np.float64)
+    meta = json.loads((d / "metrics.json").read_text())
+    x_rel = np.load(d / "x_hat.npy").astype(np.float64)
+    rows = [_row("adam600_released", cell, seed, ref, x_rel, y64, M,
+                 float(meta["runtime_s"]), meta.get("device", "unknown"), iterations=600)]
+    budgets = list(args.adam_budgets)
+    if seed == args.retime_seed and 600 not in budgets:
+        budgets = [600] + budgets
+    for T in budgets:
+        t0 = time.time()
+        x, _ = adam(y64, M, T)
+        dt = time.time() - t0
+        extra = {"iterations": T}
+        if T == 600:
+            extra["max_abs_diff_vs_released"] = float(np.abs(x - x_rel).max())
+        rows.append(_row(f"adam{T}_cpu", cell, seed, ref, x, y64, M, dt, "cpu", **extra))
+    for tol in tols:
+        t0 = time.time()
+        x, cert = solve(torch.from_numpy(y64), torch.from_numpy(M), replace(SolverConfig(), tol=tol))
+        dt = time.time() - t0
+        rows.append(_row(f"fista_gap{tol:.0e}", cell, seed, ref, x.numpy(), y64, M, dt, "cpu",
+                         iterations=float(cert.iterations.float().median()),
+                         n_converged=int(cert.converged.sum()), gap_max=float(cert.gap.max())))
     return rows
 
 
@@ -138,38 +187,16 @@ def main(argv=None) -> int:
     ppath = Path(args.patches) if Path(args.patches).is_absolute() else ROOT / args.patches
     ref = np.load(ppath).astype(np.float32)
     tols = list(dict.fromkeys(args.tols))
+    params = {"patches": digests([ppath]), "code": digests(CODE)}
+    cell_params = {**params, "adam_budgets": list(args.adam_budgets), "tols": tols, "retime_seed": args.retime_seed}
     rows: list[dict] = []
     for cell in args.cells:
         for seed in args.seeds:
             d = released / cell / f"seed{seed}"
-            y = np.load(d / "y.npy")
-            M = np.load(d / "mask.npy")
-            if not np.array_equal(y, ref * M):
-                raise RuntimeError(f"{d}: released y differs from patches * mask")
-            y64 = y.astype(np.float64)
-            meta = json.loads((d / "metrics.json").read_text())
-            x_rel = np.load(d / "x_hat.npy").astype(np.float64)
-            rows.append(_row("adam600_released", cell, seed, ref, x_rel, y64, M,
-                             float(meta["runtime_s"]), meta.get("device", "unknown"), iterations=600))
-            budgets = list(args.adam_budgets)
-            if seed == args.retime_seed and 600 not in budgets:
-                budgets = [600] + budgets
-            for T in budgets:
-                t0 = time.time()
-                x, _ = adam(y64, M, T)
-                dt = time.time() - t0
-                extra = {"iterations": T}
-                if T == 600:
-                    extra["max_abs_diff_vs_released"] = float(np.abs(x - x_rel).max())
-                rows.append(_row(f"adam{T}_cpu", cell, seed, ref, x, y64, M, dt, "cpu", **extra))
-            for tol in tols:
-                t0 = time.time()
-                x, cert = solve(torch.from_numpy(y64), torch.from_numpy(M), replace(SolverConfig(), tol=tol))
-                dt = time.time() - t0
-                rows.append(_row(f"fista_gap{tol:.0e}", cell, seed, ref, x.numpy(), y64, M, dt, "cpu",
-                                 iterations=float(cert.iterations.float().median()),
-                                 n_converged=int(cert.converged.sum()), gap_max=float(cert.gap.max())))
-            last = [r for r in rows if r["cell"] == cell and r["seed"] == seed]
+            store = UnitStore(out / "units" / "cells", {**cell_params, "inputs": digests(
+                [d / "y.npy", d / "mask.npy", d / "x_hat.npy", d / "metrics.json"])})
+            last = store.rows(f"{cell}_seed{seed}", lambda: cell_unit(args, cell, seed, d, ref, tols))
+            rows += last
             print(f"[solver_cmp] {cell} seed {seed}: " +
                   "  ".join(f"{r['arm']} {r['psnr_hole']:.2f}dB/{r['seconds']:.0f}s" for r in last), flush=True)
             _write(out / "per_cell.csv", rows)
@@ -190,7 +217,7 @@ def main(argv=None) -> int:
                                                if "n_converged" in rs[0] else "")})
     _write(out / "quality_vs_compute.csv", summary)
     if args.trace_cell in args.cells:
-        t = trace(released / args.trace_cell / "seed0", ref, args.trace_iters, out)
+        t = trace(released / args.trace_cell / "seed0", ref, args.trace_iters, out / "units" / "trace", params)
         _write(out / f"trace_{args.trace_cell}.csv", t)
     (out / "README.md").write_text(
         "Solver comparison (E5); see the docstring of scripts/run_solver_comparison.py.\n"
