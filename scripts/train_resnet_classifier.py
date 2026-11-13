@@ -6,7 +6,9 @@ DigitResNet on the SVHN training split (90 percent; 10 percent monitors
 validation accuracy), 15 epochs, Adam 1e-3 with cosine decay, batch 128, weight
 decay 5e-4, seed 0, CPU. Saves results/downstream_v2/classifier_resnet.pt with
 the clean test accuracy in its metadata. Stops without saving if the clean test
-accuracy is below 0.95. Temperatures are fitted by the downstream harness, for
+accuracy is below 0.95. The training state is saved after every epoch
+(--checkpoint), and a rerun resumes after the last saved epoch with the result
+an uninterrupted run gives. Temperatures are fitted by the downstream harness, for
 both classifiers, on SVHN test images disjoint from the evaluation subset.
 """
 from __future__ import annotations
@@ -33,6 +35,7 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--out", default="results/downstream_v2/classifier_resnet.pt")
+    ap.add_argument("--checkpoint", default="results/downstream_v2/classifier_resnet_training.pt")
     args = ap.parse_args(argv)
 
     torch.set_num_threads(args.threads)
@@ -43,7 +46,8 @@ def main(argv=None) -> int:
         raise SystemExit(f"SVHN unavailable (got {corpus}); the downstream experiment is defined on SVHN")
     t0 = time.time()
     model, info = train_classifier(train_x, train_y, epochs=args.epochs, batch_size=128, lr=1e-3,
-                                   seed=args.seed, arch="DigitResNet", weight_decay=5e-4, cosine=True)
+                                   seed=args.seed, arch="DigitResNet", weight_decay=5e-4, cosine=True,
+                                   checkpoint=ROOT / args.checkpoint)
     acc = clean_top1_accuracy(model, test_x, test_y)
     print(f"[resnet] clean SVHN test top-1 {acc:.4f} after {time.time() - t0:.0f}s", flush=True)
     if acc < MIN_CLEAN_ACC:

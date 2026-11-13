@@ -20,6 +20,8 @@ import torch.nn.functional as F
 from scipy.io import loadmat
 from torch.utils.data import DataLoader, TensorDataset
 
+from checkpoint import digests, replace_with_retry
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SVHN_DIR = ROOT / "data" / "svhn"
 DEFAULT_MNIST_DIR = ROOT / "data" / "mnist"
@@ -320,11 +322,18 @@ def train_classifier(
     arch: str = "DigitCNN",
     weight_decay: float = 0.0,
     cosine: bool = False,
+    checkpoint: Optional[Path] = None,
 ) -> Tuple[nn.Module, dict]:
     """Train a classifier on clean digits. Returns (frozen model, info dict).
 
     The defaults reproduce the released DigitCNN training exactly; round 2
     trains DigitResNet with weight decay and a cosine learning-rate schedule.
+
+    With checkpoint, the training state (weights, optimiser, schedule, shuffle
+    and RNG state) is saved there after every epoch, and a later call with the
+    same settings and data resumes after the last saved epoch, ending with the
+    weights an uninterrupted run ends with. A checkpoint from other settings,
+    data or code (this file) is ignored and overwritten.
     """
     set_seed(seed)
     device = device or torch.device("cpu")
@@ -339,10 +348,8 @@ def train_classifier(
     val_ds = TensorDataset(images[val_idx], labels[val_idx])
     # reseeds so DataLoader shuffle is also deterministic across runs
     set_seed(seed)
-    train_loader = DataLoader(
-        train_ds, batch_size=batch_size, shuffle=True,
-        generator=torch.Generator().manual_seed(seed),
-    )
+    shuffle = torch.Generator().manual_seed(seed)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, generator=shuffle)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
     model = ARCHS[arch]().to(device)
@@ -350,8 +357,14 @@ def train_classifier(
     sched = (torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs * len(train_loader))
              if cosine else None)
     history = {"train_loss": [], "val_acc": []}
+    state = _TrainingState(
+        checkpoint, model, opt, sched, shuffle, history,
+        settings={"arch": arch, "epochs": epochs, "batch_size": batch_size, "lr": lr, "seed": seed,
+                  "val_fraction": val_fraction, "weight_decay": weight_decay, "cosine": cosine,
+                  "data": _data_digest(images, labels), "code": digests([Path(__file__)])})
+    start = state.resume()
 
-    for epoch in range(epochs):
+    for epoch in range(start, epochs):
         model.train()
         losses = []
         for xb, yb in train_loader:
@@ -370,6 +383,7 @@ def train_classifier(
             f"epoch {epoch + 1}/{epochs}  "
             f"loss={history['train_loss'][-1]:.4f}  val_acc={val_acc:.4f}"
         )
+        state.save(epoch + 1)
 
     freeze(model)
     info = {
@@ -381,7 +395,57 @@ def train_classifier(
         "history": history,
         "val_acc": history["val_acc"][-1],
     }
+    if start:
+        info["resumed_after_epoch"] = start
     return model.cpu(), info
+
+
+def _data_digest(images: torch.Tensor, labels: torch.Tensor) -> str:
+    h = hashlib.sha256()
+    for t in (images, labels):
+        h.update(np.ascontiguousarray(t.detach().cpu().numpy()))
+    return h.hexdigest()
+
+
+class _TrainingState:
+    """The per-epoch checkpoint of train_classifier; does nothing without a path."""
+
+    def __init__(self, path, model, opt, sched, shuffle, history, settings) -> None:
+        self.path = Path(path) if path is not None else None
+        self.model, self.opt, self.sched, self.shuffle = model, opt, sched, shuffle
+        self.history, self.settings = history, settings
+
+    def resume(self) -> int:
+        """Load the saved state; the number of finished epochs (0 to start over)."""
+        if self.path is None or not self.path.exists():
+            return 0
+        s = torch.load(self.path, weights_only=False)      # written by save() below
+        if s.get("settings") != self.settings:
+            print(f"checkpoint {self.path} is from other settings or data; starting over")
+            return 0
+        self.model.load_state_dict(s["model"])
+        self.opt.load_state_dict(s["opt"])
+        if self.sched is not None:
+            self.sched.load_state_dict(s["sched"])
+        self.shuffle.set_state(s["shuffle"])
+        torch.set_rng_state(s["torch_rng"])
+        np.random.set_state(s["numpy_rng"])
+        self.history.update(s["history"])
+        print(f"resumed from {self.path} after epoch {s['epoch']}")
+        return int(s["epoch"])
+
+    def save(self, epoch: int) -> None:
+        if self.path is None:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        torch.save({"settings": self.settings, "epoch": epoch, "model": self.model.state_dict(),
+                    "opt": self.opt.state_dict(),
+                    "sched": self.sched.state_dict() if self.sched is not None else None,
+                    "shuffle": self.shuffle.get_state(), "torch_rng": torch.get_rng_state(),
+                    "numpy_rng": np.random.get_state(),
+                    "history": {k: list(v) for k, v in self.history.items()}}, tmp)
+        replace_with_retry(tmp, self.path)
 
 
 def _accuracy(model: nn.Module, loader: DataLoader, device: torch.device) -> float:
