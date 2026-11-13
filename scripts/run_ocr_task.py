@@ -140,6 +140,7 @@ def cmd_reconstruct(args) -> int:
     spec = importlib.util.spec_from_file_location("_sweep_v2", ROOT / "scripts" / "run_sweep_v2.py")
     sweep = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(sweep)
+    from checkpoint import replace_with_retry
     torch.set_num_threads(args.threads)
     X = np.load(ROOT / "data/ocr/crops.npy").astype(np.float32)
     pool = sweep._make_pool(args.workers)
@@ -157,12 +158,15 @@ def cmd_reconstruct(args) -> int:
                     f = d / f"x_hat_{m}.npy"
                     if f.exists():
                         continue
+                    # the output marks the method done, so it appears only when written in full
+                    part = d / f".partial_{f.name}"
                     if m in VARIANTS:
                         x, _ = solve(torch.from_numpy(y.astype(np.float64)), torch.from_numpy(M), VARIANTS[m])
-                        sweep.save_output(f, x.numpy(), sweep.CSFR_STORE_MAX_ERR)
+                        sweep.save_output(part, x.numpy(), sweep.CSFR_STORE_MAX_ERR)
                     else:
                         x, _ = sweep.run_baseline(m, y, M, seed, workers=args.workers, pool=pool)
-                        sweep.save_output(f, x)
+                        sweep.save_output(part, x)
+                    replace_with_retry(part, f)
                 print(f"[ocr] reconstructed {cell} seed {seed}", flush=True)
     finally:
         pool.shutdown()
@@ -170,6 +174,8 @@ def cmd_reconstruct(args) -> int:
 
 
 def cmd_recognise(args) -> int:
+    sys.path.insert(0, str(ROOT / "src"))
+    from checkpoint import write_text_atomic
     reader = _reader()
     for d in sorted((ROOT / "results/ocr/cases").glob("*/seed*")):
         tpath = d / "texts.json"
@@ -180,7 +186,7 @@ def cmd_recognise(args) -> int:
                 continue
             arr = np.load(f).astype(np.float32)
             texts[name] = [_recognise(reader, a) for a in arr]
-            tpath.write_text(json.dumps(texts), encoding="utf-8")
+            write_text_atomic(tpath, json.dumps(texts))
         print(f"[ocr] recognised {d.parent.name}/{d.name}", flush=True)
     return 0
 

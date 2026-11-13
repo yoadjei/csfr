@@ -25,6 +25,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from checkpoint import save_npy_atomic, write_text_atomic  # noqa: E402
 
 
 def _model():
@@ -81,7 +82,6 @@ def main(argv=None) -> int:
         t0 = time.time()
         x = inpaint_any(model, y, M)
         dt = time.time() - t0
-        np.save(d / "x_hat_lama.npy", x.astype(np.float32))
         n = y.shape[0] if y.ndim in (3, 4) and not (y.ndim == 3 and y.shape[-1] == 3) else 1
         meta = {"backend": "big-lama (simple-lama-inpainting 0.1.2)", "resolution": "native",
                 "input": "grey replicated to RGB" if y.ndim == 3 and y.shape[-1] != 3 else "RGB",
@@ -89,7 +89,9 @@ def main(argv=None) -> int:
                 "torch": torch.__version__, "numpy": np.__version__,
                 "python": platform.python_version(), "platform": platform.platform(),
                 "seconds": dt, "seconds_per_item": dt / max(n, 1), "n": int(n)}
-        (d / "lama_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        # x_hat_lama.npy marks the directory done, so it is written last and whole
+        write_text_atomic(d / "lama_meta.json", json.dumps(meta, indent=2))
+        save_npy_atomic(d / "x_hat_lama.npy", x.astype(np.float32))
         print(f"[lama] {d.relative_to(Path(args.root))}: {n} items, {dt:.1f}s", flush=True)
     return 0
 
