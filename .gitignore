@@ -106,3 +106,7 @@ data/ocr/
 # detached campaign: live process id and the copy of the campaign script it runs
 results/campaign.pid
 results/campaign_snapshot.sh
+
+# per-unit checkpoints of resumable runs (src/checkpoint.py); the assembled CSVs are the results
+results/**/units/
+results/**/.partial_*
