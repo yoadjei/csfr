@@ -88,3 +88,18 @@ def test_random_flips_change_the_stated_fraction():
     changed = (F != M).reshape(3, -1).sum(1)
     assert (changed == round(0.05 * 64 * 64)).all()
     assert np.array_equal(perturb_mask(M, "flip", 0.05, np.random.default_rng(0)), F)
+
+
+def test_contiguous_families_draw_nothing_at_random():
+    """The paper says CF3 and CF4 seeds share one mask, and CF1 and CF2 seeds do not."""
+    for fam in ["CF3", "CF4"]:
+        for frac in SEVERITY.values():
+            a = make_mask((4, 64, 64), fam, frac, np.random.default_rng(0))
+            b = make_mask((4, 64, 64), fam, frac, np.random.default_rng(12345))
+            assert np.array_equal(a, b)
+    for fam in ["CF1", "CF2"]:
+        a = make_mask((4, 64, 64), fam, 0.15, np.random.default_rng(0))
+        b = make_mask((4, 64, 64), fam, 0.15, np.random.default_rng(1))
+        assert not np.array_equal(a, b)
+    tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
+    assert "CF3 and CF4 erase a fixed band of rows and draw nothing at random" in tex

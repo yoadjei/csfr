@@ -320,7 +320,7 @@ Three corpora of grey-level $64 \times 64$ patches carry the quantitative compar
 \subsection{Corruption families and severity}
 \label{sec:experiments:families}
 
-The four corruption families of Table~\ref{tab:severity} move damage modes documented in the file-carving literature~\cite{garfinkel2007carving,pal2009evolution} into the pixel domain: scattered loss (CF1), burst damage (CF2), overwrite of the top of the patch (CF3) and truncation of its bottom (CF4). CF3 and CF4 are contiguous losses, and CF2 lies between the two kinds. Every cell, a family at a severity level, runs with \sweepSeeds\ mask seeds, and every method sees the same masks.
+The four corruption families of Table~\ref{tab:severity} move damage modes documented in the file-carving literature~\cite{garfinkel2007carving,pal2009evolution} into the pixel domain: scattered loss (CF1), burst damage (CF2), overwrite of the top of the patch (CF3) and truncation of its bottom (CF4). CF3 and CF4 are contiguous losses, and CF2 lies between the two kinds. Every cell, a family at a severity level, runs with \sweepSeeds\ mask seeds, and every method sees the same masks. CF3 and CF4 erase a fixed band of rows and draw nothing at random, so their \sweepSeeds\ seeds share one mask. In these two families the seed changes only the fit of the dictionary-learning baseline.
 
 \begin{table}[htbp]
 \centering
