@@ -5,6 +5,8 @@ defaults."""
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -165,3 +167,51 @@ def test_calibration_macros_follow_the_selection_rule():
     assert SolverConfig().tol == max(passing), "default tol is not the calibrated one"
     c = m.calibration_macros()
     assert c["calibNextFailCells"] != m.PLACEHOLDER
+
+
+def _r1_write(d, rows, residual=1.2e-6):
+    import csv
+    d.mkdir(parents=True, exist_ok=True)
+    fields = ["family", "level", "seed", "baseline", "hole_pixels_min", "hole_pixels_max", "n_pixels", "n_whole",
+              "n_hole", "n_capped", "whole_diff", "hole_diff", "change", "cap_part", "rest_part", "dropped_part",
+              "capped_mean_move"]
+    with (d / "comparisons.csv").open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows({k: r.get(k, 0) for k in fields} for r in rows)
+    with (d / "shift_residual.csv").open("w", newline="", encoding="utf-8") as f:
+        f.write(f"method,n_patches_checked,max_abs_residual_db\ncsfr,10,{residual}\n")
+
+
+def _r1_row(**kw):
+    import math
+    move = -10 * math.log10(4096 / 192)
+    base = dict(family="CF4", level="L1", seed=0, baseline="inpaint_telea", hole_pixels_min=192, hole_pixels_max=192,
+                n_pixels=4096, n_whole=300, n_hole=300, n_capped=3, whole_diff=0.106, hole_diff=0.106 + 3 * move / 300,
+                change=3 * move / 300, cap_part=3 * move / 300, rest_part=4e-8, capped_mean_move=move)
+    return {**base, **kw}
+
+
+def test_r1_hole_whole_macros(tmp_path):
+    """The response to R4.4: pending without the CSVs; the largest change and
+    its cell; a comparison without capped patches does not count as capped."""
+    m = _mod()
+    assert set(m.r1_hole_whole_macros(tmp_path / "none").values()) == {m.PLACEHOLDER}
+    _r1_write(tmp_path, [_r1_row(), _r1_row(family="CF1", baseline="bilinear", n_capped=0, change=1e-9,
+                                            cap_part=0.0, rest_part=1e-9, capped_mean_move="nan")])
+    c = m.r1_hole_whole_macros(tmp_path)
+    assert (c["rOneComparisons"], c["rOneCappedComparisons"], c["rOneChangeMax"]) == ("2", "1", "0.13")
+    assert (c["rOneBaselines"], c["rOneCells"], c["rOneSeeds"]) == ("2", "2", "1")
+    assert (c["rOneWorstFamily"], c["rOneWorstLevel"], c["rOneWorstBaseline"]) == ("CF4", "L1", "Telea")
+    assert (c["rOneWorstMove"], c["rOneWorstWhole"], c["rOneWorstHole"]) == ("13.29", "+0.11", "-0.03")
+    assert c["rOneRestMax"] == r"4\times 10^{-8}" and c["rOneShiftResidualMax"] == r"1.2\times 10^{-6}"
+
+
+# a dropped patch; a move that is not the shift; a hole that varies; CSFR, not the baseline, at the cap
+@pytest.mark.parametrize("bad", [dict(n_hole=299), dict(capped_mean_move=-5.0), dict(hole_pixels_max=200),
+                                 dict(capped_mean_move=10 * __import__("math").log10(4096 / 192))])
+def test_r1_hole_whole_macros_refuse_a_false_explanation(tmp_path, bad):
+    m = _mod()
+    _r1_write(tmp_path, [_r1_row(**bad)])
+    with pytest.raises(ValueError):
+        m.r1_hole_whole_macros(tmp_path)
