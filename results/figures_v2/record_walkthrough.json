@@ -1,0 +1,93 @@
+{
+  "sweep": "sweep_v2_govdocs1",
+  "cell": "CF3_L5",
+  "seed": 0,
+  "patch": 0,
+  "solver_iterations": 1500,
+  "solver": {
+    "lam_l1": 0.02,
+    "lam_tv": 0.1,
+    "lam_fc": 0.005,
+    "eps": 1.0,
+    "clip": true,
+    "tol": 1e-06,
+    "max_iter": 20000,
+    "check_every": 10,
+    "log_every": 100,
+    "restart": true,
+    "init": "zero",
+    "dtype": "float64"
+  },
+  "record": {
+    "cg_rtol": 1e-10,
+    "cg_max_iter": 5000,
+    "damping_rel": 0.0,
+    "bound_margin": 1e-06,
+    "top_k": 12,
+    "support_rel": 1e-06,
+    "ref_tol": 5e-12,
+    "ref_max_iter": 100000
+  },
+  "n_observed": 1216,
+  "n_free": 2880,
+  "rows": [
+    {
+      "pixel": [
+        44,
+        0
+      ],
+      "cg_iters": 449,
+      "cg_residual": 9.37247236147123e-11,
+      "support": 1216,
+      "affine_defect": 1.678224226253633e-11,
+      "max_abs_weight": 0.15238231088331555
+    },
+    {
+      "pixel": [
+        42,
+        0
+      ],
+      "cg_iters": 447,
+      "cg_residual": 9.08070087082247e-11,
+      "support": 1216,
+      "affine_defect": -1.4352208310697279e-10,
+      "max_abs_weight": 0.026967263970020135
+    },
+    {
+      "pixel": [
+        0,
+        0
+      ],
+      "cg_iters": 449,
+      "cg_residual": 9.119748335986007e-11,
+      "support": 1216,
+      "affine_defect": -1.6690204773794903e-11,
+      "max_abs_weight": 0.008300749172559723
+    }
+  ],
+  "column_pixel": [
+    45,
+    0
+  ],
+  "column_distance": 1,
+  "column": [
+    {
+      "delta": 0.25,
+      "rel_l2_error_ref": 0.0014507677699539868,
+      "sign_agreement_topk": 1.0,
+      "ref_converged": true
+    },
+    {
+      "delta": 1.0,
+      "rel_l2_error_ref": 0.005813014783532823,
+      "sign_agreement_topk": 1.0,
+      "ref_converged": true
+    },
+    {
+      "delta": 4.0,
+      "rel_l2_error_ref": 0.023024776405351128,
+      "sign_agreement_topk": 1.0,
+      "ref_converged": true
+    }
+  ]
+}

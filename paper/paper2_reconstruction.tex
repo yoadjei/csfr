@@ -474,7 +474,14 @@ Each arm removes one part of CSFR and is solved to the same certificate (Section
 \subsection{Sensitivity record fidelity}
 \label{sec:results:fidelity}
 
-For up to three observed pixels per patch, at distances 1, 3 and at least 8 from the hole where such pixels exist, the column of the record is compared with the difference quotient of a perturbed re-solve (Section~\ref{sec:framework:audit}). Table~\ref{tab:fidelity} gives the relative error against the reference re-solve, and SRF against the reference and the operational re-solve, at a perturbation of one grey level. The supplement gives perturbations from \recDeltaMin\ to \recDeltaMax\ grey levels and other tolerances.
+For up to three observed pixels per patch, at distances 1, 3 and at least 8 from the hole where such pixels exist, the column of the record is compared with the difference quotient of a perturbed re-solve (Section~\ref{sec:framework:audit}). Table~\ref{tab:fidelity} gives the relative error against the reference re-solve, and SRF against the reference and the operational re-solve, at a perturbation of one grey level. The supplement gives perturbations from \recDeltaMin\ to \recDeltaMax\ grey levels and other tolerances. Fig.~\ref{fig:record} shows the record of one reconstruction: the rows its manifest stores and one column checked against re-solves.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{figures/record_walkthrough.pdf}
+\caption{Sensitivity record of one CSFR reconstruction: the first patch of GovDocs1 under CF3~L5 at mask seed~0, whose manifest the fidelity experiment writes. (a)~Source patch. (b)~Observed pixels and the queried pixels: 1, 2 and 3 are the row queries of Section~\ref{sec:framework:audit} (the imputed pixels at distance 1 and 3 from the observed region and the deepest, first in raster order), and $k$ is the observed pixel at distance 1 from the hole. (c)~CSFR reconstruction. (d)~The column of $k$: predicted entries against those measured by perturbing $Y_{k}$ by $\delta$ and re-solving at the reference tolerance, for the three perturbations of the fidelity experiment, with the relative error $e(\delta)$ in the legend; the line marks equality. (e)--(g)~The rows of pixels 1 to 3 over the observed pixels, in grey levels of the imputed pixel per grey level of the observed pixel, each on its own symmetric scale. Below each: the conjugate-gradient iterations and relative residual, the affine defect $1 - \sum w$ (zero for an exact row when no imputed pixel is at a bound), and the support. (h)~The sum of $|w|$ over the observed pixels at each distance from the hole. A row is a derivative of the solution map, not a share of the pixel value. Rendered by \texttt{scripts/\allowbreak render\allowbreak\_figures\allowbreak\_v2.py}, which re-solves the patch, checks it against the released output and writes the numbers shown to \texttt{results/\allowbreak figures\allowbreak\_v2/}.}
+\label{fig:record}
+\end{figure*}
 
 \resultpending{relative error and SRF per family and level; where the record is least accurate and why}
 
