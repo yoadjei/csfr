@@ -215,3 +215,78 @@ def test_r1_hole_whole_macros_refuse_a_false_explanation(tmp_path, bad):
     _r1_write(tmp_path, [_r1_row(**bad)])
     with pytest.raises(ValueError):
         m.r1_hole_whole_macros(tmp_path)
+
+
+def _paired(d, cells, missing_lama=None):
+    """stats/paired_tests.csv for cells {(fam, lv): {method: (diff, lo, hi, diff_capfree)}}
+    plus one GMSD row per cell; CSFR's mean is 30 dB, a method's 30 - diff."""
+    import csv
+    rows = []
+    for (f, lv), methods in cells.items():
+        for meth, (diff, lo, hi, cf) in methods.items():
+            if meth == "lama" and (f, lv) == missing_lama:
+                continue
+            rows.append({"family": f, "level": lv, "metric": "psnr_hole", "method": meth,
+                         "csfr_mean": 30.0, "method_mean": 30.0 - diff, "diff_mean": diff,
+                         "ci_cluster_lo": lo, "ci_cluster_hi": hi,
+                         "diff_mean_capfree": "" if meth == "lama" else cf})
+        rows.append({"family": f, "level": lv, "metric": "gmsd_hole", "method": "fsr",
+                     "csfr_mean": 0.2, "method_mean": 0.1, "diff_mean": -0.1,
+                     "ci_cluster_lo": -0.2, "ci_cluster_hi": -0.05, "diff_mean_capfree": ""})
+    (d / "stats").mkdir(parents=True)
+    with (d / "stats" / "paired_tests.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+
+
+def _comparison_cells():
+    """CF1: block-DCT ahead at every level by 1.0 + 0.5 i, significant at four;
+    CF2: FSR ahead at L1-L3, CSFR ahead at L4-L5 (significant at L5);
+    CF3, CF4: CSFR first everywhere, by 0.2. LaMa: behind CSFR on CF1, ahead
+    elsewhere. One cell (CF2 L4) whose cap-free patches change the strongest
+    method and the sign."""
+    cells = {}
+    for i, lv in enumerate(("L1", "L2", "L3", "L4", "L5")):
+        g = 1.0 + 0.5 * i
+        cells[("CF1", lv)] = {"guleryuz": (-g, -g - 0.5, -0.1 if i else 0.3, -g),
+                              "fsr": (2.0, 1.0, 3.0, 2.0), "lama": (3.0, 1.0, 5.0, "")}
+        f2 = (-0.4, -0.6, -0.2, -0.4) if i < 3 else (0.3, 0.1 if i == 4 else -0.1, 0.5, 0.3)
+        cf2_fsr_capfree = -0.2 if lv == "L4" else f2[3]
+        cells[("CF2", lv)] = {"fsr": (*f2[:3], cf2_fsr_capfree),
+                              "biharmonic": (0.5 if lv != "L4" else 0.4, 0.2, 0.8, -0.3 if lv == "L4" else 0.5),
+                              "lama": (-1.0, -1.5, -0.5, "")}
+        for f in ("CF3", "CF4"):
+            cells[(f, lv)] = {"inpaint_ns": (0.2, -0.1, 0.4, 0.2), "biharmonic": (0.8, 0.5, 1.1, 0.8),
+                             "lama": (-0.6, -1.2, 0.1, "")}
+    return cells
+
+
+def test_comparison_macros_read_rank_gap_and_intervals_per_family(tmp_path):
+    m = _mod()
+    assert set(m.comparison_macros("Gov", tmp_path).values()) == {m.PLACEHOLDER}
+    _paired(tmp_path, _comparison_cells())
+    q = m.comparison_macros("Gov", tmp_path)
+    assert set(q) == set(m.comparison_names("Gov"))
+    assert (q["qGovCFoneRankMin"], q["qGovCFoneRankMax"], q["qGovCFoneNFirst"]) == ("2", "2", "0")
+    assert q["qGovCFoneStrongest"] == "block-DCT thresholding"
+    assert (q["qGovCFoneBehindMin"], q["qGovCFoneBehindMax"], q["qGovCFoneNBehindSig"]) == ("1.00", "3.00", "4")
+    assert (q["qGovCFoneAheadMax"], q["qGovCFoneNAheadSig"]) == ("--", "0")
+    assert (q["qGovCFoneLamaAheadMax"], q["qGovCFoneLamaBehindMax"], q["qGovCFoneNLamaAheadSig"]) == ("3.00", "--", "5")
+    assert (q["qGovCFtwoRankMin"], q["qGovCFtwoRankMax"], q["qGovCFtwoNFirst"]) == ("1", "2", "2")
+    assert q["qGovCFtwoStrongest"] == "FSR"                          # best by the signed difference
+    assert (q["qGovCFtwoBehindMin"], q["qGovCFtwoBehindMax"], q["qGovCFtwoNBehindSig"]) == ("0.40", "0.40", "3")
+    assert (q["qGovCFtwoAheadMax"], q["qGovCFtwoNAheadSig"]) == ("0.30", "1")
+    assert (q["qGovCFtwoLamaBehindMax"], q["qGovCFtwoNLamaBehindSig"]) == ("1.00", "5")
+    assert (q["qGovCFthreeNFirst"], q["qGovCFthreeStrongest"], q["qGovCFthreeNLamaBehindSig"]) == ("5", "Navier--Stokes", "0")
+    assert q["qGovNMethods"] == "3" and q["qGovNFirst"] == "12"      # CF2 L4-L5, CF3, CF4
+    assert (q["qGovGmsdNFirst"], q["qGovGmsdRankMin"]) == ("0", "2")
+    assert (q["qGovCapfreeNewStrongest"], q["qGovCapfreeNSignFlip"]) == ("1", "1")
+    assert q["qGovCapfreeNFirst"] == "11"                           # CF2 L4 is no longer first
+
+
+def test_comparison_macros_need_lama_at_every_level(tmp_path):
+    m = _mod()
+    _paired(tmp_path, _comparison_cells(), missing_lama=("CF3", "L2"))
+    with pytest.raises(ValueError, match="LaMa is not scored"):
+        m.comparison_macros("Gov", tmp_path)

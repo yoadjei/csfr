@@ -271,20 +271,31 @@ COMPARISON_HEADER = [
     r"Cell & Rank & Method & $\Delta$ & 95\% CI & Led (\%) & $\Delta_{\mathrm{cf}}$ & $\Delta$ & 95\% CI \\"]
 
 
+def cell_comparison(rows: list[dict], fam: str, lv: str, metric: str, where: str) -> dict:
+    """The paired tests of one cell. best: the strongest classical method, the
+    one furthest ahead of CSFR; rank: CSFR's place among itself and the n - 1
+    classical methods; ext: the external method's row, None if not scored.
+    Read from the signed difference (positive favours CSFR for every metric),
+    so it holds whether higher or lower is better."""
+    cell = [r for r in rows if (r["family"], r["level"], r["metric"]) == (fam, lv, metric)]
+    classical = [r for r in cell if r["method"] != EXTERNAL]
+    if not classical:
+        raise ValueError(f"{where}: no {metric} comparisons for {fam} {lv}")
+    return {"best": min(classical, key=lambda r: float(r["diff_mean"])),
+            "rank": 1 + sum(float(r["diff_mean"]) < 0 for r in classical),
+            "n": len(classical) + 1,
+            "ext": next((r for r in cell if r["method"] == EXTERNAL), None)}
+
+
 def comparison_row(rows: list[dict], fam: str, lv: str, metric: str, where: str) -> str:
     """One cell of a sweep's paired tests: CSFR's rank among CSFR and the
     classical methods, the comparison with the strongest classical method
     (difference, interval over source images, share of images CSFR leads,
     cap-free difference), and the comparison with the external method."""
-    cell = [r for r in rows if (r["family"], r["level"], r["metric"]) == (fam, lv, metric)]
-    classical = [r for r in cell if r["method"] != EXTERNAL]
-    if not classical:
-        raise ValueError(f"{where}: no {metric} comparisons for {fam} {lv}")
-    best = max(classical, key=lambda r: float(r["method_mean"]))
-    rank = 1 + sum(float(r["method_mean"]) > float(r["csfr_mean"]) for r in classical)
-    ext = next((r for r in cell if r["method"] == EXTERNAL), None)
+    c = cell_comparison(rows, fam, lv, metric, where)
+    best, ext = c["best"], c["ext"]
     cf = best.get("diff_mean_capfree", "")
-    out = [f"{fam}~{lv}", f"{rank}/{len(classical) + 1}", dict(METHOD_ORDER)[best["method"]],
+    out = [f"{fam}~{lv}", f"{c['rank']}/{c['n']}", dict(METHOD_ORDER)[best["method"]],
            signed(float(best["diff_mean"])),
            interval(float(best["ci_cluster_lo"]), float(best["ci_cluster_hi"])),
            f"{100 * float(best['frac_images_csfr_leads']):.0f}",

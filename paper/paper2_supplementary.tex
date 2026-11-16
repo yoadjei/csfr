@@ -41,7 +41,56 @@ paper.
 \footnotesize
 \setlength{\tabcolsep}{4pt}
 % BEGIN AUTO SUPP_PSNR
-\textbf{[pending]}
+\begin{tabular}{@{}l*{10}{r}@{}}
+\toprule
+ & \multicolumn{5}{c}{CF1} & \multicolumn{5}{c}{CF2} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-11}
+Method & L1 & L2 & L3 & L4 & L5 & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+CSFR & 27.62 & 26.97 & 26.24 & 25.27 & 24.06 & 24.82 & 22.98 & 21.23 & 19.75 & 18.55 \\
+TV-only & 28.77 & 27.69 & 26.49 & 25.04 & 23.36 & 26.97 & 24.26 & 21.63 & 19.80 & 18.35 \\
+Linear & 25.67 & 24.88 & 24.24 & 22.91 & 21.12 & 26.74 & 23.79 & 21.05 & 19.26 & 17.73 \\
+Telea & 24.77 & 23.87 & 23.15 & 22.54 & 21.92 & 24.32 & 22.20 & 20.10 & 18.68 & 17.25 \\
+Navier--Stokes & 26.37 & 25.89 & 25.23 & 24.15 & 22.77 & 25.69 & 23.10 & 20.42 & 18.85 & 17.29 \\
+Dict.\ learning & 16.09$^{\dagger}$ & 15.98$^{\dagger}$ & 15.95 & 15.94 & 15.95 & 19.15 & 17.87 & 17.11 & 16.39 & 15.98 \\
+Biharmonic & 29.44 & 28.61 & 27.52 & 26.04 & 24.30 & 26.30 & 23.66 & 20.89 & 18.79 & 17.12 \\
+Block-DCT thr. & \textbf{35.22} & \textbf{33.26} & \textbf{31.33} & \textbf{29.20} & \textbf{26.40} & \textbf{27.92} & \textbf{24.86} & 21.96 & 19.83 & 18.01 \\
+FSR & 26.68 & 26.27 & 25.78 & 24.98 & 23.72 & 26.21 & 23.97 & 21.66 & 19.75 & 17.71 \\
+Shift-map & 18.78 & 16.15 & 14.59 & 12.91 & 12.62 & 23.13 & 20.01 & 16.70 & 14.81 & 12.91 \\
+Exemplar & 18.74 & 18.27 & 21.17 & 17.79 & 15.79 & 27.17 & 23.77 & 19.82 & 17.32 & 15.22 \\
+LaMa & 26.54 & 25.55 & 24.55 & 22.43 & 18.70 & 25.40 & 23.87 & \textbf{22.16} & \textbf{20.80} & \textbf{19.28} \\
+\midrule
+Zero-fill (floor) & 5.08 & 5.08 & 5.07 & 5.07 & 5.07 & 6.15 & 5.74 & 5.51 & 5.33 & 5.19 \\
+\midrule
+\multicolumn{11}{@{}l}{\footnotesize $^{\dagger}$ The method filled the hole with the observed mean in most patch-runs (Section~\ref{sec:experiments:methods}).} \\
+\multicolumn{11}{@{}l}{\footnotesize Patch-runs at the 100\,dB cap: at most 142 of 1800 per cell (Exemplar, CF2~L1).} \\
+\bottomrule
+\end{tabular}
+\par\medskip
+\begin{tabular}{@{}l*{10}{r}@{}}
+\toprule
+ & \multicolumn{5}{c}{CF3} & \multicolumn{5}{c}{CF4} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-11}
+Method & L1 & L2 & L3 & L4 & L5 & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+CSFR & 26.10 & 21.56 & 18.77 & 16.86 & 15.87 & 25.30 & 20.97 & 18.38 & 16.72 & 15.80 \\
+TV-only & 29.46 & 23.43 & 20.04 & 17.59 & 16.20 & 28.22 & 22.52 & \textbf{19.43} & 17.16 & 16.28 \\
+Linear & 6.05 & 5.86 & 5.65 & 5.46 & 5.21 & 6.36 & 5.82 & 5.67 & 5.56 & 5.47 \\
+Telea & 27.92 & 22.96 & 19.66 & 17.39 & 15.98 & 26.85 & 21.95 & 18.97 & 17.02 & 16.06 \\
+Navier--Stokes & 28.82 & 22.98 & 19.56 & 17.36 & 15.95 & 27.78 & \textbf{22.55} & 19.41 & 17.16 & 16.33 \\
+Dict.\ learning & 22.57 & 16.42 & 15.87 & 15.38 & 15.00 & 22.01 & 16.41 & 15.78 & 15.34 & 14.89 \\
+Biharmonic & 29.36 & 22.71 & 18.85 & 16.17 & 14.76 & 28.15 & 22.06 & 18.29 & 15.81 & 14.86 \\
+Block-DCT thr. & \textbf{30.75} & 21.76 & 17.66 & 15.93 & 15.35 & \textbf{28.28} & 21.05 & 17.34 & 15.90 & 15.28 \\
+FSR & 24.03 & 21.68 & 19.97 & 17.65 & 16.13 & 23.74 & 20.95 & 19.05 & 17.30 & 16.12 \\
+Shift-map & 22.17 & 18.68 & 15.41 & 8.88 & 5.62 & 19.49 & 17.39 & 14.66 & 8.90 & 8.23 \\
+Exemplar & 30.06 & \textbf{23.52} & \textbf{21.03} & \textbf{18.65} & \textbf{16.75} & 28.15 & 22.52 & 19.23 & \textbf{17.53} & \textbf{16.53} \\
+LaMa & 24.46 & 21.53 & 18.96 & 17.10 & 15.76 & 24.07 & 20.70 & 18.43 & 16.94 & 15.44 \\
+\midrule
+Zero-fill (floor) & 6.05 & 5.86 & 5.65 & 5.46 & 5.21 & 6.36 & 5.82 & 5.67 & 5.56 & 5.47 \\
+\midrule
+\multicolumn{11}{@{}l}{\footnotesize Patch-runs at the 100\,dB cap: at most 198 of 1800 per cell (Exemplar, CF3~L1).} \\
+\bottomrule
+\end{tabular}
 % END AUTO SUPP_PSNR
 \end{table}
 
@@ -52,7 +101,53 @@ paper.
 \footnotesize
 \setlength{\tabcolsep}{4pt}
 % BEGIN AUTO SUPP_SSIM
-\textbf{[pending]}
+\begin{tabular}{@{}l*{10}{r}@{}}
+\toprule
+ & \multicolumn{5}{c}{CF1} & \multicolumn{5}{c}{CF2} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-11}
+Method & L1 & L2 & L3 & L4 & L5 & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+CSFR & 0.991 & 0.975 & 0.948 & 0.900 & 0.826 & 0.642 & 0.620 & 0.594 & 0.553 & 0.512 \\
+TV-only & 0.992 & 0.979 & 0.953 & 0.903 & 0.817 & 0.629 & 0.607 & 0.583 & 0.544 & 0.507 \\
+Linear & 0.988 & 0.970 & 0.940 & 0.888 & 0.807 & 0.605 & 0.581 & 0.554 & 0.514 & 0.465 \\
+Telea & 0.986 & 0.962 & 0.917 & 0.850 & 0.766 & 0.620 & 0.598 & 0.569 & 0.527 & 0.482 \\
+Navier--Stokes & 0.988 & 0.970 & 0.940 & 0.885 & 0.801 & 0.609 & 0.588 & 0.562 & 0.519 & 0.476 \\
+Dict.\ learning & 0.821$^{\dagger}$ & 0.719$^{\dagger}$ & 0.620 & 0.523 & 0.440 & 0.456 & 0.432 & 0.407 & 0.384 & 0.406 \\
+Biharmonic & 0.992 & 0.979 & 0.956 & 0.911 & 0.837 & 0.622 & 0.601 & 0.574 & 0.529 & 0.481 \\
+Block-DCT thr. & \textbf{0.996} & \textbf{0.987} & \textbf{0.970} & \textbf{0.934} & \textbf{0.871} & 0.655 & 0.625 & 0.592 & 0.545 & 0.494 \\
+FSR & 0.986 & 0.968 & 0.939 & 0.890 & 0.815 & 0.664 & 0.639 & 0.605 & 0.550 & 0.492 \\
+Shift-map & 0.914 & 0.785 & 0.586 & 0.358 & 0.226 & 0.496 & 0.462 & 0.410 & 0.343 & 0.244 \\
+Exemplar & 0.937 & 0.844 & 0.828 & 0.700 & 0.438 & 0.593 & 0.563 & 0.514 & 0.442 & 0.364 \\
+LaMa & 0.985 & 0.952 & 0.900 & 0.800 & 0.608 & \textbf{0.701} & \textbf{0.680} & \textbf{0.651} & \textbf{0.606} & \textbf{0.547} \\
+\midrule
+Zero-fill (floor) & 0.406 & 0.290 & 0.205 & 0.135 & 0.081 & 0.062 & 0.056 & 0.050 & 0.042 & 0.034 \\
+\midrule
+\multicolumn{11}{@{}l}{\footnotesize $^{\dagger}$ The method filled the hole with the observed mean in most patch-runs (Section~\ref{sec:experiments:methods}).} \\
+\bottomrule
+\end{tabular}
+\par\medskip
+\begin{tabular}{@{}l*{10}{r}@{}}
+\toprule
+ & \multicolumn{5}{c}{CF3} & \multicolumn{5}{c}{CF4} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-11}
+Method & L1 & L2 & L3 & L4 & L5 & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+CSFR & \textbf{0.707} & \textbf{0.533} & \textbf{0.485} & 0.452 & \textbf{0.437} & \textbf{0.714} & \textbf{0.513} & \textbf{0.459} & \textbf{0.438} & 0.429 \\
+TV-only & 0.705 & 0.527 & 0.483 & \textbf{0.453} & \textbf{0.437} & 0.709 & 0.507 & 0.458 & \textbf{0.438} & \textbf{0.431} \\
+Linear & 0.084 & 0.039 & 0.029 & 0.025 & 0.023 & 0.082 & 0.039 & 0.028 & 0.024 & 0.022 \\
+Telea & 0.703 & 0.528 & 0.479 & 0.439 & 0.421 & 0.709 & 0.510 & 0.453 & 0.426 & 0.417 \\
+Navier--Stokes & 0.691 & 0.508 & 0.459 & 0.425 & 0.409 & 0.708 & 0.508 & 0.452 & 0.422 & 0.413 \\
+Dict.\ learning & 0.536 & 0.391 & 0.400 & 0.421 & 0.403 & 0.538 & 0.377 & 0.382 & 0.406 & 0.394 \\
+Biharmonic & 0.706 & 0.515 & 0.458 & 0.419 & 0.403 & 0.711 & 0.498 & 0.436 & 0.408 & 0.401 \\
+Block-DCT thr. & 0.666 & 0.497 & 0.454 & 0.430 & 0.424 & 0.667 & 0.477 & 0.433 & 0.418 & 0.416 \\
+FSR & 0.583 & 0.480 & 0.465 & 0.429 & 0.414 & 0.602 & 0.458 & 0.436 & 0.419 & 0.408 \\
+Shift-map & 0.483 & 0.376 & 0.336 & 0.205 & 0.044 & 0.472 & 0.362 & 0.322 & 0.203 & 0.170 \\
+Exemplar & 0.627 & 0.462 & 0.422 & 0.383 & 0.354 & 0.627 & 0.448 & 0.394 & 0.376 & 0.358 \\
+LaMa & 0.665 & 0.523 & 0.469 & 0.424 & 0.383 & 0.704 & 0.504 & 0.440 & 0.406 & 0.375 \\
+\midrule
+Zero-fill (floor) & 0.084 & 0.039 & 0.029 & 0.025 & 0.023 & 0.082 & 0.039 & 0.028 & 0.024 & 0.022 \\
+\bottomrule
+\end{tabular}
 % END AUTO SUPP_SSIM
 \end{table}
 
@@ -63,7 +158,53 @@ paper.
 \footnotesize
 \setlength{\tabcolsep}{4pt}
 % BEGIN AUTO SUPP_HRP
-\textbf{[pending]}
+\begin{tabular}{@{}l*{10}{r}@{}}
+\toprule
+ & \multicolumn{5}{c}{CF1} & \multicolumn{5}{c}{CF2} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-11}
+Method & L1 & L2 & L3 & L4 & L5 & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+CSFR & 0.67 & 0.66 & 0.66 & 0.65 & 0.63 & 0.49 & 0.48 & 0.46 & 0.43 & 0.38 \\
+TV-only & 0.67 & 0.67 & 0.66 & 0.65 & 0.62 & 0.48 & 0.48 & 0.46 & 0.42 & 0.39 \\
+Linear & 0.69 & 0.69 & 0.68 & 0.68 & 0.68 & 0.61 & 0.62 & 0.60 & 0.60 & 0.60 \\
+Telea & 0.62 & 0.61 & 0.60 & 0.59 & 0.59 & 0.59 & 0.61 & 0.60 & 0.62 & 0.63 \\
+Navier--Stokes & 0.64 & 0.64 & 0.64 & 0.63 & 0.63 & 0.60 & 0.61 & 0.61 & 0.62 & 0.64 \\
+Dict.\ learning & 0.00$^{\dagger}$ & 0.00$^{\dagger}$ & 0.00 & 0.00 & 0.00 & 0.47 & 0.44 & 0.40 & 0.34 & 0.02 \\
+Biharmonic & 0.70 & 0.70 & 0.69 & 0.69 & 0.68 & 0.68 & 0.69 & 0.69 & 0.72 & 0.75 \\
+Block-DCT thr. & 0.72 & 0.72 & 0.71 & 0.70 & 0.69 & 0.48 & 0.45 & 0.42 & 0.37 & 0.29 \\
+FSR & 0.66 & 0.66 & 0.66 & 0.65 & 0.64 & 0.58 & 0.58 & 0.56 & 0.55 & 0.55 \\
+Shift-map & 0.68 & 0.65 & 0.67 & 0.72 & 0.73 & 0.67 & 0.64 & 0.64 & 0.64 & 0.71 \\
+Exemplar & 0.61 & 0.66 & 0.71 & 0.61 & 0.05 & 0.68 & 0.69 & 0.67 & 0.67 & 0.65 \\
+LaMa & 0.70 & 0.70 & 0.71 & 0.73 & 0.68 & 0.69 & 0.70 & 0.69 & 0.69 & 0.70 \\
+\midrule
+Zero-fill (floor) & 4.09 & 4.09 & 4.09 & 4.09 & 4.09 & 4.06 & 4.04 & 4.01 & 3.97 & 4.01 \\
+\midrule
+\multicolumn{11}{@{}l}{\footnotesize $^{\dagger}$ The method filled the hole with the observed mean in most patch-runs (Section~\ref{sec:experiments:methods}).} \\
+\bottomrule
+\end{tabular}
+\par\medskip
+\begin{tabular}{@{}l*{10}{r}@{}}
+\toprule
+ & \multicolumn{5}{c}{CF3} & \multicolumn{5}{c}{CF4} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-11}
+Method & L1 & L2 & L3 & L4 & L5 & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+CSFR & 0.77 & 0.62 & 0.54 & 0.41 & 0.37 & 0.79 & 0.59 & 0.52 & 0.45 & 0.35 \\
+TV-only & 0.75 & 0.64 & 0.58 & 0.48 & 0.49 & 0.77 & 0.61 & 0.55 & 0.51 & 0.45 \\
+Linear & 4.16 & 6.34 & 6.92 & 8.12 & 12.00 & 4.60 & 6.06 & 7.37 & 9.71 & 13.79 \\
+Telea & 0.76 & 0.71 & 0.70 & 0.63 & 0.65 & 0.78 & 0.71 & 0.68 & 0.69 & 0.66 \\
+Navier--Stokes & 0.77 & 0.71 & 0.70 & 0.64 & 0.63 & 0.79 & 0.72 & 0.70 & 0.69 & 0.64 \\
+Dict.\ learning & 0.85 & 0.16 & 0.13 & 0.00 & 0.10 & 0.89 & 0.16 & 0.13 & 0.00 & 0.10 \\
+Biharmonic & 0.87 & 0.89 & 1.00 & 1.13 & 1.26 & 0.89 & 0.90 & 1.00 & 1.16 & 1.28 \\
+Block-DCT thr. & 0.72 & 0.42 & 0.26 & 0.14 & 0.10 & 0.72 & 0.40 & 0.26 & 0.15 & 0.11 \\
+FSR & 0.65 & 0.65 & 0.66 & 0.54 & 0.51 & 0.67 & 0.65 & 0.64 & 0.58 & 0.50 \\
+Shift-map & 0.73 & 0.71 & 0.69 & 3.14 & 11.32 & 0.73 & 0.72 & 0.73 & 3.48 & 5.48 \\
+Exemplar & 0.82 & 0.76 & 0.77 & 0.75 & 0.75 & 0.82 & 0.76 & 0.77 & 0.77 & 0.74 \\
+LaMa & 0.87 & 0.86 & 0.84 & 0.84 & 0.80 & 0.87 & 0.82 & 0.79 & 0.81 & 0.80 \\
+\midrule
+Zero-fill (floor) & 4.16 & 6.34 & 6.92 & 8.12 & 12.00 & 4.60 & 6.06 & 7.37 & 9.71 & 13.79 \\
+\bottomrule
+\end{tabular}
 % END AUTO SUPP_HRP
 \end{table}
 
@@ -74,7 +215,53 @@ paper.
 \footnotesize
 \setlength{\tabcolsep}{4pt}
 % BEGIN AUTO SUPP_CAP
-\textbf{[pending]}
+\begin{tabular}{@{}l*{10}{r}@{}}
+\toprule
+ & \multicolumn{5}{c}{CF1} & \multicolumn{5}{c}{CF2} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-11}
+Method & L1 & L2 & L3 & L4 & L5 & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+CSFR & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+TV-only & 0 & 0 & 0 & 0 & 0 & 93 & 57 & 30 & 12 & 4 \\
+Linear & 2 & 0 & 0 & 0 & 0 & 117 & 75 & 34 & 15 & 6 \\
+Telea & 0 & 0 & 0 & 0 & 0 & 50 & 28 & 8 & 4 & 0 \\
+Navier--Stokes & 0 & 0 & 0 & 0 & 0 & 98 & 63 & 21 & 11 & 2 \\
+Dict.\ learning & 0$^{\dagger}$ & 0$^{\dagger}$ & 0 & 0 & 0 & 1 & 0 & 0 & 0 & 0 \\
+Biharmonic & 0 & 0 & 0 & 0 & 0 & 108 & 70 & 27 & 10 & 2 \\
+Block-DCT thr. & 24 & 23 & 22 & 20 & 8 & 82 & 46 & 15 & 3 & 0 \\
+FSR & 0 & 0 & 0 & 0 & 0 & 54 & 26 & 8 & 0 & 0 \\
+Shift-map & 21 & 1 & 0 & 0 & 0 & 110 & 67 & 26 & 8 & 0 \\
+Exemplar & 6 & 4 & 16 & 0 & 0 & 142 & 90 & 35 & 14 & 8 \\
+LaMa & 0 & 0 & 0 & 0 & 0 & 10 & 5 & 0 & 0 & 0 \\
+\midrule
+Zero-fill (floor) & 0 & 0 & 0 & 0 & 0 & 10 & 5 & 3 & 1 & 0 \\
+\midrule
+\multicolumn{11}{@{}l}{\footnotesize $^{\dagger}$ The method filled the hole with the observed mean in most patch-runs (Section~\ref{sec:experiments:methods}).} \\
+\bottomrule
+\end{tabular}
+\par\medskip
+\begin{tabular}{@{}l*{10}{r}@{}}
+\toprule
+ & \multicolumn{5}{c}{CF3} & \multicolumn{5}{c}{CF4} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-11}
+Method & L1 & L2 & L3 & L4 & L5 & L1 & L2 & L3 & L4 & L5 \\
+\midrule
+CSFR & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+TV-only & 144 & 87 & 57 & 12 & 6 & 129 & 78 & 48 & 12 & 12 \\
+Linear & 9 & 9 & 6 & 3 & 0 & 15 & 6 & 6 & 6 & 6 \\
+Telea & 99 & 69 & 42 & 24 & 9 & 87 & 51 & 33 & 18 & 15 \\
+Navier--Stokes & 138 & 81 & 51 & 30 & 15 & 117 & 72 & 48 & 24 & 24 \\
+Dict.\ learning & 15 & 0 & 0 & 0 & 0 & 13 & 0 & 0 & 0 & 0 \\
+Biharmonic & 141 & 81 & 54 & 33 & 18 & 126 & 78 & 48 & 24 & 24 \\
+Block-DCT thr. & 156 & 48 & 0 & 0 & 0 & 117 & 42 & 0 & 0 & 0 \\
+FSR & 72 & 54 & 45 & 27 & 9 & 66 & 48 & 27 & 24 & 15 \\
+Shift-map & 115 & 75 & 26 & 0 & 0 & 66 & 45 & 12 & 0 & 0 \\
+Exemplar & 198 & 126 & 102 & 69 & 42 & 165 & 111 & 66 & 45 & 39 \\
+LaMa & 6 & 9 & 0 & 0 & 0 & 0 & 6 & 0 & 0 & 0 \\
+\midrule
+Zero-fill (floor) & 9 & 9 & 6 & 3 & 0 & 15 & 6 & 6 & 6 & 6 \\
+\bottomrule
+\end{tabular}
 % END AUTO SUPP_CAP
 \end{table}
 

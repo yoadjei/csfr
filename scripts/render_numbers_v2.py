@@ -307,11 +307,116 @@ def r1_hole_whole_macros(d: Path = ROOT / "results" / "r1_hole_vs_whole") -> dic
         f"{float(w['whole_diff']):+.2f}", f"{float(w['hole_diff']):+.2f}")))
 
 
+def _tables():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_tables_v2", ROOT / "scripts" / "render_tables_v2.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+FAMILY_WORDS = {"CF1": "CFone", "CF2": "CFtwo", "CF3": "CFthree", "CF4": "CFfour"}
+LEVELS = ("L1", "L2", "L3", "L4", "L5")
+COMPARISON_SWEEPS = {"Gov": "sweep_v2_govdocs1", "Dfrws": "sweep_v2_dfrws", "Kodak": "sweep_v2_kodak"}
+PROSE_NAMES = {"csfr_tv_only": "the TV-only arm", "bilinear": "linear interpolation", "inpaint_telea": "Telea",
+               "inpaint_ns": "Navier--Stokes", "dictlearn": "dictionary learning", "biharmonic": "biharmonic",
+               "guleryuz": "block-DCT thresholding", "fsr": "FSR", "shiftmap": "shift-map",
+               "criminisi": "exemplar inpainting"}
+FAMILY_FIELDS = ("RankMin", "RankMax", "NFirst", "Strongest", "BehindMin", "BehindMax", "NBehindSig",
+                 "AheadMax", "NAheadSig", "LamaBehindMax", "LamaAheadMax", "NLamaBehindSig", "NLamaAheadSig")
+CORPUS_FIELDS = ("NMethods", "NFirst", "GmsdNFirst", "GmsdRankMin", "CapfreeNFirst", "CapfreeNewStrongest",
+                 "CapfreeNSignFlip")
+
+
+def _prose_list(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def comparison_names(prefix: str) -> list[str]:
+    return ([f"q{prefix}{w}{f}" for w in FAMILY_WORDS.values() for f in FAMILY_FIELDS]
+            + [f"q{prefix}{f}" for f in CORPUS_FIELDS])
+
+
+def comparison_macros(prefix: str, sweep: Path) -> dict[str, str]:
+    """The comparison of CSFR with the strongest classical method of each cell
+    and with LaMa (results/<sweep>/stats/paired_tests.csv, hole PSNR unless
+    named; the same reading as Table PAIRED_V2, via render_tables_v2.cell_comparison).
+    Per family over the five levels: CSFR's rank range among itself and the
+    classical methods; levels where it ranks first; the strongest methods in
+    order of first appearance; the smallest and largest deficit where a method
+    is ahead (dB, magnitudes) and the levels where its source-image interval
+    lies below zero; the largest lead where CSFR is ahead and the levels whose
+    interval lies above zero; the same against LaMa. Per corpus: the classical
+    method count, the cells CSFR ranks first on hole PSNR and on GMSD, its best
+    GMSD rank, and the cells whose strongest method or difference sign changes
+    on the cap-free patches. An empty range prints a dash."""
+    names = comparison_names(prefix)
+    p = sweep / "stats" / "paired_tests.csv"
+    if not p.exists():
+        return _pending(*names)
+    t = _tables()
+    rows = _rows(p)
+    out: dict[str, str] = {}
+    dash = "--"
+    fmt = lambda xs, f: f"{f(xs):.2f}" if xs else dash  # noqa: E731
+    n_methods = set()
+    for fam, word in FAMILY_WORDS.items():
+        cs = [t.cell_comparison(rows, fam, lv, "psnr_hole", sweep.name) for lv in LEVELS]
+        n_methods |= {c["n"] for c in cs}
+        diffs = [float(c["best"]["diff_mean"]) for c in cs]
+        lo = [float(c["best"]["ci_cluster_lo"]) for c in cs]
+        hi = [float(c["best"]["ci_cluster_hi"]) for c in cs]
+        ext = [c["ext"] for c in cs]
+        if any(e is None for e in ext):
+            raise ValueError(f"{sweep.name} {fam}: LaMa is not scored at every level")
+        ld = [float(e["diff_mean"]) for e in ext]
+        strongest = list(dict.fromkeys(PROSE_NAMES[c["best"]["method"]] for c in cs))
+        vals = {"RankMin": str(min(c["rank"] for c in cs)), "RankMax": str(max(c["rank"] for c in cs)),
+                "NFirst": str(sum(c["rank"] == 1 for c in cs)), "Strongest": _prose_list(strongest),
+                "BehindMin": fmt([-d for d in diffs if d < 0], min),
+                "BehindMax": fmt([-d for d in diffs if d < 0], max),
+                "NBehindSig": str(sum(h < 0 for h in hi)),
+                "AheadMax": fmt([d for d in diffs if d > 0], max),
+                "NAheadSig": str(sum(x > 0 for x in lo)),
+                "LamaBehindMax": fmt([-d for d in ld if d < 0], max),
+                "LamaAheadMax": fmt([d for d in ld if d > 0], max),
+                "NLamaBehindSig": str(sum(float(e["ci_cluster_hi"]) < 0 for e in ext)),
+                "NLamaAheadSig": str(sum(float(e["ci_cluster_lo"]) > 0 for e in ext))}
+        out.update({f"q{prefix}{word}{k}": v for k, v in vals.items()})
+    if len(n_methods) != 1:
+        raise ValueError(f"{sweep.name}: cells compare different numbers of methods: {sorted(n_methods)}")
+    cells = [(f, lv) for f in FAMILY_WORDS for lv in LEVELS]
+    psnr = [t.cell_comparison(rows, f, lv, "psnr_hole", sweep.name) for f, lv in cells]
+    gmsd = [t.cell_comparison(rows, f, lv, "gmsd_hole", sweep.name) for f, lv in cells]
+    capfree = [c["best"] for c in psnr if c["best"].get("diff_mean_capfree", "") != ""]
+    new_strongest = first_capfree = 0    # on the cap-free patches: a different strongest method; CSFR first
+    for (f, lv), c in zip(cells, psnr):
+        cf = [r for r in rows if (r["family"], r["level"], r["metric"]) == (f, lv, "psnr_hole")
+              and r["method"] != t.EXTERNAL and r.get("diff_mean_capfree", "") != ""]
+        if cf:
+            new_strongest += min(cf, key=lambda r: float(r["diff_mean_capfree"]))["method"] != c["best"]["method"]
+            first_capfree += all(float(r["diff_mean_capfree"]) > 0 for r in cf)
+    out.update({f"q{prefix}NMethods": str(n_methods.pop()),
+                f"q{prefix}NFirst": str(sum(c["rank"] == 1 for c in psnr)),
+                f"q{prefix}GmsdNFirst": str(sum(c["rank"] == 1 for c in gmsd)),
+                f"q{prefix}GmsdRankMin": str(min(c["rank"] for c in gmsd)),
+                f"q{prefix}CapfreeNFirst": str(first_capfree),
+                f"q{prefix}CapfreeNewStrongest": str(new_strongest),
+                f"q{prefix}CapfreeNSignFlip": str(sum((float(b["diff_mean"]) > 0) != (float(b["diff_mean_capfree"]) > 0)
+                                                     for b in capfree))})
+    return out
+
+
+def all_comparison_macros(results: Path = ROOT / "results") -> dict[str, str]:
+    return {k: v for prefix, s in COMPARISON_SWEEPS.items()
+            for k, v in comparison_macros(prefix, results / s).items()}
+
+
 def render() -> str:
     macros = {**config_macros(), **calibration_macros(), **corpus_macros(), **method_macros(),
               **environment_macros(), **stats_macros(), **fidelity_macros(), **fallback_macros(),
               **bu_macros(), **shiftmap_macros(), **dictlearn_cap_macros(), **coherence_macros(),
-              **r1_hole_whole_macros()}
+              **r1_hole_whole_macros(), **all_comparison_macros()}
     lines = ["% GENERATED by scripts/render_numbers_v2.py. Do not edit; re-run the script.",
              "% Every number stated in the running text of the revised manuscript."]
     for k in sorted(macros):

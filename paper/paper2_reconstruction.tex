@@ -412,7 +412,31 @@ Tables~\ref{tab:quality} and~\ref{tab:gmsd} give hole PSNR and GMSD on GovDocs1 
 \footnotesize
 \setlength{\tabcolsep}{3.5pt}
 % BEGIN AUTO QUALITY
-\textbf{[pending]}
+\begin{tabular}{@{}l*{12}{r}@{}}
+\toprule
+ & \multicolumn{3}{c}{CF1} & \multicolumn{3}{c}{CF2} & \multicolumn{3}{c}{CF3} & \multicolumn{3}{c}{CF4} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}\cmidrule(l){11-13}
+Method & L1 & L3 & L5 & L1 & L3 & L5 & L1 & L3 & L5 & L1 & L3 & L5 \\
+\midrule
+CSFR & 27.62 & 26.24 & 24.06 & 24.82 & 21.23 & 18.55 & 26.10 & 18.77 & 15.87 & 25.30 & 18.38 & 15.80 \\
+TV-only & 28.77 & 26.49 & 23.36 & 26.97 & 21.63 & 18.35 & 29.46 & 20.04 & 16.20 & 28.22 & \textbf{19.43} & 16.28 \\
+Linear & 25.67 & 24.24 & 21.12 & 26.74 & 21.05 & 17.73 & 6.05 & 5.65 & 5.21 & 6.36 & 5.67 & 5.47 \\
+Telea & 24.77 & 23.15 & 21.92 & 24.32 & 20.10 & 17.25 & 27.92 & 19.66 & 15.98 & 26.85 & 18.97 & 16.06 \\
+Navier--Stokes & 26.37 & 25.23 & 22.77 & 25.69 & 20.42 & 17.29 & 28.82 & 19.56 & 15.95 & 27.78 & 19.41 & 16.33 \\
+Dict.\ learning & 16.09$^{\dagger}$ & 15.95 & 15.95 & 19.15 & 17.11 & 15.98 & 22.57 & 15.87 & 15.00 & 22.01 & 15.78 & 14.89 \\
+Biharmonic & 29.44 & 27.52 & 24.30 & 26.30 & 20.89 & 17.12 & 29.36 & 18.85 & 14.76 & 28.15 & 18.29 & 14.86 \\
+Block-DCT thr. & \textbf{35.22} & \textbf{31.33} & \textbf{26.40} & \textbf{27.92} & 21.96 & 18.01 & \textbf{30.75} & 17.66 & 15.35 & \textbf{28.28} & 17.34 & 15.28 \\
+FSR & 26.68 & 25.78 & 23.72 & 26.21 & 21.66 & 17.71 & 24.03 & 19.97 & 16.13 & 23.74 & 19.05 & 16.12 \\
+Shift-map & 18.78 & 14.59 & 12.62 & 23.13 & 16.70 & 12.91 & 22.17 & 15.41 & 5.62 & 19.49 & 14.66 & 8.23 \\
+Exemplar & 18.74 & 21.17 & 15.79 & 27.17 & 19.82 & 15.22 & 30.06 & \textbf{21.03} & \textbf{16.75} & 28.15 & 19.23 & \textbf{16.53} \\
+LaMa & 26.54 & 24.55 & 18.70 & 25.40 & \textbf{22.16} & \textbf{19.28} & 24.46 & 18.96 & 15.76 & 24.07 & 18.43 & 15.44 \\
+\midrule
+Zero-fill (floor) & 5.08 & 5.07 & 5.07 & 6.15 & 5.51 & 5.19 & 6.05 & 5.65 & 5.21 & 6.36 & 5.67 & 5.47 \\
+\midrule
+\multicolumn{13}{@{}l}{\footnotesize $^{\dagger}$ The method filled the hole with the observed mean in most patch-runs (Section~\ref{sec:experiments:methods}).} \\
+\multicolumn{13}{@{}l}{\footnotesize Patch-runs at the 100\,dB cap: at most 198 of 1800 per cell (Exemplar, CF3~L1).} \\
+\bottomrule
+\end{tabular}
 % END AUTO QUALITY
 \end{table*}
 
@@ -423,7 +447,30 @@ Tables~\ref{tab:quality} and~\ref{tab:gmsd} give hole PSNR and GMSD on GovDocs1 
 \footnotesize
 \setlength{\tabcolsep}{3.5pt}
 % BEGIN AUTO GMSD
-\textbf{[pending]}
+\begin{tabular}{@{}l*{12}{r}@{}}
+\toprule
+ & \multicolumn{3}{c}{CF1} & \multicolumn{3}{c}{CF2} & \multicolumn{3}{c}{CF3} & \multicolumn{3}{c}{CF4} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}\cmidrule(l){11-13}
+Method & L1 & L3 & L5 & L1 & L3 & L5 & L1 & L3 & L5 & L1 & L3 & L5 \\
+\midrule
+CSFR & 0.026 & 0.079 & 0.157 & 0.221 & 0.252 & 0.277 & 0.210 & 0.274 & 0.294 & 0.215 & 0.282 & 0.297 \\
+TV-only & 0.020 & 0.070 & 0.168 & 0.232 & 0.262 & 0.282 & 0.222 & 0.277 & 0.295 & 0.230 & 0.285 & 0.298 \\
+Linear & 0.033 & 0.089 & 0.166 & 0.200 & 0.232 & 0.261 & 0.356 & 0.309 & 0.307 & 0.355 & 0.311 & 0.309 \\
+Telea & 0.036 & 0.101 & 0.170 & 0.211 & 0.243 & 0.277 & 0.193 & 0.259 & 0.281 & 0.196 & 0.268 & 0.283 \\
+Navier--Stokes & 0.032 & 0.089 & 0.161 & 0.212 & 0.244 & 0.276 & 0.200 & 0.257 & 0.278 & 0.201 & 0.271 & 0.283 \\
+Dict.\ learning & 0.132$^{\dagger}$ & 0.205 & 0.243 & 0.271 & 0.300 & 0.310 & 0.206 & 0.305 & 0.308 & 0.210 & 0.309 & 0.309 \\
+Biharmonic & 0.024 & 0.074 & 0.144 & 0.193 & 0.222 & 0.252 & 0.181 & 0.258 & 0.288 & 0.180 & 0.266 & 0.290 \\
+Block-DCT thr. & \textbf{0.015} & \textbf{0.054} & \textbf{0.119} & 0.212 & 0.256 & 0.286 & 0.175 & 0.284 & 0.297 & 0.181 & 0.290 & 0.300 \\
+FSR & 0.036 & 0.088 & 0.155 & 0.182 & 0.211 & 0.258 & 0.203 & 0.243 & 0.277 & 0.201 & 0.253 & 0.278 \\
+Shift-map & 0.088 & 0.240 & 0.304 & 0.231 & 0.272 & 0.318 & 0.242 & 0.281 & 0.323 & 0.251 & 0.285 & 0.340 \\
+Exemplar & 0.074 & 0.135 & 0.244 & 0.197 & 0.239 & 0.283 & 0.185 & 0.246 & 0.266 & 0.188 & 0.256 & 0.268 \\
+LaMa & 0.033 & 0.100 & 0.202 & \textbf{0.160} & \textbf{0.186} & \textbf{0.224} & \textbf{0.171} & \textbf{0.230} & \textbf{0.256} & \textbf{0.174} & \textbf{0.238} & \textbf{0.260} \\
+\midrule
+Zero-fill (floor) & 0.310 & 0.325 & 0.320 & 0.343 & 0.344 & 0.332 & 0.356 & 0.309 & 0.307 & 0.355 & 0.311 & 0.309 \\
+\midrule
+\multicolumn{13}{@{}l}{\footnotesize $^{\dagger}$ The method filled the hole with the observed mean in most patch-runs (Section~\ref{sec:experiments:methods}).} \\
+\bottomrule
+\end{tabular}
 % END AUTO GMSD
 \end{table*}
 
@@ -433,7 +480,37 @@ Tables~\ref{tab:quality} and~\ref{tab:gmsd} give hole PSNR and GMSD on GovDocs1 
 \label{tab:paired-v2}
 \footnotesize
 % BEGIN AUTO PAIRED_V2
-\textbf{[pending]}
+\begin{tabular}{@{}l c l r c r r r c@{}}
+\toprule
+ & & \multicolumn{5}{c}{Strongest classical method} & \multicolumn{2}{c}{LaMa} \\
+\cmidrule(lr){3-7}\cmidrule(l){8-9}
+Cell & Rank & Method & $\Delta$ & 95\% CI & Led (\%) & $\Delta_{\mathrm{cf}}$ & $\Delta$ & 95\% CI \\
+\midrule
+CF1~L1 & 4/11 & Block-DCT thr. & $-$7.60 & [$-$8.54, $-$6.77] & 7 & $-$6.63 & +1.08 & [+0.80, +1.37] \\
+CF1~L2 & 4/11 & Block-DCT thr. & $-$6.28 & [$-$7.22, $-$5.47] & 7 & $-$5.41 & +1.43 & [+1.12, +1.75] \\
+CF1~L3 & 4/11 & Block-DCT thr. & $-$5.09 & [$-$6.01, $-$4.31] & 7 & $-$4.06 & +1.69 & [+1.36, +2.02] \\
+CF1~L4 & 3/11 & Block-DCT thr. & $-$3.93 & [$-$4.87, $-$3.15] & 7 & $-$3.11 & +2.84 & [+2.56, +3.13] \\
+CF1~L5 & 3/11 & Block-DCT thr. & $-$2.33 & [$-$2.95, $-$1.83] & 12 & $-$1.88 & +5.36 & [+5.02, +5.70] \\
+\midrule
+CF2~L1 & 8/11 & Block-DCT thr. & $-$3.10 & [$-$3.82, $-$2.39] & 33 & $-$0.40 & $-$0.57 & [$-$0.95, $-$0.20] \\
+CF2~L2 & 8/11 & Block-DCT thr. & $-$1.88 & [$-$2.53, $-$1.30] & 40 & +0.00 & $-$0.89 & [$-$1.23, $-$0.55] \\
+CF2~L3 & 4/11 & Block-DCT thr. & $-$0.73 & [$-$1.22, $-$0.29] & 51 & +0.15 & $-$0.93 & [$-$1.22, $-$0.65] \\
+CF2~L4 & 3/11 & Block-DCT thr. & $-$0.08 & [$-$0.42, +0.24] & 53 & +0.39 & $-$1.05 & [$-$1.32, $-$0.79] \\
+CF2~L5 & 1/11 & TV-only & +0.20 & [+0.04, +0.32] & 90 & +0.34 & $-$0.73 & [$-$0.97, $-$0.50] \\
+\midrule
+CF3~L1 & 7/11 & Block-DCT thr. & $-$4.65 & [$-$6.25, $-$3.14] & 59 & +0.51 & +1.64 & [+1.12, +2.15] \\
+CF3~L2 & 8/11 & Exemplar & $-$1.95 & [$-$3.46, $-$0.55] & 70 & +2.01 & +0.03 & [$-$0.46, +0.52] \\
+CF3~L3 & 7/11 & Exemplar & $-$2.26 & [$-$3.70, $-$0.97] & 69 & +1.22 & $-$0.19 & [$-$0.56, +0.17] \\
+CF3~L4 & 6/11 & Exemplar & $-$1.78 & [$-$3.13, $-$0.60] & 72 & +0.77 & $-$0.24 & [$-$0.56, +0.07] \\
+CF3~L5 & 6/11 & Exemplar & $-$0.87 & [$-$1.98, +0.11] & 71 & +0.81 & +0.12 & [$-$0.15, +0.37] \\
+\midrule
+CF4~L1 & 7/11 & Block-DCT thr. & $-$2.98 & [$-$4.37, $-$1.65] & 63 & +1.10 & +1.23 & [+0.89, +1.60] \\
+CF4~L2 & 7/11 & Navier--Stokes & $-$1.58 & [$-$2.34, $-$0.86] & 53 & +0.07 & +0.27 & [$-$0.16, +0.70] \\
+CF4~L3 & 6/11 & TV-only & $-$1.05 & [$-$1.74, $-$0.47] & 73 & +0.18 & $-$0.06 & [$-$0.39, +0.27] \\
+CF4~L4 & 6/11 & Exemplar & $-$0.82 & [$-$1.94, +0.12] & 71 & +0.83 & $-$0.22 & [$-$0.52, +0.08] \\
+CF4~L5 & 6/11 & Exemplar & $-$0.73 & [$-$1.84, +0.22] & 71 & +0.86 & +0.36 & [+0.07, +0.67] \\
+\bottomrule
+\end{tabular}
 % END AUTO PAIRED_V2
 \end{table*}
 
