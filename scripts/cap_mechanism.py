@@ -52,6 +52,15 @@ TV_ONLY = "csfr_tv_only"   # CSFR without the DCT and high-frequency terms; a ba
 TOL = 1e-9
 
 
+def flat_holes(truth: np.ndarray, masks: np.ndarray) -> np.ndarray:
+    """Per patch: whether it has a hole (mask 0) and the true content of the
+    hole is a single grey value."""
+    hole = masks == 0
+    top = np.where(hole, truth, -np.inf).max(axis=(1, 2))
+    bottom = np.where(hole, truth, np.inf).min(axis=(1, 2))
+    return hole.any(axis=(1, 2)) & (top == bottom)
+
+
 def capped_runs(sweep: Path, cell: str, seeds: list[int], method: str, truth: np.ndarray) -> list[dict]:
     """The patch-runs at which method reaches the cap, with the true hole's
     flatness and CSFR's error over the hole."""
@@ -68,11 +77,11 @@ def capped_runs(sweep: Path, cell: str, seeds: list[int], method: str, truth: np
             tv_exact = z["psnr_hole"] >= CAP
         M = np.load(d / "mask.npy")
         X = np.load(d / "x_hat_csfr.npy").astype(np.float64)
+        flat = flat_holes(truth, M)
         for i in np.flatnonzero(at_cap):
             hole = M[i] == 0
-            t = truth[i][hole]
-            e = X[i][hole] - t
-            out.append({"seed": s, "patch": int(i), "flat": bool(t.min() == t.max()),
+            e = X[i][hole] - truth[i][hole]
+            out.append({"seed": s, "patch": int(i), "flat": bool(flat[i]),
                         "csfr_max_abs_err": float(np.abs(e).max()), "csfr_mean_err": float(e.mean()),
                         "csfr_psnr_hole": float(csfr_psnr[i]), "tv_only_at_cap": bool(tv_exact[i])})
     return out

@@ -352,15 +352,21 @@ NO_RANGE = "csfr_no_clip"
 ALPHA = 0.05
 
 
-def range_note(rows: list[dict]) -> str:
-    """The range figure of the ablation: imputed pixels outside the range without
-    C3, pooled over cells, and what the arms that keep C3 do."""
+def range_figures(rows: list[dict]) -> tuple[float, float, float]:
+    """The range figure of the ablation (stats/range_violations.csv): the
+    percentage of imputed pixels outside [0, 255] without C3, pooled over cells;
+    the largest excess in grey levels; and the largest fraction outside in any
+    cell of an arm that keeps C3."""
     out = [r for r in rows if r["method"] == NO_RANGE]
     kept = [r for r in rows if r["method"] != NO_RANGE]
     n_out = sum(float(r["frac_pixels_out"]) * int(r["n_imputed"]) for r in out)
     share = 100 * n_out / sum(int(r["n_imputed"]) for r in out)
     worst = max(float(r["max_excess"]) for r in out)
-    kept_max = max(float(r["frac_pixels_out"]) for r in kept)
+    return share, worst, max(float(r["frac_pixels_out"]) for r in kept)
+
+
+def range_note(rows: list[dict]) -> str:
+    share, worst, kept_max = range_figures(rows)
     rest = ("with it, none do" if kept_max == 0
             else rf"with it, at most {100 * kept_max:.2g}\% in any cell")
     return (rf"Without C3, {share:.2f}\% of the imputed pixels leave $[0, 255]$, by up to "

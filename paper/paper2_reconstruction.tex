@@ -546,7 +546,13 @@ The released solver ran Adam for a fixed budget on a different objective (Sectio
 
 Each arm removes one part of CSFR and is solved to the same certificate (Section~\ref{sec:experiments:methods}). Table~\ref{tab:ablation-v2} gives the hole-PSNR difference between CSFR and each arm on the primary corpus at mask seed \sweepAblationSeeds, and the share of imputed pixels that leave the range when C3 is removed.
 
-\resultpending{what each term contributes per family; the range figure}
+Total variation carries the reconstruction. Without it (DCT only), hole PSNR is lower in every cell, by \ablNoTvMin\ to \ablNoTvMax\,dB, with a Holm-adjusted $p < 0.05$ in every cell.
+
+The DCT and high-frequency terms are what CSFR adds to its TV-only arm, and on mean hole PSNR they cost more often than they gain: the TV-only arm is ahead in \ablTvNBehind\ of the 20 cells, by up to \ablTvBehindMax\,dB, and behind in \ablTvNAhead, by up to \ablTvAheadMax\,dB. Under burst and contiguous loss the difference has the cause found in Section~\ref{sec:results:quality}. Of the holes whose true content is flat, the TV-only arm reproduces \ablTvBcFlatCapShare\% exactly, and in every CF2 to CF4 cell those holes move the mean difference in its favour, by \ablTvBcFlatMin\ to \ablTvBcFlatMax\,dB. On the other holes CSFR is ahead in every such cell, by \ablTvBcRestMin\ to \ablTvBcRestMax\,dB; the median difference favours CSFR in every such cell, and CSFR is ahead on \ablTvBcAheadMin\% to \ablTvBcAheadMax\% of the patches. Scattered loss leaves no flat hole. There the TV-only arm is ahead at \ablTvScatterBehindLevels\ on most patches, with CSFR ahead on at most \ablTvScatterAheadShareMax\% of them, and CSFR is ahead at \ablTvScatterAheadLevels.
+
+The high-frequency penalty has a cost under light scattered loss. Without it hole PSNR is higher by \ablNoFcScatterBehindMin\ to \ablNoFcScatterBehindMax\,dB at CF1 \ablNoFcScatterBehindLevels, where CSFR is ahead on at most \ablNoFcScatterAheadShareMax\% of the patches; it is lower at \ablNoFcScatterAheadLevels, by up to \ablNoFcScatterAheadMax\,dB, and the difference at \ablNoFcScatterNsLevels\ is not significant. Under burst and contiguous loss the flat holes favour the arm without the penalty in every cell, and on the other holes the penalty changes hole PSNR by at most \ablNoFcBcRestMaxAbs\,dB in either direction.
+
+Removing the range constraint changes hole PSNR by at most \ablClipMaxAbs\,dB in any cell, but \ablClipShare\% of the imputed pixels then leave $[0, 255]$, by up to \ablClipMaxExcess\ grey levels; with C3 none do. C3 keeps the output an 8-bit image; it is not a source of accuracy.
 
 \begin{table*}[!t]
 \centering

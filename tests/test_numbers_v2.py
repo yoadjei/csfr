@@ -51,6 +51,7 @@ def test_typed_claims_about_the_primary_comparison_hold():
                         (ROOT / "paper" / "numbers_v2.tex").read_text(encoding="utf-8"), re.M))
     tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
     SECONDARY = ("Dfrws", "Kodak")
+    PENDING = _mod().PLACEHOLDER
     claims = {
         r"The strongest method at every level is \qGovCFoneStrongest":
             " and " not in v["qGovCFoneStrongest"] and v["qGovCFoneNFirst"] == "0",
@@ -85,6 +86,19 @@ def test_typed_claims_about_the_primary_comparison_hold():
             v["qDfrwsCFtwoLamaAheadMax"] == "--" and v["qDfrwsCFtwoNLamaBehindSig"] == "5",
         "It is not the best method on hole GMSD in any cell of either corpus":
             all(v[f"q{c}GmsdNFirst"] == "0" for c in SECONDARY),
+        # Constraint ablation (Section VI-C). ablation_macros refuses data that break its
+        # "every"/"no"/"none" sentences, so for those the sentence must still be there and
+        # the macros must be generated.
+        "Without it (DCT only), hole PSNR is lower in every cell": v["ablNoTvMin"] != PENDING,
+        "they cost more often than they gain":
+            int(v["ablTvNBehind"]) > int(v["ablTvNAhead"]) and int(v["ablTvNBehind"]) + int(v["ablTvNAhead"]) == 20,
+        "in every CF2 to CF4 cell those holes move the mean difference in its favour": v["ablTvBcFlatMin"] != PENDING,
+        "On the other holes CSFR is ahead in every such cell": v["ablTvBcRestMin"] != PENDING,
+        "the median difference favours CSFR in every such cell": v["ablTvBcAheadMin"] != PENDING,
+        "Scattered loss leaves no flat hole": v["ablTvScatterBehindLevels"] != PENDING,
+        "Under burst and contiguous loss the flat holes favour the arm without the penalty in every cell":
+            v["ablNoFcBcRestMaxAbs"] != PENDING,
+        "with C3 none do": v["ablClipShare"] != PENDING,
     }
     for sentence, holds in claims.items():
         assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
@@ -96,7 +110,7 @@ def test_every_macro_the_manuscript_uses_is_generated():
     import re
     tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
     generated = set(re.findall(r"\\providecommand\{\\([A-Za-z]+)\}", m.render()))
-    used = set(re.findall(r"\\((?:csfr|rec|calib|oracle|corpus|methods|env|sweep|stats|fallback|bu|shiftmap|dictlearn|mech|q(?:Gov|Dfrws|Kodak))[A-Z][A-Za-z]*)", tex))
+    used = set(re.findall(r"\\((?:csfr|rec|calib|oracle|corpus|methods|env|sweep|stats|fallback|bu|shiftmap|dictlearn|mech|abl|q(?:Gov|Dfrws|Kodak))[A-Z][A-Za-z]*)", tex))
     assert used, "the manuscript uses no number macros; the regex has rotted"
     assert used <= generated, f"manuscript uses undefined number macros: {sorted(used - generated)}"
 
@@ -400,6 +414,100 @@ def test_mechanism_macros_refuse_a_capped_kodak_patch(tmp_path):
     _mech(tmp_path, kodak_capped=1)
     with pytest.raises(ValueError, match="Kodak"):
         m.mechanism_macros(tmp_path)
+
+
+ABL_LEVELS = ("L1", "L2", "L3", "L4", "L5")
+
+
+def _abl_row(arm, fam, lv, diff, p=0.01, **kw):
+    r = {"sweep": "s", "method": arm, "family": fam, "level": lv, "n_patches": 600, "n_seeds": 1,
+         "diff_mean": diff, "diff_median": diff, "frac_patches_csfr_ahead": 0.9 if diff > 0 else 0.1,
+         "p_holm": p, "n_flat": 0, "flat_part": 0.0, "rest_part": diff, "n_flat_arm_at_cap": 0}
+    r.update(kw)
+    return r
+
+
+def _abl(tmp_path, overrides=None, kept_out=0.0):
+    """An ablation_mechanism CSV and a range_violations CSV that say what the text says."""
+    rows = {}
+    for i, lv in enumerate(ABL_LEVELS):
+        cf1_tv = (-1.0, -0.5, -0.2, 0.2, 0.7)[i]
+        rows["csfr_tv_only", "CF1", lv] = _abl_row("csfr_tv_only", "CF1", lv, cf1_tv,
+                                                  frac_patches_csfr_ahead=(0.2, 0.25, 0.3, 0.6, 0.9)[i])
+        cf1_fc = (-2.4, -2.0, -1.3, -0.3, 0.35)[i]
+        rows["csfr_no_fc", "CF1", lv] = _abl_row("csfr_no_fc", "CF1", lv, cf1_fc, p=0.2 if lv == "L4" else 0.01,
+                                                frac_patches_csfr_ahead=(0.1, 0.1, 0.14, 0.46, 0.85)[i])
+        for fam in ("CF2", "CF3", "CF4"):
+            rows["csfr_tv_only", fam, lv] = _abl_row("csfr_tv_only", fam, lv, -1.0, diff_median=0.2,
+                                                    frac_patches_csfr_ahead=0.7, n_flat=10, flat_part=-1.3,
+                                                    rest_part=0.3, n_flat_arm_at_cap=8)
+            rows["csfr_no_fc", fam, lv] = _abl_row("csfr_no_fc", fam, lv, -0.2, n_flat=10, flat_part=-0.25,
+                                                  rest_part=0.05)
+        for fam in ("CF1", "CF2", "CF3", "CF4"):
+            rows["csfr_dct_only", fam, lv] = _abl_row("csfr_dct_only", fam, lv, 0.5)
+            rows["csfr_no_clip", fam, lv] = _abl_row("csfr_no_clip", fam, lv, 0.01)
+    rows["csfr_tv_only", "CF3", "L1"].update(diff_mean=-3.0, flat_part=-3.5, rest_part=0.5,
+                                             frac_patches_csfr_ahead=0.6)
+    rows["csfr_tv_only", "CF2", "L5"].update(diff_mean=0.2, flat_part=-0.1, rest_part=0.3,
+                                             frac_patches_csfr_ahead=0.86)
+    rows["csfr_no_fc", "CF3", "L1"].update(diff_mean=-1.67, flat_part=-1.16, rest_part=-0.51)
+    rows["csfr_dct_only", "CF3", "L1"]["diff_mean"] = 7.0
+    rows["csfr_no_clip", "CF3", "L2"]["diff_mean"] = -0.09
+    for key, kw in (overrides or {}).items():
+        rows[key].update(kw)
+    mech = tmp_path / "ablation_mechanism.csv"
+    _write_rows(mech, list(rows.values()))
+    ranges = tmp_path / "range_violations.csv"
+    _write_rows(ranges, [
+        {"family": "CF1", "level": "L1", "seed": 0, "method": "csfr_no_clip", "n_patches": 600, "n_imputed": 1000,
+         "frac_pixels_out": 0.02, "frac_patches_out": 0.3, "max_excess": 50.0},
+        {"family": "CF1", "level": "L2", "seed": 0, "method": "csfr_no_clip", "n_patches": 600, "n_imputed": 1000,
+         "frac_pixels_out": 0.04, "frac_patches_out": 0.3, "max_excess": 158.4},
+        {"family": "CF1", "level": "L1", "seed": 0, "method": "csfr", "n_patches": 600, "n_imputed": 1000,
+         "frac_pixels_out": kept_out, "frac_patches_out": 0.0, "max_excess": 0.0}])
+    return mech, ranges
+
+
+def test_ablation_macros_say_what_each_term_contributes(tmp_path):
+    m = _mod()
+    assert set(m.ablation_macros(tmp_path / "none.csv", tmp_path / "none.csv").values()) == {m.PLACEHOLDER}
+    q = m.ablation_macros(*_abl(tmp_path))
+    assert (q["ablNoTvMin"], q["ablNoTvMax"]) == ("0.50", "7.00")
+    assert (q["ablTvNBehind"], q["ablTvBehindMax"], q["ablTvNAhead"], q["ablTvAheadMax"]) == ("17", "3.00", "3", "0.70")
+    assert (q["ablTvBcFlatMin"], q["ablTvBcFlatMax"]) == ("0.10", "3.50")
+    assert (q["ablTvBcRestMin"], q["ablTvBcRestMax"]) == ("0.30", "0.50")
+    assert (q["ablTvBcAheadMin"], q["ablTvBcAheadMax"], q["ablTvBcFlatCapShare"]) == ("60", "86", "80")
+    assert (q["ablTvScatterBehindLevels"], q["ablTvScatterAheadLevels"]) == ("L1 to L3", "L4 and L5")
+    assert q["ablTvScatterAheadShareMax"] == "30"
+    assert (q["ablNoFcScatterBehindLevels"], q["ablNoFcScatterBehindMin"], q["ablNoFcScatterBehindMax"]) == (
+        "L1 to L3", "1.30", "2.40")
+    assert (q["ablNoFcScatterAheadShareMax"], q["ablNoFcScatterAheadLevels"], q["ablNoFcScatterAheadMax"]) == (
+        "14", "L5", "0.35")
+    assert (q["ablNoFcScatterNsLevels"], q["ablNoFcBcRestMaxAbs"]) == ("L4", "0.51")
+    assert (q["ablClipMaxAbs"], q["ablClipShare"], q["ablClipMaxExcess"]) == ("0.09", "3.00", "158.4")
+
+
+@pytest.mark.parametrize("key,bad", [
+    (("csfr_dct_only", "CF2", "L3"), {"diff_mean": -0.1}),          # "lowers hole PSNR in every cell"
+    (("csfr_dct_only", "CF2", "L3"), {"p_holm": 0.2}),              # "with p < 0.05 in every cell"
+    (("csfr_tv_only", "CF4", "L2"), {"rest_part": -0.1}),           # "on the other holes CSFR is ahead in every cell"
+    (("csfr_tv_only", "CF4", "L2"), {"diff_median": -0.1}),         # "the median favours CSFR in every cell"
+    (("csfr_tv_only", "CF4", "L2"), {"flat_part": 0.1}),            # "the flat holes favour the arm"
+    (("csfr_tv_only", "CF1", "L2"), {"n_flat": 1}),                 # "scattered loss leaves no flat hole"
+    (("csfr_tv_only", "CF1", "L2"), {"diff_mean": 0.1}),            # arm ahead at the lowest levels, CSFR above
+    (("csfr_tv_only", "CF1", "L1"), {"frac_patches_csfr_ahead": 0.6}),  # "on most patches"
+    (("csfr_no_fc", "CF2", "L4"), {"flat_part": 0.1}),              # flat holes favour the arm without the penalty
+])
+def test_ablation_macros_refuse_data_that_contradict_the_text(tmp_path, key, bad):
+    m = _mod()
+    with pytest.raises(ValueError):
+        m.ablation_macros(*_abl(tmp_path, overrides={key: bad}))
+
+
+def test_ablation_macros_refuse_a_range_violation_with_c3(tmp_path):
+    m = _mod()
+    with pytest.raises(ValueError, match="C3"):
+        m.ablation_macros(*_abl(tmp_path, kept_out=0.001))
 
 
 def test_comparison_macros_need_lama_at_every_level(tmp_path):

@@ -465,6 +465,122 @@ def mechanism_macros(d: Path = ROOT / "results" / "cap_mechanism") -> dict[str, 
         str(max(int(r["n_patches_capped"]) for r in _rows(dfrws) if r["family"] in CONTIGUOUS)))))
 
 
+ABL_NAMES = ("ablNoTvMin", "ablNoTvMax", "ablTvNBehind", "ablTvBehindMax", "ablTvNAhead", "ablTvAheadMax",
+             "ablTvBcFlatMin", "ablTvBcFlatMax", "ablTvBcRestMin", "ablTvBcRestMax", "ablTvBcAheadMin",
+             "ablTvBcAheadMax", "ablTvBcFlatCapShare", "ablTvScatterBehindLevels", "ablTvScatterAheadLevels",
+             "ablTvScatterAheadShareMax", "ablNoFcScatterBehindLevels", "ablNoFcScatterBehindMin",
+             "ablNoFcScatterBehindMax", "ablNoFcScatterAheadShareMax", "ablNoFcScatterAheadLevels",
+             "ablNoFcScatterAheadMax", "ablNoFcScatterNsLevels", "ablNoFcBcRestMaxAbs", "ablClipMaxAbs",
+             "ablClipShare", "ablClipMaxExcess")
+SCATTERED = ("CF1",)
+BURST_CONTIGUOUS = ("CF2", "CF3", "CF4")
+
+
+def level_span(levels: list[str]) -> str:
+    """Prose for one run of consecutive levels: 'L5', 'L4 and L5', 'L1 to L3'."""
+    idx = [LEVELS.index(lv) for lv in levels]
+    if not idx or idx != list(range(idx[0], idx[0] + len(idx))):
+        raise ValueError(f"levels {levels} are not one run of consecutive levels")
+    if len(idx) == 1:
+        return levels[0]
+    return f"{levels[0]} and {levels[1]}" if len(idx) == 2 else f"{levels[0]} to {levels[-1]}"
+
+
+def ablation_macros(mech: Path = ROOT / "results" / "ablation_mechanism" / "sweep_v2_govdocs1.csv",
+                    ranges: Path = ROOT / "results" / "sweep_v2_govdocs1" / "stats" / "range_violations.csv"
+                    ) -> dict[str, str]:
+    """What each term of CSFR contributes on the primary corpus (Section VI-C;
+    scripts/ablation_mechanism.py, CSFR minus the arm, hole PSNR, dB):
+
+      NoTv      the DCT-only arm (no TV term): the range of the difference.
+      Tv        the TV-only arm (no DCT or high-frequency term): cells behind and
+                ahead with the largest gap; under CF2-CF4 (Bc) the part of the
+                flat holes (magnitudes), the rest, the share of patches CSFR is
+                ahead on, and the share of flat holes the arm reconstructs to
+                the cap; under CF1 (Scatter) the levels where the arm is ahead
+                and where CSFR is, and the largest share of patches CSFR is
+                ahead on where the arm is ahead.
+      NoFc      the arm without the high-frequency penalty: under CF1 the levels
+                where it is significantly ahead (Holm p < ALPHA), its lead there
+                and CSFR's largest patch share, the levels where CSFR is
+                significantly ahead and by how much, and the levels where
+                neither is; under CF2-CF4 the largest |rest part|.
+      Clip      the arm without C3: the largest |difference| in any cell, and
+                the range figure of Table ABLATION_V2.
+
+    The text states the following, and the macros are refused if any fails:
+    removing TV lowers hole PSNR in every cell with Holm p < ALPHA; against the
+    TV-only arm, under CF2-CF4 the flat holes favour the arm while CSFR is ahead
+    on the other holes and in the median in every cell; CF1 has no flat hole,
+    the arm is ahead (on most patches) at the lowest CF1 levels and CSFR at
+    the others; without the penalty, the flat holes favour the arm in every
+    CF2-CF4 cell; with C3 no imputed pixel leaves the range."""
+    if not (mech.exists() and ranges.exists()):
+        return _pending(*ABL_NAMES)
+    alpha = _tables().ALPHA
+    rows = _rows(mech)
+
+    def arm(method: str, families: tuple[str, ...]) -> list[dict]:
+        out = [r for r in rows if r["method"] == method and r["family"] in families]
+        if len(out) != len(families) * len(LEVELS):
+            raise ValueError(f"{mech.name}: {method} has {len(out)} cells in {families}")
+        return out
+
+    def col(rs: list[dict], key: str) -> list[float]:
+        return [float(r[key]) for r in rs]
+
+    every = SCATTERED + BURST_CONTIGUOUS
+    no_tv = arm("csfr_dct_only", every)
+    if not all(float(r["diff_mean"]) > 0 and float(r["p_holm"]) < alpha for r in no_tv):
+        raise ValueError("a cell where removing TV does not lower hole PSNR significantly")
+
+    tv, tv_bc, tv_sc = arm("csfr_tv_only", every), arm("csfr_tv_only", BURST_CONTIGUOUS), arm("csfr_tv_only", SCATTERED)
+    if not all(float(r["flat_part"]) < 0 < float(r["rest_part"]) and float(r["diff_median"]) > 0 for r in tv_bc):
+        raise ValueError("a CF2-CF4 cell where the flat holes do not favour the TV-only arm, or CSFR is not "
+                         "ahead on the other holes and in the median")
+    if any(int(r["n_flat"]) for r in tv_sc):
+        raise ValueError("a CF1 cell with a flat hole")
+    sc_behind = [r for r in tv_sc if float(r["diff_mean"]) < 0]
+    sc_ahead = [r for r in tv_sc if float(r["diff_mean"]) > 0]
+    if [r["level"] for r in sc_behind + sc_ahead] != list(LEVELS) or not sc_behind or not sc_ahead:
+        raise ValueError("under CF1 the TV-only arm is not ahead at the lowest levels and CSFR at the rest")
+    if max(col(sc_behind, "frac_patches_csfr_ahead")) >= 0.5:
+        raise ValueError("a CF1 level where the TV-only arm is ahead in the mean but not on most patches")
+    d_tv = col(tv, "diff_mean")
+    flat_cap = sum(int(r["n_flat_arm_at_cap"]) for r in tv_bc) / sum(int(r["n_flat"]) for r in tv_bc)
+
+    fc_bc, fc_sc = arm("csfr_no_fc", BURST_CONTIGUOUS), arm("csfr_no_fc", SCATTERED)
+    if not all(float(r["flat_part"]) < 0 for r in fc_bc):
+        raise ValueError("a CF2-CF4 cell where the flat holes do not favour the arm without the penalty")
+    sig = [r for r in fc_sc if float(r["p_holm"]) < alpha]
+    fc_behind = [r for r in sig if float(r["diff_mean"]) < 0]
+    fc_ahead = [r for r in sig if float(r["diff_mean"]) > 0]
+    fc_ns = [r for r in fc_sc if float(r["p_holm"]) >= alpha]
+
+    clip = arm("csfr_no_clip", every)
+    share, worst, kept_max = _tables().range_figures(_rows(ranges))
+    if kept_max != 0:
+        raise ValueError("an arm that keeps C3 has an imputed pixel outside the range")
+
+    def lv(rs: list[dict]) -> str:
+        return level_span([r["level"] for r in rs])
+
+    fmt = "{:.2f}".format
+    return dict(zip(ABL_NAMES, (
+        fmt(min(col(no_tv, "diff_mean"))), fmt(max(col(no_tv, "diff_mean"))),
+        str(sum(d < 0 for d in d_tv)), fmt(-min(d_tv)), str(sum(d > 0 for d in d_tv)), fmt(max(d_tv)),
+        fmt(-max(col(tv_bc, "flat_part"))), fmt(-min(col(tv_bc, "flat_part"))),
+        fmt(min(col(tv_bc, "rest_part"))), fmt(max(col(tv_bc, "rest_part"))),
+        f"{100 * min(col(tv_bc, 'frac_patches_csfr_ahead')):.0f}",
+        f"{100 * max(col(tv_bc, 'frac_patches_csfr_ahead')):.0f}", f"{100 * flat_cap:.0f}",
+        lv(sc_behind), lv(sc_ahead), f"{100 * max(col(sc_behind, 'frac_patches_csfr_ahead')):.0f}",
+        lv(fc_behind), fmt(-max(col(fc_behind, "diff_mean"))), fmt(-min(col(fc_behind, "diff_mean"))),
+        f"{100 * max(col(fc_behind, 'frac_patches_csfr_ahead')):.0f}", lv(fc_ahead),
+        fmt(max(col(fc_ahead, "diff_mean"))), lv(fc_ns),
+        fmt(max(abs(x) for x in col(fc_bc, "rest_part"))),
+        fmt(max(abs(x) for x in col(clip, "diff_mean"))), f"{share:.2f}", f"{worst:.1f}")))
+
+
 def all_comparison_macros(results: Path = ROOT / "results") -> dict[str, str]:
     return {k: v for prefix, s in COMPARISON_SWEEPS.items()
             for k, v in comparison_macros(prefix, results / s).items()}
@@ -474,7 +590,8 @@ def render() -> str:
     macros = {**config_macros(), **calibration_macros(), **corpus_macros(), **method_macros(),
               **environment_macros(), **stats_macros(), **fidelity_macros(), **fallback_macros(),
               **bu_macros(), **shiftmap_macros(), **dictlearn_cap_macros(), **coherence_macros(),
-              **r1_hole_whole_macros(), **all_comparison_macros(), **mechanism_macros()}
+              **r1_hole_whole_macros(), **all_comparison_macros(), **mechanism_macros(),
+              **ablation_macros()}
     lines = ["% GENERATED by scripts/render_numbers_v2.py. Do not edit; re-run the script.",
              "% Every number stated in the running text of the revised manuscript."]
     for k in sorted(macros):
