@@ -590,7 +590,9 @@ For up to three observed pixels per patch, at distances 1, 3 and at least 8 from
 \label{fig:record}
 \end{figure*}
 
-\resultpending{relative error and SRF per family and level; where the record is least accurate and why}
+Of the \recNQueries\ column queries, \recSrfPooled\% meet the SRF criterion at a perturbation of one grey level. Per cell, SRF ranges from \recSrfCellMin\% to \recSrfCellMax\% and the median relative error from \recErrMedMin\% to \recErrMedMax\%. On the \recTopK\ largest entries the record agrees in sign with the measured response for every query. The operational re-solve gives the SRF of the reference in every cell, so an examiner who re-runs the tool at its own tolerance observes what the reference observes.
+
+Every failure is next to the hole. Of the \recNearN\ queries at distance 1, \recNearFail\ fail the criterion (SRF \recNearSrf\%), with errors up to \recNearErrMax\%; the \recFarN\ queries farther away all meet it, with errors up to \recFarErrMax\%. The error grows in proportion to the perturbation: the median of $e(1)/e(\recDeltaMin)$ is \recRatioLow\ (10th to 90th percentile \recRatioLowPTen\ to \recRatioLowPNinety) and that of $e(\recDeltaMax)/e(1)$ is \recRatioHigh\ (\recRatioHighPTen\ to \recRatioHighPNinety). Both ratios are four for the second-order remainder of an exact derivative, whereas an error in the derivative itself would not shrink with $\delta$ and would bring them towards one. The departure is therefore almost entirely the curvature of the solution map, which is strongest next to the hole, and SRF falls as the perturbation grows, from \recSrfSmallDelta\% at $\delta = \recDeltaMin$ to \recSrfLargeDelta\% at $\delta = \recDeltaMax$. The record states the response to small changes of an observed pixel; for changes of several grey levels next to the hole it is a first-order approximation with the errors given here.
 
 \begin{table}[!t]
 \centering

@@ -99,6 +99,17 @@ def test_typed_claims_about_the_primary_comparison_hold():
         "Under burst and contiguous loss the flat holes favour the arm without the penalty in every cell":
             v["ablNoFcBcRestMaxAbs"] != PENDING,
         "with C3 none do": v["ablClipShare"] != PENDING,
+        # Record fidelity (Section VI-D). record_fidelity_macros refuses a sign disagreement,
+        # a failure away from the hole and an operational SRF that differs from the reference.
+        "the record agrees in sign with the measured response for every query": v["recNQueries"] != PENDING,
+        "The operational re-solve gives the SRF of the reference in every cell": v["recSrfPooled"] != PENDING,
+        "Every failure is next to the hole": v["recFarN"] != PENDING,
+        "Both ratios are four for the second-order remainder of an exact derivative":
+            1 / float(v["recDeltaMin"]) == 4 == float(v["recDeltaMax"]),
+        "The departure is therefore almost entirely the curvature of the solution map":
+            all(3.5 < float(v[k]) < 4.5 for k in ("recRatioLow", "recRatioHigh")),
+        "SRF falls as the perturbation grows":
+            float(v["recSrfSmallDelta"]) > float(v["recSrfPooled"]) > float(v["recSrfLargeDelta"]),
     }
     for sentence, holds in claims.items():
         assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
@@ -508,6 +519,53 @@ def test_ablation_macros_refuse_a_range_violation_with_c3(tmp_path):
     m = _mod()
     with pytest.raises(ValueError, match="C3"):
         m.ablation_macros(*_abl(tmp_path, kept_out=0.001))
+
+
+FID_QUERIES = [  # cell, distance, e(0.25), e(1), e(4)
+    ("CF1_L1", 1, 0.05, 0.20, 0.80), ("CF1_L1", 3, 0.0025, 0.01, 0.04),
+    ("CF3_L1", 8, 0.002, 0.008, 0.032), ("CF3_L1", 1, 0.01, 0.04, 0.20)]
+
+
+def _fid(tmp_path, sign=1.0, far_e1=None, op_shift=0.0):
+    rows = []
+    for q, (cell, dist, *errs) in enumerate(FID_QUERIES):
+        for delta, e in zip((0.25, 1.0, 4.0), errs):
+            if far_e1 is not None and dist > 1 and delta == 1.0:
+                e = far_e1
+            rows.append({"cell": cell, "seed": 0, "patch": q, "query_pixel": "0,0", "query_distance": dist,
+                         "delta": delta, "tol": 1e-06, "rel_l2_error_ref": e,
+                         "sign_agreement_topk": sign if delta == 1.0 else 1.0})
+    _write_rows(tmp_path / "fidelity.csv", rows)
+    summary = [{"family": f, "level": lv, "delta": 1.0, "tol": 1e-06,
+                "srf_ref": 0.5 if (f, lv) == ("CF1", "L1") else 1.0,
+                "srf_op": (0.5 if (f, lv) == ("CF1", "L1") else 1.0) + (op_shift if f == "CF2" else 0.0),
+                "rel_err_median_ref": 0.05 if (f, lv) == ("CF1", "L1") else 0.02}
+               for f in ("CF1", "CF2", "CF3", "CF4") for lv in ABL_LEVELS]
+    _write_rows(tmp_path / "summary.csv", summary)
+    return tmp_path / "fidelity.csv", tmp_path / "summary.csv"
+
+
+def test_record_fidelity_macros_say_where_the_record_is_least_accurate(tmp_path):
+    m = _mod()
+    assert set(m.record_fidelity_macros(tmp_path / "x.csv", tmp_path / "y.csv").values()) == {m.PLACEHOLDER}
+    q = m.record_fidelity_macros(*_fid(tmp_path))
+    assert (q["recNQueries"], q["recSrfPooled"], q["recSrfSmallDelta"], q["recSrfLargeDelta"]) == (
+        "4", "75.0", "100.0", "50.0")
+    assert (q["recSrfCellMin"], q["recSrfCellMax"], q["recErrMedMin"], q["recErrMedMax"]) == (
+        "50.0", "100.0", "2", "5")
+    assert (q["recNearN"], q["recNearFail"], q["recNearSrf"], q["recNearErrMax"]) == ("2", "1", "50.0", "20")
+    assert (q["recFarN"], q["recFarErrMax"]) == ("2", "1")
+    assert (q["recRatioLow"], q["recRatioHigh"]) == ("4.00", "4.00")      # e(4)/e(1): 4, 4, 4, 5
+    assert (q["recRatioLowPTen"], q["recRatioLowPNinety"]) == ("4.00", "4.00")
+    assert (q["recRatioHighPTen"], q["recRatioHighPNinety"]) == ("4.00", "4.70")
+
+
+@pytest.mark.parametrize("kw,match", [({"sign": 0.9}, "sign"), ({"far_e1": 0.2}, "farther"),
+                                      ({"op_shift": 0.1}, "operational")])
+def test_record_fidelity_macros_refuse_data_that_contradict_the_text(tmp_path, kw, match):
+    m = _mod()
+    with pytest.raises(ValueError, match=match):
+        m.record_fidelity_macros(*_fid(tmp_path, **kw))
 
 
 def test_comparison_macros_need_lama_at_every_level(tmp_path):

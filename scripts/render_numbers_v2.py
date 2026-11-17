@@ -177,6 +177,78 @@ def fidelity_macros() -> dict[str, str]:
     return {"recDeltaMin": f"{deltas[0]:g}", "recDeltaMax": f"{deltas[-1]:g}"}
 
 
+REC_NAMES = ("recNQueries", "recSrfPooled", "recSrfSmallDelta", "recSrfLargeDelta", "recSrfCellMin",
+             "recSrfCellMax", "recErrMedMin", "recErrMedMax", "recNearN", "recNearFail", "recNearSrf",
+             "recNearErrMax", "recFarN", "recFarErrMax", "recRatioLow", "recRatioHigh", "recRatioLowPTen",
+             "recRatioLowPNinety", "recRatioHighPTen", "recRatioHighPNinety")
+SRF_MAX_ERR = 0.10     # Section IV-B: SRF is the fraction of queries with e(1) <= 0.10
+SRF_DELTA = 1.0
+
+
+def record_fidelity_macros(p: Path = ROOT / "results" / "sensitivity_fidelity" / "fidelity.csv",
+                           summary: Path = ROOT / "results" / "sensitivity_fidelity" / "summary.csv"
+                           ) -> dict[str, str]:
+    """How accurate the record is, where it is least accurate, and why
+    (Section VI-D), at the operational tolerance, against the reference re-solve:
+
+      the number of column queries; SRF pooled over them at delta 1 and at the
+      smallest and largest delta (percent); the range of SRF and of the median
+      relative error over the cells at delta 1 (Table FIDELITY); for queries at
+      distance 1 from the hole (Near) and farther (Far): their number, the
+      failures and SRF (Near), and the largest error at delta 1 (percent); and
+      the median, 10th and 90th percentile over queries of e(1)/e(delta_min)
+      and e(delta_max)/e(1). An error that is the second-order remainder of an
+      exact derivative grows in proportion to delta, so these ratios are near
+      1/delta_min and delta_max; an inexact derivative leaves an error that does
+      not vanish with delta, and ratios near one.
+
+    The text states, and the macros are refused unless: every query agrees in
+    sign on the largest entries at delta 1; every query farther than distance 1
+    meets the SRF criterion; and the operational re-solve gives the SRF of the
+    reference in every cell."""
+    if not (p.exists() and summary.exists()):
+        return _pending(*REC_NAMES)
+    tol = SolverConfig().tol
+    rows = [r for r in _rows(p) if float(r["tol"]) == tol]
+    deltas = sorted({float(r["delta"]) for r in rows})
+    lo, hi = deltas[0], deltas[-1]
+    err: dict[tuple, dict[float, float]] = {}
+    dist: dict[tuple, int] = {}
+    for r in rows:
+        q = (r["cell"], r["seed"], r["patch"], r["query_pixel"])
+        err.setdefault(q, {})[float(r["delta"])] = float(r["rel_l2_error_ref"])
+        dist[q] = int(r["query_distance"])
+        if float(r["delta"]) == SRF_DELTA and float(r["sign_agreement_topk"]) < 1:
+            raise ValueError(f"query {q} does not agree in sign on the largest entries")
+    if any(set(e) != set(deltas) for e in err.values()):
+        raise ValueError("a query was not measured at every delta")
+    qs = sorted(err)
+    e = {d: np.array([err[q][d] for q in qs]) for d in deltas}
+    near = np.array([dist[q] == 1 for q in qs])
+    ok = e[SRF_DELTA] <= SRF_MAX_ERR
+    if not ok[~near].all():
+        raise ValueError("a query farther than distance 1 from the hole fails the SRF criterion")
+    cells = [r for r in _rows(summary) if float(r["delta"]) == SRF_DELTA and float(r["tol"]) == tol]
+    if len(cells) != len(FAMILY_WORDS) * len(LEVELS):
+        raise ValueError(f"{summary.name}: {len(cells)} cells at delta {SRF_DELTA:g}")
+    if any(float(r["srf_op"]) != float(r["srf_ref"]) for r in cells):
+        raise ValueError("the operational re-solve gives a different SRF from the reference in a cell")
+    low, high = e[SRF_DELTA] / e[lo], e[hi] / e[SRF_DELTA]
+    srf = lambda d: f"{100 * np.mean(e[d] <= SRF_MAX_ERR):.1f}"            # noqa: E731
+    pct = _tables().pct
+    q2 = lambda x: f"{x:.2f}"                                                 # noqa: E731
+    return dict(zip(REC_NAMES, (
+        str(len(qs)), srf(SRF_DELTA), srf(lo), srf(hi),
+        f"{100 * min(float(r['srf_ref']) for r in cells):.1f}",
+        f"{100 * max(float(r['srf_ref']) for r in cells):.1f}",
+        pct(min(float(r["rel_err_median_ref"]) for r in cells)),
+        pct(max(float(r["rel_err_median_ref"]) for r in cells)),
+        str(int(near.sum())), str(int((~ok & near).sum())), f"{100 * ok[near].mean():.1f}",
+        pct(e[SRF_DELTA][near].max(), 2), str(int((~near).sum())), pct(e[SRF_DELTA][~near].max(), 2),
+        q2(np.median(low)), q2(np.median(high)), q2(np.percentile(low, 10)), q2(np.percentile(low, 90)),
+        q2(np.percentile(high, 10)), q2(np.percentile(high, 90)))))
+
+
 def bu_macros() -> dict[str, str]:
     """The Bounded-Unknown decision rule and outcome thresholds, from the
     evaluation script that applies them (fixed before the data were seen)."""
@@ -591,7 +663,7 @@ def render() -> str:
               **environment_macros(), **stats_macros(), **fidelity_macros(), **fallback_macros(),
               **bu_macros(), **shiftmap_macros(), **dictlearn_cap_macros(), **coherence_macros(),
               **r1_hole_whole_macros(), **all_comparison_macros(), **mechanism_macros(),
-              **ablation_macros()}
+              **ablation_macros(), **record_fidelity_macros()}
     lines = ["% GENERATED by scripts/render_numbers_v2.py. Do not edit; re-run the script.",
              "% Every number stated in the running text of the revised manuscript."]
     for k in sorted(macros):
