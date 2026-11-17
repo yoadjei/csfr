@@ -76,6 +76,28 @@ def test_a_rerun_reads_every_finished_cell_back(tmp_path, monkeypatch):
     assert calls == [] and (tmp_path / "out" / "oracle.csv").read_bytes() == first
 
 
+def test_sweep_masks_at_several_seeds_key_the_saved_cell(tmp_path, monkeypatch):
+    """Every seed's sweep mask is named mask.npy (the campaign of 2026-11-17 died on
+    that); the saved cell is keyed by each of them, and a changed mask at one seed
+    recomputes that cell only."""
+    m = _mod()
+    X = _tiny_corpus(m, tmp_path, monkeypatch)
+    monkeypatch.setattr(m, "CORPORA", {"tiny": ("patches.npy", "sweep")})
+    for s in (0, 1):
+        d = tmp_path / "sweep" / "CF1_L1" / f"seed{s}"
+        d.mkdir(parents=True)
+        np.save(d / "mask.npy", m.make_mask(X.shape, "CF1", m.SEVERITY["L1"], np.random.default_rng(s)))
+    args = ["--corpora", "tiny", "--seeds", "0", "1", "--out", "out"]
+    assert m.main(args) == 0
+    np.save(tmp_path / "sweep" / "CF1_L1" / "seed1" / "mask.npy",
+            m.make_mask(X.shape, "CF1", m.SEVERITY["L1"], np.random.default_rng(7)))
+    calls = []
+    real = m.oracle_patch
+    monkeypatch.setattr(m, "oracle_patch", lambda *a, **k: calls.append(1) or real(*a, **k))
+    assert m.main(args) == 0
+    assert len(calls) == 2 * len(X)                                    # CF1_L1 at both seeds, nothing else
+
+
 def test_changed_patches_invalidate_the_saved_cells(tmp_path, monkeypatch):
     m = _mod()
     X = _tiny_corpus(m, tmp_path, monkeypatch)

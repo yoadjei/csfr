@@ -105,6 +105,15 @@ def cell_row(X: np.ndarray, Phi: np.ndarray, kappa: int, corpus: str, fam: str, 
             "sparse_approx_rel_err_median": _q([r["sparse_approx_rel_err"] for r in per], 50)}
 
 
+def input_digests(patches: Path, masks: list[Path], seeds: list[int]) -> dict[str, str]:
+    """The identity of a cell's inputs: the patch array and each sweep mask that
+    exists, keyed by seed, because every seed's mask is named mask.npy and
+    digests() keys by file name."""
+    out = digests([patches])
+    out.update({f"mask_seed{s}": digests([m])[m.name] for s, m in zip(seeds, masks) if m.exists()})
+    return out
+
+
 def _csv_text(rows: list[dict]) -> str:
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=list(rows[0]), lineterminator="\n")   # written as text: CRLF on Windows
@@ -136,7 +145,7 @@ def main(argv=None) -> int:
                 masks = [ROOT / sweep / f"{fam}_{lvl}" / f"seed{seed}" / "mask.npy" for seed in args.seeds]
                 store = UnitStore(out / "units" / corpus, {
                     "seeds": args.seeds, "kappa": kappa,
-                    "inputs": digests([ROOT / ppath, *(m for m in masks if m.exists())]),
+                    "inputs": input_digests(ROOT / ppath, masks, args.seeds),
                     "code": digests([Path(__file__).resolve(), *CODE])})
                 rows += store.rows(f"{fam}_{lvl}", lambda fam=fam, lvl=lvl, frac=frac, masks=masks: [
                     cell_row(X, Phi, kappa, corpus, fam, lvl, frac, args.seeds, masks)])
