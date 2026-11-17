@@ -672,7 +672,13 @@ Table~\ref{tab:oracle} reports the oracle-support diagnostic of Section~\ref{sec
 
 Table~\ref{tab:external-v2} repeats the comparison of Table~\ref{tab:paired-v2} on DFRWS 2006 and Kodak. DFRWS 2006 draws \corpusDfrwsTopTwoShare\% of its patches from two images, so its intervals are wide and its estimates are secondary to those of the primary corpus.
 
-\resultpending{whether the ranking of the primary corpus carries over}
+Scattered loss behaves as on the primary corpus. On both corpora the strongest method at every CF1 level is block-DCT thresholding, ahead of CSFR by \qDfrwsCFoneBehindMin\ to \qDfrwsCFoneBehindMax\,dB on DFRWS 2006 and \qKodakCFoneBehindMin\ to \qKodakCFoneBehindMax\,dB on Kodak, with intervals that exclude zero at every level, and CSFR is ahead of LaMa at every CF1 level.
+
+Under contiguous loss CSFR is closer to the strongest method than on the primary corpus at every level. It is first at \qDfrwsCFthreeNFirst\ of the five CF3 levels and \qDfrwsCFfourNFirst\ of the five CF4 levels on DFRWS 2006, and at \qKodakCFthreeNFirst\ and \qKodakCFfourNFirst\ on Kodak. Where another method is ahead, it leads by at most \qDfrwsCFthreeBehindMax\,dB (CF3) and \qDfrwsCFfourBehindMax\,dB (CF4) on DFRWS 2006 and by \qKodakCFthreeBehindMax\ and \qKodakCFfourBehindMax\,dB on Kodak. Across these 20 cells the interval excludes zero against CSFR in one cell and in its favour in three, all three on Kodak. The strongest method reconstructs no Kodak CF3 or CF4 patch exactly, and at most \mechDfrwsContigCappedMax\ of the \corpusDfrwsN\ DFRWS 2006 patches in a cell. The differences on DFRWS 2006 are small enough that even these few patches matter: on the patches that no method reconstructs to the cap, CSFR is ahead of the same method at \qDfrwsCFthreeCapfreeNAhead\ CF3 and \qDfrwsCFfourCapfreeNAhead\ CF4 levels, against \qDfrwsCFthreeNFirst\ and \qDfrwsCFfourNFirst\ in the primary analysis.
+
+Under burst loss CSFR is first at \qDfrwsCFtwoNFirst\ of the five levels on each corpus. On DFRWS 2006 LaMa is ahead of CSFR at every CF2 level, by up to \qDfrwsCFtwoLamaBehindMax\,dB, with intervals that exclude zero at every level.
+
+Overall, CSFR ranks first in \qDfrwsNFirst\ of the 20 DFRWS 2006 cells and \qKodakNFirst\ of the 20 Kodak cells, against \qGovNFirst\ on GovDocs1; on the patches that no method reconstructs to the cap, in \qDfrwsCapfreeNFirst\ and \qKodakCapfreeNFirst, against \qGovCapfreeNFirst. It is not the best method on hole GMSD in any cell of either corpus.
 
 \begin{table*}[!t]
 \centering

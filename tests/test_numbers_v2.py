@@ -50,6 +50,7 @@ def test_typed_claims_about_the_primary_comparison_hold():
     v = dict(re.findall(r"\\providecommand\{\\([A-Za-z]+)\}\{(.*)\}$",
                         (ROOT / "paper" / "numbers_v2.tex").read_text(encoding="utf-8"), re.M))
     tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
+    SECONDARY = ("Dfrws", "Kodak")
     claims = {
         r"The strongest method at every level is \qGovCFoneStrongest":
             " and " not in v["qGovCFoneStrongest"] and v["qGovCFoneNFirst"] == "0",
@@ -64,6 +65,26 @@ def test_typed_claims_about_the_primary_comparison_hold():
             v["qGovCFthreeCapfreeNAhead"] == v["qGovCFfourCapfreeNAhead"] == "5",
         "and below zero at none": v["qGovCFthreeNLamaBehindSig"] == v["qGovCFfourNLamaBehindSig"] == "0",
         "CSFR is not the best method on hole GMSD in any cell": v["qGovGmsdNFirst"] == "0",
+        # Secondary corpora (Section VI-G).
+        "On both corpora the strongest method at every CF1 level is block-DCT thresholding":
+            all(v[f"q{c}CFoneStrongest"] == "block-DCT thresholding" and v[f"q{c}CFoneNFirst"] == "0" for c in SECONDARY),
+        "with intervals that exclude zero at every level, and CSFR is ahead of LaMa at every CF1 level":
+            all(v[f"q{c}CFoneNBehindSig"] == "5" and v[f"q{c}CFoneLamaBehindMax"] == "--" for c in SECONDARY),
+        "Under contiguous loss CSFR is closer to the strongest method than on the primary corpus at every level":
+            max(float(v[f"q{c}{f}BehindMax"]) for c in SECONDARY for f in ("CFthree", "CFfour"))
+            < min(float(v[f"qGov{f}BehindMin"]) for f in ("CFthree", "CFfour")),
+        "Across these 20 cells the interval excludes zero against CSFR in one cell and in its favour in three, all three on Kodak":
+            sum(int(v[f"q{c}{f}NBehindSig"]) for c in SECONDARY for f in ("CFthree", "CFfour")) == 1
+            and sum(int(v[f"qKodak{f}NAheadSig"]) for f in ("CFthree", "CFfour")) == 3
+            and sum(int(v[f"qDfrws{f}NAheadSig"]) for f in ("CFthree", "CFfour")) == 0,
+        "The differences on DFRWS 2006 are small enough that even these few patches matter":
+            any(v[f"qDfrws{f}CapfreeNAhead"] != v[f"qDfrws{f}NFirst"] for f in ("CFthree", "CFfour")),
+        r"Under burst loss CSFR is first at \qDfrwsCFtwoNFirst\ of the five levels on each corpus":
+            v["qDfrwsCFtwoNFirst"] == v["qKodakCFtwoNFirst"],
+        "On DFRWS 2006 LaMa is ahead of CSFR at every CF2 level":
+            v["qDfrwsCFtwoLamaAheadMax"] == "--" and v["qDfrwsCFtwoNLamaBehindSig"] == "5",
+        "It is not the best method on hole GMSD in any cell of either corpus":
+            all(v[f"q{c}GmsdNFirst"] == "0" for c in SECONDARY),
     }
     for sentence, holds in claims.items():
         assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
@@ -334,8 +355,11 @@ def _mech(d, gov_overrides=None, kodak_capped=0):
     gov[10] = _mech_row("CF3", "L1", **cf3_l1)
     kodak = [_mech_row(f, lv, n_patches_capped=kodak_capped if f == "CF4" else 0)
              for f in ("CF1", "CF2", "CF3", "CF4") for lv in ("L1", "L2", "L3", "L4", "L5")]
+    dfrws = [_mech_row(f, lv, n_patches_capped={"CF1": 9, "CF3": 2, "CF4": 3}.get(f, 0))
+             for f in ("CF1", "CF2", "CF3", "CF4") for lv in ("L1", "L2", "L3", "L4", "L5")]
     _write_rows(d / "sweep_v2_govdocs1.csv", gov)
     _write_rows(d / "sweep_v2_kodak.csv", kodak)
+    _write_rows(d / "sweep_v2_dfrws.csv", dfrws)
 
 
 def _write_rows(path, rows):
@@ -353,6 +377,7 @@ def test_mechanism_macros_read_the_contiguous_cells_of_the_primary_corpus(tmp_pa
     _mech(tmp_path)
     q = m.mechanism_macros(tmp_path)
     assert (q["mechContigCappedMin"], q["mechContigCappedMax"]) == ("5", "20")
+    assert q["mechDfrwsContigCappedMax"] == "3"                          # CF1's 9 is not contiguous loss
     assert (q["mechContigCapPartMin"], q["mechContigCapPartMax"]) == ("2.00", "4.50")
     assert (q["mechContigRestMin"], q["mechContigRestMax"]) == ("0.25", "1.00")
     assert (q["mechContigBiasMin"], q["mechContigBiasMax"]) == ("0.10", "0.50")

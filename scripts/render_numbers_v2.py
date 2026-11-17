@@ -417,7 +417,7 @@ def comparison_macros(prefix: str, sweep: Path) -> dict[str, str]:
 MECH_NAMES = ("mechContigCappedMin", "mechContigCappedMax", "mechContigCapPartMin", "mechContigCapPartMax",
               "mechContigRestMin", "mechContigRestMax", "mechContigFlatShare", "mechContigBiasMin",
               "mechContigBiasMax", "mechContigWithinShare", "mechContigCsfrPsnrMin", "mechContigCsfrPsnrMax",
-              "mechContigTvExactShare")
+              "mechContigTvExactShare", "mechDfrwsContigCappedMax")
 CONTIGUOUS = ("CF3", "CF4")
 
 
@@ -434,9 +434,10 @@ def mechanism_macros(d: Path = ROOT / "results" / "cap_mechanism") -> dict[str, 
     the capped patches account for the whole deficit, that CSFR is ahead on the
     rest, and that its flat fills are darker than the page, in every such cell:
     the macros are refused if any of these fails, and Kodak, said to have no
-    capped patch in these families, must have none."""
-    gov, kodak = d / "sweep_v2_govdocs1.csv", d / "sweep_v2_kodak.csv"
-    if not gov.exists() or not kodak.exists():
+    capped patch in these families, must have none. For DFRWS 2006: the most
+    patches the strongest method caps in one CF3 or CF4 cell."""
+    gov, kodak, dfrws = (d / f"sweep_v2_{s}.csv" for s in ("govdocs1", "kodak", "dfrws"))
+    if not (gov.exists() and kodak.exists() and dfrws.exists()):
         return _pending(*MECH_NAMES)
     rows = [r for r in _rows(gov) if r["family"] in CONTIGUOUS]
     if len(rows) != len(CONTIGUOUS) * len(LEVELS):
@@ -460,7 +461,8 @@ def mechanism_macros(d: Path = ROOT / "results" / "cap_mechanism") -> dict[str, 
         str(min(capped)), str(max(capped)), f"{-max(cap):.2f}", f"{-min(cap):.2f}",
         f"{min(rest):.2f}", f"{max(rest):.2f}", f"{100 * flat / runs:.0f}",
         f"{-max(bias):.2f}", f"{-min(bias):.2f}", f"{100 * within / flat:.0f}",
-        f"{min(psnr):.0f}", f"{max(psnr):.0f}", f"{100 * tv / flat:.0f}")))
+        f"{min(psnr):.0f}", f"{max(psnr):.0f}", f"{100 * tv / flat:.0f}",
+        str(max(int(r["n_patches_capped"]) for r in _rows(dfrws) if r["family"] in CONTIGUOUS)))))
 
 
 def all_comparison_macros(results: Path = ROOT / "results") -> dict[str, str]:
