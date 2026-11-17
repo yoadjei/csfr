@@ -483,13 +483,20 @@ PROSE_NAMES = {"csfr_tv_only": "the TV-only arm", "bilinear": "linear interpolat
                "criminisi": "exemplar inpainting"}
 FAMILY_FIELDS = ("RankMin", "RankMax", "NFirst", "Strongest", "BehindMin", "BehindMax", "NBehindSig",
                  "AheadMax", "NAheadSig", "LamaBehindMax", "LamaAheadMax", "NLamaBehindSig", "NLamaAheadSig",
-                 "LedMin", "LedMax", "CapfreeNAhead")
+                 "LedMin", "LedMax", "CapfreeNAhead", "LevelTrend")
 CORPUS_FIELDS = ("NMethods", "NFirst", "GmsdNFirst", "GmsdRankMin", "CapfreeNFirst", "CapfreeNewStrongest",
                  "CapfreeNSignFlip")
 
 
 def _prose_list(names: list[str]) -> str:
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def level_trend(xs: list[float]) -> str:
+    """'rises' if every step from one level to the next increases xs, 'falls'
+    if every step decreases it, else 'mixed'."""
+    steps = [b - a for a, b in zip(xs, xs[1:])]
+    return "rises" if all(s > 0 for s in steps) else "falls" if all(s < 0 for s in steps) else "mixed"
 
 
 def comparison_names(prefix: str) -> list[str]:
@@ -508,7 +515,9 @@ def comparison_macros(prefix: str, sweep: Path) -> dict[str, str]:
     lies below zero; the largest lead where CSFR is ahead and the levels whose
     interval lies above zero; the same against LaMa; the range of the share of
     source images in which CSFR has the higher mean (percent); the levels at
-    which CSFR is ahead of the same strongest method on the cap-free patches. Per corpus: the classical
+    which CSFR is ahead of the same strongest method on the cap-free patches;
+    and LevelTrend, how CSFR's difference to the strongest method moves from L1
+    to L5: "rises" (towards CSFR) or "falls" at every step, else "mixed". Per corpus: the classical
     method count, the cells CSFR ranks first on hole PSNR and on GMSD, its best
     GMSD rank, and the cells whose strongest method or difference sign changes
     on the cap-free patches. An empty range prints a dash."""
@@ -547,7 +556,8 @@ def comparison_macros(prefix: str, sweep: Path) -> dict[str, str]:
                 "LamaBehindMax": fmt([-d for d in ld if d < 0], max),
                 "LamaAheadMax": fmt([d for d in ld if d > 0], max),
                 "NLamaBehindSig": str(sum(float(e["ci_cluster_hi"]) < 0 for e in ext)),
-                "NLamaAheadSig": str(sum(float(e["ci_cluster_lo"]) > 0 for e in ext))}
+                "NLamaAheadSig": str(sum(float(e["ci_cluster_lo"]) > 0 for e in ext)),
+                "LevelTrend": level_trend(diffs)}
         out.update({f"q{prefix}{word}{k}": v for k, v in vals.items()})
     if len(n_methods) != 1:
         raise ValueError(f"{sweep.name}: cells compare different numbers of methods: {sorted(n_methods)}")
@@ -630,7 +640,7 @@ ABL_NAMES = ("ablNoTvMin", "ablNoTvMax", "ablTvNBehind", "ablTvBehindMax", "ablT
              "ablTvScatterAheadShareMax", "ablNoFcScatterBehindLevels", "ablNoFcScatterBehindMin",
              "ablNoFcScatterBehindMax", "ablNoFcScatterAheadShareMax", "ablNoFcScatterAheadLevels",
              "ablNoFcScatterAheadMax", "ablNoFcScatterNsLevels", "ablNoFcBcRestMaxAbs", "ablClipMaxAbs",
-             "ablClipShare", "ablClipMaxExcess")
+             "ablClipShare", "ablClipMaxExcess", "ablTvScatterTrend", "ablNoFcScatterTrend")
 SCATTERED = ("CF1",)
 BURST_CONTIGUOUS = ("CF2", "CF3", "CF4")
 
@@ -666,6 +676,9 @@ def ablation_macros(mech: Path = ROOT / "results" / "ablation_mechanism" / "swee
                 neither is; under CF2-CF4 the largest |rest part|.
       Clip      the arm without C3: the largest |difference| in any cell, and
                 the range figure of Table ABLATION_V2.
+      Trend     under CF1, how CSFR minus the TV-only arm and CSFR minus the arm
+                without the penalty change from L1 to L5 (level_trend): 'rises'
+                says the cost of the penalties shrinks at every step.
 
     The text states the following, and the macros are refused if any fails:
     removing TV lowers hole PSNR in every cell with Holm p < ALPHA; against the
@@ -737,7 +750,8 @@ def ablation_macros(mech: Path = ROOT / "results" / "ablation_mechanism" / "swee
         f"{100 * max(col(fc_behind, 'frac_patches_csfr_ahead')):.0f}", lv(fc_ahead),
         fmt(max(col(fc_ahead, "diff_mean"))), lv(fc_ns),
         fmt(max(abs(x) for x in col(fc_bc, "rest_part"))),
-        fmt(max(abs(x) for x in col(clip, "diff_mean"))), f"{share:.2f}", f"{worst:.1f}")))
+        fmt(max(abs(x) for x in col(clip, "diff_mean"))), f"{share:.2f}", f"{worst:.1f}",
+        level_trend(col(tv_sc, "diff_mean")), level_trend(col(fc_sc, "diff_mean")))))
 
 
 def all_comparison_macros(results: Path = ROOT / "results") -> dict[str, str]:

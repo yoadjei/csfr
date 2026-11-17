@@ -117,6 +117,35 @@ def test_typed_claims_about_the_primary_comparison_hold():
             float(v["recCmpReachMax"]) < float(v["recCsfrReachMin"]),
         "and for every CF3 and CF4 query": v["recLinZeroScatter"] != PENDING,
         "the value it takes when the one-grey-level record is zero": v["recPdeFdDiffMed"] == "1.00",
+        # Discussion, convexity (sec:discussion:convexity).
+        "a non-convex iteration, is ahead of CSFR at every level of all three corpora":
+            all(v[f"q{c}CFoneStrongest"] == "block-DCT thresholding" and v[f"q{c}CFoneNFirst"] == "0"
+                for c in ("Gov", *SECONDARY)),
+        "on each corpus the deficit shrinks at every step from L1 to L5":
+            all(v[f"q{c}CFoneLevelTrend"] == "rises" for c in ("Gov", *SECONDARY)),
+        "Both arms gain most over CSFR at L1 and less at every step to L5, as does block-DCT thresholding":
+            v["ablTvScatterTrend"] == v["ablNoFcScatterTrend"] == "rises"
+            and all(v[f"q{c}CFoneLevelTrend"] == "rises" for c in ("Gov", *SECONDARY)),
+        "the TV-only arm, which is also convex, is ahead at CF1": v["ablTvScatterBehindLevels"] != PENDING,
+        # Discussion, where CSFR is best suited (sec:discussion:scope; R1.5, R3.4).
+        "Under scattered loss it is not: block-DCT thresholding is ahead at every level of every corpus":
+            all(v[f"q{c}CFoneStrongest"] == "block-DCT thresholding" and v[f"q{c}CFoneNFirst"] == "0"
+                for c in ("Gov", *SECONDARY)),
+        "Under burst loss LaMa is ahead of CSFR at every level on the primary corpus and on DFRWS 2006":
+            v["qGovCFtwoLamaAheadMax"] == v["qDfrwsCFtwoLamaAheadMax"] == "--",
+        r"CSFR is first at some levels and elsewhere at most \qDfrwsCFthreeBehindMax":
+            sum(int(v[f"q{c}{f}NFirst"]) for c in SECONDARY for f in ("CFthree", "CFfour")) > 0
+            and float(v["qDfrwsCFthreeBehindMax"]) == max(float(v[f"q{c}{f}BehindMax"])
+                                                         for c in SECONDARY for f in ("CFthree", "CFfour")),
+        "CSFR is ahead of the strongest method at every contiguous-loss level on the patches that no method":
+            v["qGovCFthreeCapfreeNAhead"] == v["qGovCFfourCapfreeNAhead"] == "5",
+        "it has the higher mean in most source images":
+            min(int(v["qGovCFthreeLedMin"]), int(v["qGovCFfourLedMin"])) > 50,
+        "which CSFR fills slightly dark": v["mechContigBiasMin"] != PENDING,       # mechanism_macros refuses otherwise
+        "under light scattered loss on most patches as well":
+            v["ablTvScatterAheadShareMax"] != PENDING and int(v["ablTvScatterAheadShareMax"]) < 50,
+        "while CSFR is ahead of it on the other holes and in the median under burst and contiguous loss":
+            v["ablTvBcRestMin"] != PENDING,
     }
     for sentence, holds in claims.items():
         assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
@@ -356,6 +385,8 @@ def test_comparison_macros_read_rank_gap_and_intervals_per_family(tmp_path):
     assert (q["qGovCFoneBehindMin"], q["qGovCFoneBehindMax"], q["qGovCFoneNBehindSig"]) == ("1.00", "3.00", "4")
     assert (q["qGovCFoneAheadMax"], q["qGovCFoneNAheadSig"]) == ("--", "0")
     assert (q["qGovCFoneLamaAheadMax"], q["qGovCFoneLamaBehindMax"], q["qGovCFoneNLamaAheadSig"]) == ("3.00", "--", "5")
+    assert (q["qGovCFoneLevelTrend"], q["qGovCFtwoLevelTrend"]) == ("falls", "mixed")   # -1.0 .. -3.0; ties
+    assert (m.level_trend([-7.6, -5.1, -2.3]), m.level_trend([1.0, 1.0])) == ("rises", "mixed")
     assert (q["qGovCFtwoRankMin"], q["qGovCFtwoRankMax"], q["qGovCFtwoNFirst"]) == ("1", "2", "2")
     assert q["qGovCFtwoStrongest"] == "FSR"                          # best by the signed difference
     assert (q["qGovCFtwoBehindMin"], q["qGovCFtwoBehindMax"], q["qGovCFtwoNBehindSig"]) == ("0.40", "0.40", "3")
@@ -503,6 +534,9 @@ def test_ablation_macros_say_what_each_term_contributes(tmp_path):
         "14", "L5", "0.35")
     assert (q["ablNoFcScatterNsLevels"], q["ablNoFcBcRestMaxAbs"]) == ("L4", "0.51")
     assert (q["ablClipMaxAbs"], q["ablClipShare"], q["ablClipMaxExcess"]) == ("0.09", "3.00", "158.4")
+    assert (q["ablTvScatterTrend"], q["ablNoFcScatterTrend"]) == ("rises", "rises")
+    q = m.ablation_macros(*_abl(tmp_path, overrides={("csfr_no_fc", "CF1", "L2"): {"diff_mean": -2.5}}))
+    assert q["ablNoFcScatterTrend"] == "mixed"
 
 
 @pytest.mark.parametrize("key,bad", [
