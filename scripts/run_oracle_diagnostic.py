@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import sys
 from pathlib import Path
@@ -34,6 +35,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from checkpoint import UnitStore, digests, write_text_atomic  # noqa: E402
 from csfr_objective import dct_matrix  # noqa: E402
 from masks import SEVERITY, make_mask  # noqa: E402
 from quality import psnr_hole  # noqa: E402
@@ -42,6 +44,8 @@ CORPORA = {"dfrws2006": ("data/patches.npy", "results/sweep_v2_dfrws"),
            "govdocs1_v2": ("data/patches_govdocs1_v2.npy", "results/sweep_v2_govdocs1")}
 FAMILIES = ["CF1", "CF2", "CF3", "CF4"]
 COND_FLAG = 1e3
+# the code a cell's row depends on besides this script: a change invalidates the saved cells
+CODE = [ROOT / "src" / "csfr_objective.py", ROOT / "src" / "masks.py", ROOT / "src" / "quality.py"]
 
 
 def dct_basis(n: int) -> np.ndarray:
@@ -82,6 +86,33 @@ def _q(v, p):
     return float(np.percentile(v[np.isfinite(v)], p)) if np.isfinite(v).any() else float("inf")
 
 
+def cell_row(X: np.ndarray, Phi: np.ndarray, kappa: int, corpus: str, fam: str, lvl: str, frac: float,
+             seeds: list[int], masks: list[Path]) -> dict:
+    """oracle.csv's row for one cell: every patch at every seed, with the sweep's
+    mask where the sweep saved one and the regenerated mask otherwise."""
+    per = []
+    for seed, mpath in zip(seeds, masks):
+        M = np.load(mpath) if mpath.exists() else make_mask(X.shape, fam, frac, np.random.default_rng(seed))
+        per += [oracle_patch(X[i], M[i], kappa, Phi) for i in range(len(X))]
+    cond = [r["cond"] for r in per]
+    return {"corpus": corpus, "family": fam, "level": lvl, "frac": frac,
+            "n_patches": len(per), "seeds": " ".join(map(str, seeds)), "kappa": kappa,
+            "oracle_psnr_hole_median": _q([r["psnr_hole"] for r in per], 50),
+            "cond_median": _q(cond, 50), "cond_p90": _q(cond, 90),
+            "frac_cond_above_1e3": float(np.mean([c > COND_FLAG for c in cond])),
+            "frac_rank_deficient": float(np.mean([r["rank"] < kappa for r in per])),
+            "smin_median": _q([r["smin"] for r in per], 50),
+            "sparse_approx_rel_err_median": _q([r["sparse_approx_rel_err"] for r in per], 50)}
+
+
+def _csv_text(rows: list[dict]) -> str:
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=list(rows[0]), lineterminator="\n")   # written as text: CRLF on Windows
+    w.writeheader()
+    w.writerows(rows)
+    return buf.getvalue()
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -102,28 +133,17 @@ def main(argv=None) -> int:
         kappa = int(round(args.kappa_frac * n * n))
         for fam in FAMILIES:
             for lvl, frac in SEVERITY.items():
-                per = []
-                for seed in args.seeds:
-                    mpath = ROOT / sweep / f"{fam}_{lvl}" / f"seed{seed}" / "mask.npy"
-                    M = np.load(mpath) if mpath.exists() else make_mask(X.shape, fam, frac,
-                                                                        np.random.default_rng(seed))
-                    per += [oracle_patch(X[i], M[i], kappa, Phi) for i in range(len(X))]
-                cond = [r["cond"] for r in per]
-                rows.append({"corpus": corpus, "family": fam, "level": lvl, "frac": frac,
-                             "n_patches": len(per), "seeds": " ".join(map(str, args.seeds)), "kappa": kappa,
-                             "oracle_psnr_hole_median": _q([r["psnr_hole"] for r in per], 50),
-                             "cond_median": _q(cond, 50), "cond_p90": _q(cond, 90),
-                             "frac_cond_above_1e3": float(np.mean([c > COND_FLAG for c in cond])),
-                             "frac_rank_deficient": float(np.mean([r["rank"] < kappa for r in per])),
-                             "smin_median": _q([r["smin"] for r in per], 50),
-                             "sparse_approx_rel_err_median": _q([r["sparse_approx_rel_err"] for r in per], 50)})
+                masks = [ROOT / sweep / f"{fam}_{lvl}" / f"seed{seed}" / "mask.npy" for seed in args.seeds]
+                store = UnitStore(out / "units" / corpus, {
+                    "seeds": args.seeds, "kappa": kappa,
+                    "inputs": digests([ROOT / ppath, *(m for m in masks if m.exists())]),
+                    "code": digests([Path(__file__).resolve(), *CODE])})
+                rows += store.rows(f"{fam}_{lvl}", lambda fam=fam, lvl=lvl, frac=frac, masks=masks: [
+                    cell_row(X, Phi, kappa, corpus, fam, lvl, frac, args.seeds, masks)])
                 r = rows[-1]
                 print(f"[oracle] {corpus} {fam}_{lvl}: PSNR {r['oracle_psnr_hole_median']:.2f}, "
                       f"cond median {r['cond_median']:.3g}, >1e3 {r['frac_cond_above_1e3']:.2f}", flush=True)
-                with (out / "oracle.csv").open("w", newline="", encoding="utf-8") as f:
-                    w = csv.DictWriter(f, fieldnames=list(rows[0]))
-                    w.writeheader()
-                    w.writerows(rows)
+                write_text_atomic(out / "oracle.csv", _csv_text(rows))
     n = 64
     (out / "coherence.json").write_text(json.dumps(
         {"n": n, "mutual_coherence": mutual_coherence(n), "sqrt_N_times_mu": mutual_coherence(n) * n,

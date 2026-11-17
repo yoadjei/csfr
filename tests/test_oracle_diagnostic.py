@@ -51,3 +51,39 @@ def test_coherence_of_pixel_and_dct_bases():
     m = _mod()
     mu = m.mutual_coherence(64)
     assert 1 / 64 <= mu <= 2 / 64
+
+
+def _tiny_corpus(m, tmp_path, monkeypatch):
+    """A two-patch 8 x 8 corpus in place of the real ones; no sweep masks, so
+    every mask is regenerated."""
+    X = np.stack([_sparse_patch(m, n=8, k=4, seed=s) for s in (0, 1)]).astype(np.float32)
+    np.save(tmp_path / "patches.npy", X)
+    monkeypatch.setattr(m, "ROOT", tmp_path)
+    monkeypatch.setattr(m, "CORPORA", {"tiny": ("patches.npy", "no_sweep")})
+    return X
+
+
+def test_a_rerun_reads_every_finished_cell_back(tmp_path, monkeypatch):
+    m = _mod()
+    _tiny_corpus(m, tmp_path, monkeypatch)
+    args = ["--corpora", "tiny", "--seeds", "0", "--out", "out"]
+    assert m.main(args) == 0
+    first = (tmp_path / "out" / "oracle.csv").read_bytes()
+    assert first.count(b"\n") == 1 + 4 * len(m.SEVERITY)              # header and one row per cell
+    calls = []
+    monkeypatch.setattr(m, "oracle_patch", lambda *a, **k: calls.append(1))
+    assert m.main(args) == 0
+    assert calls == [] and (tmp_path / "out" / "oracle.csv").read_bytes() == first
+
+
+def test_changed_patches_invalidate_the_saved_cells(tmp_path, monkeypatch):
+    m = _mod()
+    X = _tiny_corpus(m, tmp_path, monkeypatch)
+    args = ["--corpora", "tiny", "--seeds", "0", "--out", "out"]
+    m.main(args)
+    np.save(tmp_path / "patches.npy", X[::-1].copy())
+    calls = []
+    real = m.oracle_patch
+    monkeypatch.setattr(m, "oracle_patch", lambda *a, **k: calls.append(1) or real(*a, **k))
+    m.main(args)
+    assert len(calls) == 4 * len(m.SEVERITY) * len(X)                # every cell recomputed
