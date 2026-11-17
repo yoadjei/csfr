@@ -322,6 +322,63 @@ CF4~L5 & FSR & $-$0.14 & +0.00 & $-$0.14 & 0/240 & -- & -- \\
 % END AUTO SUPP_CAP_MECHANISM
 \end{table}
 
+\begin{table}[htbp]
+\centering
+\caption{CSFR against the strongest classical method of each cell with the source image as the unit, on the three corpora, hole PSNR (dB). Images: the number of source images. Led: the share of images in which CSFR has the higher mean. $\Delta_{\mathrm{img}}$: the mean over images of the per-image mean difference (CSFR minus the method), with its 95\% bootstrap interval over images. $p$: two-sided Wilcoxon signed-rank test over the image means, not adjusted, with the side its statistic favours, (+) CSFR and ($-$) the method. The test ranks the images, so it can favour CSFR where $\Delta_{\mathrm{img}}$ does not: on GovDocs1 under CF3 and CF4 most images favour CSFR by a little and a few favour the method by much, the pattern the main paper traces to the 100\,dB cap. DFRWS 2006 has six images, so its tests have little power.}
+\label{tab:supp:imagelevel}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+% BEGIN AUTO SUPP_IMAGE_LEVEL
+\begin{tabular}{@{}l l r r r c r@{}}
+\toprule
+Cell & Strongest & Images & Led (\%) & $\Delta_{\mathrm{img}}$ & 95\% CI & $p$ (side) \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{GovDocs1}} \\
+CF1~L1 & Block-DCT thr. & 496 & 7 & $-$7.59 & [$-$8.49, $-$6.79] & $<$0.001\,($-$) \\
+CF1~L3 & Block-DCT thr. & 496 & 7 & $-$5.06 & [$-$5.91, $-$4.33] & $<$0.001\,($-$) \\
+CF1~L5 & Block-DCT thr. & 496 & 12 & $-$2.29 & [$-$2.84, $-$1.83] & $<$0.001\,($-$) \\
+CF2~L1 & Block-DCT thr. & 496 & 33 & $-$3.05 & [$-$3.83, $-$2.36] & $<$0.001\,($-$) \\
+CF2~L3 & Block-DCT thr. & 496 & 51 & $-$0.63 & [$-$1.07, $-$0.23] & 0.573\,(+) \\
+CF2~L5 & TV-only & 496 & 90 & +0.21 & [+0.06, +0.33] & $<$0.001\,(+) \\
+CF3~L1 & Block-DCT thr. & 496 & 59 & $-$4.89 & [$-$6.54, $-$3.36] & 0.283\,(+) \\
+CF3~L3 & Exemplar & 496 & 69 & $-$2.20 & [$-$3.58, $-$0.99] & $<$0.001\,(+) \\
+CF3~L5 & Exemplar & 496 & 71 & $-$0.81 & [$-$1.79, +0.07] & $<$0.001\,(+) \\
+CF4~L1 & Block-DCT thr. & 496 & 63 & $-$2.97 & [$-$4.37, $-$1.67] & $<$0.001\,(+) \\
+CF4~L3 & TV-only & 496 & 73 & $-$0.96 & [$-$1.62, $-$0.39] & $<$0.001\,(+) \\
+CF4~L5 & Exemplar & 496 & 71 & $-$0.55 & [$-$1.54, +0.29] & $<$0.001\,(+) \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{DFRWS 2006}} \\
+CF1~L1 & Block-DCT thr. & 6 & 0 & $-$7.76 & [$-$13.46, $-$3.39] & 0.031\,($-$) \\
+CF1~L3 & Block-DCT thr. & 6 & 0 & $-$5.83 & [$-$11.85, $-$2.10] & 0.031\,($-$) \\
+CF1~L5 & Block-DCT thr. & 6 & 0 & $-$2.70 & [$-$6.09, $-$0.74] & 0.031\,($-$) \\
+CF2~L1 & FSR & 6 & 17 & $-$0.58 & [$-$0.88, $-$0.25] & 0.062\,($-$) \\
+CF2~L3 & FSR & 6 & 33 & $-$0.18 & [$-$0.69, +0.28] & 0.844\,($-$) \\
+CF2~L5 & TV-only & 6 & 100 & +0.41 & [+0.32, +0.53] & 0.031\,(+) \\
+CF3~L1 & TV-only & 6 & 50 & $-$0.78 & [$-$2.69, +0.37] & 0.812\,(+) \\
+CF3~L3 & FSR & 6 & 33 & $-$2.03 & [$-$5.46, +0.05] & 0.312\,($-$) \\
+CF3~L5 & TV-only & 6 & 67 & $-$1.84 & [$-$5.81, +0.24] & 0.656\,(+) \\
+CF4~L1 & Navier--Stokes & 6 & 67 & $-$2.95 & [$-$9.42, +0.42] & 0.500\,(+) \\
+CF4~L3 & FSR & 6 & 33 & $-$1.63 & [$-$4.91, +0.46] & 0.562\,($-$) \\
+CF4~L5 & FSR & 6 & 67 & $-$0.04 & [$-$0.52, +0.34] & 0.938\,(+) \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{Kodak}} \\
+CF1~L1 & Block-DCT thr. & 24 & 0 & $-$3.10 & [$-$3.64, $-$2.58] & $<$0.001\,($-$) \\
+CF1~L3 & Block-DCT thr. & 24 & 0 & $-$2.51 & [$-$2.92, $-$2.10] & $<$0.001\,($-$) \\
+CF1~L5 & Block-DCT thr. & 24 & 4 & $-$1.65 & [$-$2.04, $-$1.28] & $<$0.001\,($-$) \\
+CF2~L1 & Block-DCT thr. & 24 & 29 & $-$0.48 & [$-$0.86, $-$0.16] & 0.004\,($-$) \\
+CF2~L3 & FSR & 24 & 38 & $-$0.13 & [$-$0.37, +0.11] & 0.375\,($-$) \\
+CF2~L5 & TV-only & 24 & 100 & +0.36 & [+0.27, +0.48] & $<$0.001\,(+) \\
+CF3~L1 & TV-only & 24 & 88 & +0.43 & [+0.17, +0.81] & $<$0.001\,(+) \\
+CF3~L3 & FSR & 24 & 62 & $-$0.03 & [$-$0.36, +0.27] & 0.565\,(+) \\
+CF3~L5 & TV-only & 24 & 58 & +0.07 & [$-$0.02, +0.15] & 0.197\,(+) \\
+CF4~L1 & Navier--Stokes & 24 & 67 & $-$0.05 & [$-$0.50, +0.33] & 0.317\,(+) \\
+CF4~L3 & FSR & 24 & 54 & $-$0.18 & [$-$0.49, +0.10] & 0.603\,($-$) \\
+CF4~L5 & FSR & 24 & 62 & $-$0.14 & [$-$0.58, +0.24] & 1.000 \\
+\bottomrule
+\end{tabular}
+% END AUTO SUPP_IMAGE_LEVEL
+\end{table}
+
 %%======================================================================
 \section{What the comparison methods compute}
 \label{sec:supp:baselines}

@@ -110,6 +110,13 @@ def test_typed_claims_about_the_primary_comparison_hold():
             all(3.5 < float(v[k]) < 4.5 for k in ("recRatioLow", "recRatioHigh")),
         "SRF falls as the perturbation grows":
             float(v["recSrfSmallDelta"]) > float(v["recSrfPooled"]) > float(v["recSrfLargeDelta"]),
+        # Comparison records (Section VI-E). record_comparison_macros refuses a zero CSFR
+        # column and a non-zero exact linear record under CF3-CF4.
+        "For every query its column is non-zero": v["recCsfrSupportMinShare"] != PENDING,
+        "The records of the comparison methods are concentrated near the query":
+            float(v["recCmpReachMax"]) < float(v["recCsfrReachMin"]),
+        "and for every CF3 and CF4 query": v["recLinZeroScatter"] != PENDING,
+        "the value it takes when the one-grey-level record is zero": v["recPdeFdDiffMed"] == "1.00",
     }
     for sentence, holds in claims.items():
         assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
@@ -566,6 +573,63 @@ def test_record_fidelity_macros_refuse_data_that_contradict_the_text(tmp_path, k
     m = _mod()
     with pytest.raises(ValueError, match=match):
         m.record_fidelity_macros(*_fid(tmp_path, **kw))
+
+
+def _records(tmp_path, csfr_support=(100, 99, 50, 50), lin_contig=0.0):
+    """Two queries in CF1_L1 and two in CF3_L1; hole of 100 free pixels in CF1, 50 in CF3."""
+    queries = [("CF1_L1", "0,0", 100), ("CF1_L1", "0,1", 100), ("CF3_L1", "0,0", 50), ("CF3_L1", "0,1", 50)]
+    fd = {  # (method, query index) -> (l1 at delta 1, l1 at delta 4, ||FD1 - FD4|| / ||FD4||)
+        ("inpaint_telea", 0): (0.0, 2.0, 1.0), ("inpaint_telea", 1): (1.0, 2.0, 3.0),
+        ("inpaint_telea", 2): (0.0, 0.0, float("nan")), ("inpaint_telea", 3): (0.0, 1.0, 1.0),
+        ("inpaint_ns", 0): (0.0, 0.0, float("nan")), ("inpaint_ns", 1): (2.0, 3.0, 1.5),
+        ("inpaint_ns", 2): (0.0, 1.0, 1.0), ("inpaint_ns", 3): (0.0, 0.0, float("nan"))}
+    rows, fid = [], []
+    for i, (cell, px, n_free) in enumerate(queries):
+        base = {"cell": cell, "patch": 0, "query_pixel": px, "query_distance": 1}
+        rows.append({**base, "method": "csfr", "record": "implicit_function", "l1_norm": 2.0,
+                     "support": csfr_support[i], "mean_distance": 30.0 + i, "fd_rel_diff_delta1_vs_4": "",
+                     "fd_vs_exact_rel_l2": ""})
+        lin = 1.0 if i == 0 else (lin_contig if cell.startswith("CF3") else 0.0)
+        rows.append({**base, "method": "bilinear", "record": "exact_barycentric", "l1_norm": lin,
+                     "support": 2 if lin else 0, "mean_distance": 1.0, "fd_rel_diff_delta1_vs_4": "",
+                     "fd_vs_exact_rel_l2": ""})
+        for dl in (1, 4):
+            rows.append({**base, "method": "bilinear", "record": f"finite_difference_delta{dl}", "l1_norm": lin,
+                         "support": 2 if lin else 0, "mean_distance": 1.0,
+                         "fd_rel_diff_delta1_vs_4": 0.0 if lin else "nan",
+                         "fd_vs_exact_rel_l2": (2e-5 if i == 0 else 0.0) if dl == 4 else ""})
+        for m in ("inpaint_telea", "inpaint_ns"):
+            one, four, diff = fd[m, i]
+            for dl, l1 in ((1, one), (4, four)):
+                rows.append({**base, "method": m, "record": f"finite_difference_delta{dl}", "l1_norm": l1,
+                             "support": 9 if m == "inpaint_ns" else 4, "mean_distance": 6.0 if l1 else "",
+                             "fd_rel_diff_delta1_vs_4": diff, "fd_vs_exact_rel_l2": ""})
+        fid.append({"cell": cell, "seed": 0, "patch": 0, "query_pixel": px, "delta": 1.0, "tol": 1e-06,
+                    "n_free": n_free})
+    _write_rows(tmp_path / "records_compare.csv", rows)
+    _write_rows(tmp_path / "fidelity.csv", fid)
+    return tmp_path / "records_compare.csv", tmp_path / "fidelity.csv"
+
+
+def test_record_comparison_macros_set_the_global_record_against_local_ones(tmp_path):
+    m = _mod()
+    assert set(m.record_comparison_macros(tmp_path / "x.csv", tmp_path / "y.csv").values()) == {m.PLACEHOLDER}
+    q = m.record_comparison_macros(*_records(tmp_path))
+    assert q["recCsfrSupportMinShare"] == "99.0"
+    assert (q["recCsfrReachMin"], q["recCsfrReachMax"]) == ("30.5", "32.5")      # group medians
+    assert (q["recCmpSupportMax"], q["recCmpReachMax"]) == ("9", "6.0")
+    assert (q["recLinZeroScatter"], q["recLinFdMaxDiff"]) == ("50", r"2.0\times 10^{-5}")
+    assert (q["recPdeZeroOne"], q["recPdeZeroFour"]) == ("75", "38")          # 6 and 3 of 8
+    assert q["recPdeFdDiffMed"] == "1.00"                                     # 1, 3, 1, 1.5, 1
+    assert (q["recPdeFdDiffBothMin"], q["recPdeFdDiffBothMax"]) == ("1.50", "3.00")
+
+
+@pytest.mark.parametrize("kw,match", [({"csfr_support": (100, 0, 50, 50)}, "zero"),
+                                      ({"lin_contig": 1.0}, "CF3")])
+def test_record_comparison_macros_refuse_data_that_contradict_the_text(tmp_path, kw, match):
+    m = _mod()
+    with pytest.raises(ValueError, match=match):
+        m.record_comparison_macros(*_records(tmp_path, **kw))
 
 
 def test_comparison_macros_need_lama_at_every_level(tmp_path):

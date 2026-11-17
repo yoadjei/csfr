@@ -501,13 +501,21 @@ RECORD_KINDS = [("csfr", "implicit_function", "CSFR"),
 RECORD_GROUPS = [("CF1--CF2", ("CF1", "CF2")), ("CF3--CF4", ("CF3", "CF4"))]
 
 
+def record_rows(rows: list[dict], method: str, record: str, fams: tuple[str, ...]) -> list[dict]:
+    """The rows of one record kind in one family group of records_compare.csv."""
+    rs = [r for r in rows if r["method"] == method and r["record"] == record and r["cell"].split("_")[0] in fams]
+    if not rs:
+        raise ValueError(f"records: no {method} {record} rows for {fams}")
+    return rs
+
+
 def records_cmp(d: Path = FIDELITY_DIR) -> str | None:
-    """Per record kind and family group, medians over query pixels: L1 norm,
-    support size, |w|-weighted mean distance from the query, and for finite
-    differences the relative difference between delta 1 and 4, over the queries
-    whose delta-4 column is not zero (it is undefined, NaN in the CSV, where the
-    output did not change at delta 4). A kind with no non-zero record in a group
-    (linear interpolation outside its convex hull) shows dashes."""
+    """Per record kind and family group: over the queries whose record is not
+    zero, the medians of its L1 norm, support size and |w|-weighted mean
+    distance from the query; and the share of queries whose record is zero (an
+    8-bit method whose output did not change, or linear interpolation for an
+    observed pixel that is no vertex of a triangle covering the hole). A kind
+    with no non-zero record in a group shows dashes for the medians."""
     rows = _csv(d / "records_compare.csv")
     if rows is None:
         return None
@@ -515,23 +523,18 @@ def records_cmp(d: Path = FIDELITY_DIR) -> str | None:
     for method, record, name in RECORD_KINDS:
         out = []
         for _, fams in RECORD_GROUPS:
-            rs = [r for r in rows if r["method"] == method and r["record"] == record
-                  and r["cell"].split("_")[0] in fams]
-            if not rs:
-                raise ValueError(f"records: no {method} {record} rows for {fams}")
+            rs = record_rows(rows, method, record, fams)
             nz = [r for r in rs if float(r["l1_norm"]) > 0]
+            zero = f"{100 * (1 - len(nz) / len(rs)):.0f}"
             if not nz:
-                out += ["--"] * 4
+                out += ["--"] * 3 + [zero]
                 continue
             med = lambda k, rr=nz: float(np.median([float(r[k]) for r in rr]))  # noqa: E731
-            fd = [float(r["fd_rel_diff_delta1_vs_4"]) for r in nz if r.get("fd_rel_diff_delta1_vs_4", "") != ""]
-            fd = [x for x in fd if np.isfinite(x)]
-            out += [f"{med('l1_norm'):.2f}", f"{med('support'):.0f}", f"{med('mean_distance'):.1f}",
-                    f"{np.median(fd):.2f}" if fd else "--"]
+            out += [f"{med('l1_norm'):.2f}", f"{med('support'):.0f}", f"{med('mean_distance'):.1f}", zero]
         body.append(f"{name} & " + " & ".join(out) + r" \\")
     header = [" & " + " & ".join(rf"\multicolumn{{4}}{{c}}{{{g}}}" for g, _ in RECORD_GROUPS) + r" \\",
               r"\cmidrule(lr){2-5}\cmidrule(l){6-9}",
-              r"Record & $\ell_1$ & Supp. & Dist. & FD $1/4$ & $\ell_1$ & Supp. & Dist. & FD $1/4$ \\"]
+              r"Record & $\ell_1$ & Supp. & Dist. & Zero (\%) & $\ell_1$ & Supp. & Dist. & Zero (\%) \\"]
     return tabular(r"@{}l*{8}{r}@{}", header, body)
 
 
@@ -860,6 +863,60 @@ def supp_cap_mechanism(d: Path = CAP_MECHANISM_DIR) -> str | None:
     return tabular(r"@{}l l r r r r r r@{}", header, body)
 
 
+def p_value(p: float) -> str:
+    return r"$<$0.001" if p < 0.001 else f"{p:.3f}"
+
+
+def rank_side(d: list[float]) -> str:
+    """The side the Wilcoxon signed-rank statistic of the differences d favours,
+    zeros dropped as scipy's default does: (+) CSFR, (-) the method."""
+    from scipy.stats import rankdata
+    x = np.asarray(d, dtype=float)
+    x = x[x != 0]
+    r = rankdata(np.abs(x))
+    plus, minus = r[x > 0].sum(), r[x < 0].sum()
+    return r"\,(+)" if plus > minus else r"\,($-$)" if minus > plus else ""
+
+
+def supp_image_level(results: Path = ROOT / "results", metric: str = "psnr_hole") -> str | None:
+    """Per corpus and cell (L1, L3, L5), CSFR against the strongest classical
+    method of the cell (the one Table PAIRED_V2 names) with the source image as
+    the unit: the number of images, the share in which CSFR has the higher mean,
+    the mean of the per-image mean differences (stats/per_image.csv) with its
+    bootstrap interval over images, and the two-sided Wilcoxon signed-rank p
+    over the image means, not adjusted, with the side its statistic favours (a
+    rank test can favour CSFR where the mean does not). Pending until every
+    corpus has its statistics."""
+    panels = {}
+    for sweep, name in CAP_MECHANISM_CORPORA:
+        paired, per = (_csv(results / sweep / "stats" / f) for f in ("paired_tests.csv", "per_image.csv"))
+        if paired is None or per is None:
+            return None
+        panels[name] = (sweep, paired, per)
+    body = []
+    for name, (sweep, paired, per) in panels.items():
+        means: dict[tuple[str, str, str], list[float]] = {}
+        for r in per:
+            if r["metric"] == metric:
+                means.setdefault((r["family"], r["level"], r["method"]), []).append(float(r["diff_mean"]))
+        if body:
+            body.append(r"\midrule")
+        body.append(rf"\multicolumn{{7}}{{@{{}}l}}{{\emph{{{name}}}}} \\")
+        for fam in FAMILIES:
+            for lv in MAIN_LEVELS:
+                b = cell_comparison(paired, fam, lv, metric, sweep)["best"]
+                img = means.get((fam, lv, b["method"]), [])
+                if len(img) != int(b["n_images"]):
+                    raise ValueError(f"{sweep} {fam} {lv}: {len(img)} image means for {b['n_images']} images")
+                body.append(" & ".join([
+                    f"{fam}~{lv}", dict(METHOD_ORDER)[b["method"]], b["n_images"],
+                    f"{100 * float(b['frac_images_csfr_leads']):.0f}", signed(float(np.mean(img))),
+                    interval(float(b["ci_image_lo"]), float(b["ci_image_hi"])),
+                    p_value(float(b["p_image_wilcoxon"])) + rank_side(img)]) + r" \\")
+    header = [r"Cell & Strongest & Images & Led (\%) & $\Delta_{\mathrm{img}}$ & 95\% CI & $p$ (side) \\"]
+    return tabular(r"@{}l l r r r c r@{}", header, body)
+
+
 FALLBACK_ROWS = [("dictlearn", "Dict.\\ learning"), ("criminisi", "Exemplar")]
 
 
@@ -1027,7 +1084,7 @@ TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_
           "SUPP_PSNR": supp_psnr, "SUPP_SSIM": supp_ssim, "SUPP_HRP": supp_hrp, "SUPP_CAP": supp_cap,
           "SUPP_FALLBACKS": supp_fallbacks, "SUPP_CALIBRATION": supp_calibration,
           "SUPP_SHIFTMAP": supp_shiftmap, "SUPP_DICTCAP": supp_dictcap, "SUPP_FIDELITY": supp_fidelity,
-          "SUPP_CAP_MECHANISM": supp_cap_mechanism}
+          "SUPP_CAP_MECHANISM": supp_cap_mechanism, "SUPP_IMAGE_LEVEL": supp_image_level}
 
 
 def main() -> int:

@@ -140,12 +140,15 @@ def method_macros() -> dict[str, str]:
 
 
 def stats_macros() -> dict[str, str]:
-    """From the analysis plan the statistics script writes before computing."""
+    """From the analysis plan the statistics script writes before computing; and
+    the significance level at which the tables star a Holm-adjusted p
+    (render_tables_v2.ALPHA), so that the text and the tables use one value."""
+    alpha = {"statsAlpha": f"{_tables().ALPHA:g}"}
     p = ROOT / "results" / "sweep_v2_govdocs1" / "stats" / "analysis_plan.json"
     if not p.exists():
-        return _pending("statsBoot")
+        return {**_pending("statsBoot"), **alpha}
     n = int(json.loads(p.read_text(encoding="utf-8"))["bootstrap_resamples"])
-    return {"statsBoot": f"{n:,}".replace(",", "\\,")}
+    return {"statsBoot": f"{n:,}".replace(",", "\\,"), **alpha}
 
 
 def environment_macros() -> dict[str, str]:
@@ -247,6 +250,90 @@ def record_fidelity_macros(p: Path = ROOT / "results" / "sensitivity_fidelity" /
         pct(e[SRF_DELTA][near].max(), 2), str(int((~near).sum())), pct(e[SRF_DELTA][~near].max(), 2),
         q2(np.median(low)), q2(np.median(high)), q2(np.percentile(low, 10)), q2(np.percentile(low, 90)),
         q2(np.percentile(high, 10)), q2(np.percentile(high, 90)))))
+
+
+RECCMP_NAMES = ("recCsfrSupportMinShare", "recCsfrReachMin", "recCsfrReachMax", "recCmpSupportMax",
+                "recCmpReachMax", "recLinZeroScatter", "recLinFdMaxDiff", "recPdeZeroOne", "recPdeZeroFour",
+                "recPdeFdDiffMed", "recPdeFdDiffBothMin", "recPdeFdDiffBothMax")
+PDE_METHODS = ("inpaint_telea", "inpaint_ns")
+
+
+def record_comparison_macros(p: Path = ROOT / "results" / "sensitivity_fidelity" / "records_compare.csv",
+                             fid: Path = ROOT / "results" / "sensitivity_fidelity" / "fidelity.csv"
+                             ) -> dict[str, str]:
+    """How the records of CSFR and of the comparison methods differ for the same
+    queries (Section VI-E; Table RECORDS_CMP uses the same rows):
+
+      CsfrSupportMinShare  the smallest share (percent) of the free hole
+                           pixels (fidelity.csv n_free) on which a CSFR column
+                           is non-zero
+      CsfrReach            the range over family groups of the median
+                           |w|-weighted distance of the CSFR column from the query
+      CmpSupportMax, CmpReachMax   the largest median support and distance of
+                           any other record kind in any group, over its
+                           non-zero records
+      LinZeroScatter       percent of CF1-CF2 queries whose exact linear record
+                           is zero
+      LinFdMaxDiff         the largest relative difference between the linear
+                           one-grey-level finite difference and the exact record
+      PdeZeroOne, PdeZeroFour   percent of Telea and Navier-Stokes queries,
+                           pooled, whose finite-difference record at delta 1, 4
+                           is zero
+      PdeFdDiffMed         the median of ||FD1 - FD4|| / ||FD4|| over those
+                           queries whose FD4 is not zero
+      PdeFdDiffBoth        per method, the median of the same where both are
+                           non-zero: the smaller and larger of the two
+
+    The text states, and the macros are refused unless: every CSFR column is
+    non-zero, and the exact linear record is zero for every CF3-CF4 query."""
+    if not (p.exists() and fid.exists()):
+        return _pending(*RECCMP_NAMES)
+    tables = _tables()
+    rows = _rows(p)
+    tol = SolverConfig().tol
+    key = lambda r: (r["cell"], str(r["patch"]), r["query_pixel"])            # noqa: E731
+    n_free = {key(r): int(r["n_free"]) for r in _rows(fid)
+              if float(r["delta"]) == SRF_DELTA and float(r["tol"]) == tol}
+    groups = [fams for _, fams in tables.RECORD_GROUPS]
+    every = tuple(f for fams in groups for f in fams)
+
+    def nonzero(rs: list[dict]) -> list[dict]:
+        return [r for r in rs if float(r["l1_norm"]) > 0]
+
+    def med(rs: list[dict], k: str) -> float:
+        return float(np.median([float(r[k]) for r in rs]))
+
+    csfr = tables.record_rows(rows, "csfr", "implicit_function", every)
+    if any(int(r["support"]) == 0 for r in csfr):
+        raise ValueError("a CSFR column is zero")
+    share = min(int(r["support"]) / n_free[key(r)] for r in csfr)
+    reach = [med(tables.record_rows(rows, "csfr", "implicit_function", fams), "mean_distance") for fams in groups]
+    others = [nonzero(tables.record_rows(rows, m, rec, fams))
+              for m, rec, _ in tables.RECORD_KINDS if m != "csfr" for fams in groups]
+    others = [rs for rs in others if rs]
+    lin = {fams: tables.record_rows(rows, "bilinear", "exact_barycentric", fams) for fams in groups}
+    if nonzero(lin[groups[1]]):
+        raise ValueError(f"an exact linear record is not zero under {'/'.join(groups[1])}")
+    lin_fd = [float(r["fd_vs_exact_rel_l2"]) for r in rows
+              if r["method"] == "bilinear" and r.get("fd_vs_exact_rel_l2", "") not in ("", "nan")]
+
+    def fd(m: str, delta: int) -> list[dict]:
+        return tables.record_rows(rows, m, f"finite_difference_delta{delta}", every)
+
+    one = [r for m in PDE_METHODS for r in fd(m, 1)]
+    four = [r for m in PDE_METHODS for r in fd(m, 4)]
+    diff_four = [float(r["fd_rel_diff_delta1_vs_4"]) for r in nonzero(four)]
+    both = []
+    for m in PDE_METHODS:
+        nz_one = {key(r) for r in nonzero(fd(m, 1))}
+        both.append(float(np.median([float(r["fd_rel_diff_delta1_vs_4"]) for r in nonzero(fd(m, 4))
+                                     if key(r) in nz_one])))
+    zero = lambda rs: f"{100 * (1 - len(nonzero(rs)) / len(rs)):.0f}"        # noqa: E731
+    return dict(zip(RECCMP_NAMES, (
+        f"{100 * share:.1f}", f"{min(reach):.1f}", f"{max(reach):.1f}",
+        f"{max(med(rs, 'support') for rs in others):.0f}", f"{max(med(rs, 'mean_distance') for rs in others):.1f}",
+        zero(lin[groups[0]]), _sci(max(lin_fd), 1), zero(one), zero(four),
+        f"{float(np.median(diff_four)):.2f}", f"{min(both):.2f}", f"{max(both):.2f}")))
 
 
 def bu_macros() -> dict[str, str]:
@@ -663,7 +750,7 @@ def render() -> str:
               **environment_macros(), **stats_macros(), **fidelity_macros(), **fallback_macros(),
               **bu_macros(), **shiftmap_macros(), **dictlearn_cap_macros(), **coherence_macros(),
               **r1_hole_whole_macros(), **all_comparison_macros(), **mechanism_macros(),
-              **ablation_macros(), **record_fidelity_macros()}
+              **ablation_macros(), **record_fidelity_macros(), **record_comparison_macros()}
     lines = ["% GENERATED by scripts/render_numbers_v2.py. Do not edit; re-run the script.",
              "% Every number stated in the running text of the revised manuscript."]
     for k in sorted(macros):

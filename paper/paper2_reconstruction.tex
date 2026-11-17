@@ -374,14 +374,14 @@ Whole-patch PSNR is kept in the released files but not tabulated. The Hallucinat
 \subsection{Statistics}
 \label{sec:experiments:stats}
 
-The analysis plan is written to the results directory before any statistic is computed (\texttt{scripts/\allowbreak run\allowbreak\_stats\allowbreak\_v2.py}). The unit is the patch. Each per-patch metric is averaged over the mask seeds before pairing, and differences are signed so that a positive value favours CSFR for every metric, GMSD included. For CSFR against each method, in each cell and for each metric, we report:
+The analysis plan is written to the results directory before any statistic is computed (\texttt{scripts/\allowbreak run\allowbreak\_stats\allowbreak\_v2.py}). The unit is the patch. Each per-patch metric is averaged over the mask seeds before pairing, and differences are signed so that a positive value favours CSFR for every metric, GMSD included. For CSFR against each method, in each cell and for each metric, the analysis computes, and the released result files give:
 \begin{itemize}
   \item the mean difference;
   \item a two-sided Wilcoxon signed-rank test~\cite{wilcoxon1945individual}, with Holm adjustment~\cite{holm1979simple} across all comparisons of that metric;
   \item Cohen's $d_{z}$~\cite{cohen1988statistical} and Cliff's $\delta$~\cite{cliff1993dominance};
   \item 95\% percentile bootstrap intervals with \statsBoot\ resamples, resampling patches and, separately, source images, which respects the clustering.
 \end{itemize}
-Per source image, we report the mean difference, the fraction of images in which CSFR leads, and an image-level interval and test. The strongest competitor in a cell is the method with the best mean on the metric in question. It is identified after the fact, so the comparison with it is labelled as such and is not a pre-specified test.
+Per source image, it computes the mean difference, the fraction of images in which CSFR leads, and an image-level interval and signed-rank test. The tables report the mean difference with its interval over source images and the fraction of images in which CSFR leads; the supplement gives the image-level interval and test against the strongest competitor of every cell. The strongest competitor in a cell is the method with the best mean on the metric in question. It is identified after the fact, so the comparison with it is labelled as such and is not a pre-specified test.
 
 \paragraph{Cap sensitivity.} Every hole-PSNR comparison, and the choice of the strongest competitor, is repeated on the cap-free subset of each cell: the patches on which no method, the floor included, reaches the 100\,dB cap at any seed. The primary analysis is unchanged. This sensitivity analysis was added after the first seed of the secondary corpus showed that methods differ in how often they reach the cap, and before the primary corpus was run.
 
@@ -546,7 +546,7 @@ The released solver ran Adam for a fixed budget on a different objective (Sectio
 
 Each arm removes one part of CSFR and is solved to the same certificate (Section~\ref{sec:experiments:methods}). Table~\ref{tab:ablation-v2} gives the hole-PSNR difference between CSFR and each arm on the primary corpus at mask seed \sweepAblationSeeds, and the share of imputed pixels that leave the range when C3 is removed.
 
-Total variation carries the reconstruction. Without it (DCT only), hole PSNR is lower in every cell, by \ablNoTvMin\ to \ablNoTvMax\,dB, with a Holm-adjusted $p < 0.05$ in every cell.
+Total variation carries the reconstruction. Without it (DCT only), hole PSNR is lower in every cell, by \ablNoTvMin\ to \ablNoTvMax\,dB, with a Holm-adjusted $p < \statsAlpha$ in every cell.
 
 The DCT and high-frequency terms are what CSFR adds to its TV-only arm, and on mean hole PSNR they cost more often than they gain: the TV-only arm is ahead in \ablTvNBehind\ of the 20 cells, by up to \ablTvBehindMax\,dB, and behind in \ablTvNAhead, by up to \ablTvAheadMax\,dB. Under burst and contiguous loss the difference has the cause found in Section~\ref{sec:results:quality}. Of the holes whose true content is flat, the TV-only arm reproduces \ablTvBcFlatCapShare\% exactly, and in every CF2 to CF4 cell those holes move the mean difference in its favour, by \ablTvBcFlatMin\ to \ablTvBcFlatMax\,dB. On the other holes CSFR is ahead in every such cell, by \ablTvBcRestMin\ to \ablTvBcRestMax\,dB; the median difference favours CSFR in every such cell, and CSFR is ahead on \ablTvBcAheadMin\% to \ablTvBcAheadMax\% of the patches. Scattered loss leaves no flat hole. There the TV-only arm is ahead at \ablTvScatterBehindLevels\ on most patches, with CSFR ahead on at most \ablTvScatterAheadShareMax\% of them, and CSFR is ahead at \ablTvScatterAheadLevels.
 
@@ -631,11 +631,15 @@ CF4~L5 & 30 & 0.937 & 11.8 & 83.3 & 83.3 & 100.0 & 454 \\
 
 For the same query pixels, Table~\ref{tab:records} sets the CSFR record beside the exact record of linear interpolation and finite-difference records of linear interpolation and of Telea and Navier--Stokes inpainting at perturbations of one and four grey levels. Linear interpolation has a record only for hole pixels inside the convex hull of the observed pixels, so it has none under CF3 and CF4.
 
-\resultpending{how the records differ in norm, support and reach; the instability of finite-difference records of the 8-bit methods}
+The CSFR record is global. For every query its column is non-zero on at least \recCsfrSupportMinShare\% of the free hole pixels, and the median distance of its weight from the queried pixel is \recCsfrReachMin\ to \recCsfrReachMax\ pixels. The records of the comparison methods are concentrated near the query: where they are not zero, their median support is at most \recCmpSupportMax\ hole pixels and the median distance of their weight from the query at most \recCmpReachMax\ pixels (Table~\ref{tab:records}).
+
+An observed pixel enters linear interpolation only as a vertex of a triangle that covers hole pixels. Its exact record is therefore zero for \recLinZeroScatter\% of the CF1 and CF2 queries and for every CF3 and CF4 query. Its finite-difference records equal the exact record to within a relative error of $\recLinFdMaxDiff$, as they must for a linear method.
+
+Telea and Navier--Stokes inpainting run on 8-bit images, so their output is piecewise constant in the observed values. A change of one grey level leaves their output unchanged for \recPdeZeroOne\% of the queries, and a change of four grey levels for \recPdeZeroFour\%. Where the four-grey-level record is not zero, the median relative difference between the two records is \recPdeFdDiffMed, the value it takes when the one-grey-level record is zero; where both are non-zero, its median is \recPdeFdDiffBothMin\ for one method and \recPdeFdDiffBothMax\ for the other. The finite-difference records of these methods thus depend on the perturbation chosen, and neither is a derivative of the method, whereas the CSFR record is the derivative of the solution map and is validated against re-solves (Section~\ref{sec:results:fidelity}).
 
 \begin{table*}[!t]
 \centering
-\caption{Records of CSFR and of the comparison methods for the same query pixels on GovDocs1, medians over the queries: $\ell_1$ norm, support size, $|w|$-weighted mean distance from the query, and for finite-difference records the relative difference between perturbations of one and four grey levels, over the queries whose four-grey-level column is not zero.}
+\caption{Records of CSFR and of the comparison methods for the same query pixels on GovDocs1: over the queries whose record is not zero, the medians of its $\ell_1$ norm, its support size and its $|w|$-weighted mean distance from the query; and the share of queries whose record is zero. FD: finite difference at a perturbation of $\delta$ grey levels. Telea and Navier--Stokes inpainting run on 8-bit images, as in the sweep.}
 \label{tab:records}
 \footnotesize
 % BEGIN AUTO RECORDS_CMP
@@ -643,16 +647,16 @@ For the same query pixels, Table~\ref{tab:records} sets the CSFR record beside t
 \toprule
  & \multicolumn{4}{c}{CF1--CF2} & \multicolumn{4}{c}{CF3--CF4} \\
 \cmidrule(lr){2-5}\cmidrule(l){6-9}
-Record & $\ell_1$ & Supp. & Dist. & FD $1/4$ & $\ell_1$ & Supp. & Dist. & FD $1/4$ \\
+Record & $\ell_1$ & Supp. & Dist. & Zero (\%) & $\ell_1$ & Supp. & Dist. & Zero (\%) \\
 \midrule
-CSFR & 1.82 & 1229 & 32.8 & -- & 2.14 & 1216 & 29.8 & -- \\
-Linear, exact & 1.04 & 2 & 1.2 & -- & -- & -- & -- & -- \\
-Linear, FD $\delta = 1$ & 1.04 & 2 & 1.2 & 0.00 & -- & -- & -- & -- \\
-Linear, FD $\delta = 4$ & 1.04 & 2 & 1.2 & 0.00 & -- & -- & -- & -- \\
-Telea, FD $\delta = 1$ & 1.50 & 2 & 2.0 & 2.75 & 11.50 & 8 & 3.8 & 3.00 \\
-Telea, FD $\delta = 4$ & 0.75 & 3 & 2.0 & 1.00 & 6.75 & 25 & 7.3 & 1.00 \\
-Navier--Stokes, FD $\delta = 1$ & 2.00 & 2 & 1.5 & 1.18 & 45.00 & 45 & 10.1 & 1.38 \\
-Navier--Stokes, FD $\delta = 4$ & 1.50 & 4 & 1.9 & 1.00 & 28.12 & 82 & 11.6 & 1.00 \\
+CSFR & 1.82 & 1229 & 32.8 & 0 & 2.14 & 1216 & 29.8 & 0 \\
+Linear, exact & 1.04 & 2 & 1.2 & 76 & -- & -- & -- & 100 \\
+Linear, FD $\delta = 1$ & 1.04 & 2 & 1.2 & 76 & -- & -- & -- & 100 \\
+Linear, FD $\delta = 4$ & 1.04 & 2 & 1.2 & 76 & -- & -- & -- & 100 \\
+Telea, FD $\delta = 1$ & 1.50 & 2 & 2.0 & 85 & 11.50 & 8 & 3.8 & 86 \\
+Telea, FD $\delta = 4$ & 0.75 & 3 & 2.0 & 69 & 6.75 & 25 & 7.3 & 69 \\
+Navier--Stokes, FD $\delta = 1$ & 2.00 & 2 & 1.5 & 85 & 45.00 & 45 & 10.1 & 76 \\
+Navier--Stokes, FD $\delta = 4$ & 1.50 & 4 & 1.9 & 68 & 28.12 & 82 & 11.6 & 63 \\
 \bottomrule
 \end{tabular}
 % END AUTO RECORDS_CMP

@@ -283,23 +283,50 @@ def test_fidelity_reads_the_default_tolerance_at_one_grey_level(tmp_path):
     assert sum(ln.startswith("CF") for ln in lines) == 12
 
 
-def test_records_cmp_dashes_an_empty_record_and_pools_family_groups(tmp_path):
+def test_records_cmp_counts_zero_records_and_takes_medians_over_the_rest(tmp_path):
     m = _mod()
     rows = []
     for cell in ("CF1_L3", "CF2_L3", "CF3_L3", "CF4_L3"):
         contiguous = cell[:3] in ("CF3", "CF4")
         for method, record, _ in m.RECORD_KINDS:
-            empty = method == "bilinear" and record == "exact_barycentric" and contiguous
-            r = {"cell": cell, "method": method, "record": record, "l1_norm": 0.0 if empty else 1.5,
-                 "support": 0 if empty else 40, "mean_distance": "" if empty else 2.25}
-            if record.startswith("finite"):
-                r["fd_rel_diff_delta1_vs_4"] = 0.75 if method != "bilinear" else 0.0
-            rows.append(r)
+            empty = ((method == "bilinear" and record == "exact_barycentric" and contiguous)
+                     or (method == "inpaint_telea" and record == "finite_difference_delta1" and cell == "CF1_L3"))
+            rows.append({"cell": cell, "method": method, "record": record, "l1_norm": 0.0 if empty else 1.5,
+                         "support": 0 if empty else 40, "mean_distance": "" if empty else 2.25})
     _write_csv(tmp_path / "records_compare.csv", rows)
     lines = _body(m.records_cmp(tmp_path))
-    assert lines[0] == r"CSFR & 1.50 & 40 & 2.2 & -- & 1.50 & 40 & 2.2 & -- \\"
-    assert lines[1] == r"Linear, exact & 1.50 & 40 & 2.2 & -- & -- & -- & -- & -- \\"
-    assert lines[2].endswith(r"& 0.00 \\") and lines[4].endswith(r"& 0.75 \\")
+    assert lines[0] == r"CSFR & 1.50 & 40 & 2.2 & 0 & 1.50 & 40 & 2.2 & 0 \\"
+    assert lines[1] == r"Linear, exact & 1.50 & 40 & 2.2 & 0 & -- & -- & -- & 100 \\"
+    assert lines[4] == r"Telea, FD $\delta = 1$ & 1.50 & 40 & 2.2 & 50 & 1.50 & 40 & 2.2 & 0 \\"
+
+
+def test_supp_image_level_reads_the_strongest_method_per_image_and_waits_for_every_corpus(tmp_path):
+    m = _mod()
+    for i, (sweep, _) in enumerate(m.CAP_MECHANISM_CORPORA):
+        if i == 2:
+            assert m.supp_image_level(tmp_path) is None                  # a corpus without stats
+        d = tmp_path / sweep / "stats"
+        d.mkdir(parents=True)
+        paired, per = [], []
+        for f in m.FAMILIES:
+            for lv in ("L1", "L2", "L3", "L4", "L5"):
+                for method, diff, p in (("guleryuz", -1.0, 0.25), ("bilinear", 5.0, 1e-5)):
+                    paired.append({"family": f, "level": lv, "metric": "psnr_hole", "method": method,
+                                   "diff_mean": diff, "n_images": 2, "frac_images_csfr_leads": 0.5,
+                                   "ci_image_lo": diff - 0.5, "ci_image_hi": diff + 0.5, "p_image_wilcoxon": p})
+                    per += [{"family": f, "level": lv, "metric": "psnr_hole", "method": method, "image": k,
+                             "n_patches": 3, "diff_mean": diff + dv} for k, dv in ((1, 0.5), (2, -0.25))]
+        _write_csv(d / "paired_tests.csv", paired)
+        _write_csv(d / "per_image.csv", per)
+    tab = m.supp_image_level(tmp_path).splitlines()
+    assert tab[3] == r"\midrule" and tab[-2:] == [r"\bottomrule", r"\end{tabular}"]   # one header line
+    lines = tab[4:-2]
+    assert lines[0] == r"\multicolumn{7}{@{}l}{\emph{GovDocs1}} \\"
+    # mean of the image means -0.5 and -1.25
+    assert lines[1] == r"CF1~L1 & Block-DCT thr. & 2 & 50 & $-$0.88 & [$-$1.50, $-$0.50] & 0.250\,($-$) \\"
+    assert m.rank_side([-10.0, 1.0, 2.0, 3.0]) == r"\,(+)"     # mean -1, but ranks + 1+2+3 against - 4
+    assert m.rank_side([-3.0, 1.0, 0.0]) == r"\,($-$)" and m.rank_side([1.0, -1.0]) == ""
+    assert sum(ln.startswith("CF") for ln in lines) == 3 * 12
 
 
 def test_sci_compact():
