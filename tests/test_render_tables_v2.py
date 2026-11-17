@@ -316,6 +316,8 @@ def test_oracle_has_a_column_group_per_corpus(tmp_path):
     _write_csv(tmp_path / "oracle.csv", rows)
     lines = _body(m.oracle(tmp_path))
     assert lines[0] == (r"CF1~L1 & 41.3 & 12 & $3.4{\times}10^{5}$ & 25 & 41.3 & 12 & $3.4{\times}10^{5}$ & 25 \\")
+    _write_csv(tmp_path / "oracle.csv", rows[:-1])                     # a run still in progress
+    assert m.oracle(tmp_path) is None
 
 
 def test_bu_reports_auroc_per_scope_and_the_rule_decision(tmp_path):
@@ -552,3 +554,25 @@ def test_committed_tables_are_current():
         body = fn()
         if body is not None:
             assert _block(tag) == body, f"AUTO {tag} is stale: run scripts/render_tables_v2.py"
+
+
+def test_supp_cap_mechanism_has_a_panel_per_corpus_and_waits_for_all_three(tmp_path):
+    m = _mod()
+    row = {"strongest": "criminisi", "diff_mean": -1.5, "capped_part": -2.25, "rest_part": 0.75,
+           "n_patches_capped": 14, "n_patches": 600, "n_runs_capped": 40, "n_runs_capped_flat": 10,
+           "n_runs_capped_csfr_within_1": 3, "n_runs_capped_flat_csfr_within_1": 3}
+    names = [s for s, _ in m.CAP_MECHANISM_CORPORA]
+    for s in names[:2]:
+        _write_csv(tmp_path / f"{s}.csv", [{"family": f, "level": lv, **row}
+                                           for f in m.FAMILIES for lv in m.ALL_LEVELS])
+    assert m.supp_cap_mechanism(tmp_path) is None                       # Kodak not in yet
+    _write_csv(tmp_path / f"{names[2]}.csv", [{"family": f, "level": lv, **row, "n_runs_capped": 0,
+                                                "n_runs_capped_flat": 0, "n_patches_capped": 0}
+                                               for f in m.FAMILIES for lv in m.ALL_LEVELS])
+    lines = m.supp_cap_mechanism(tmp_path).splitlines()
+    assert [ln for ln in lines if ln.startswith(r"\multicolumn{8}")] == [
+        rf"\multicolumn{{8}}{{@{{}}l}}{{\emph{{{n}}}}} \\" for _, n in m.CAP_MECHANISM_CORPORA]
+    rows = [ln for ln in lines if ln.startswith("CF")]
+    assert len(rows) == 3 * 12
+    assert rows[0] == r"CF1~L1 & Exemplar & $-$1.50 & $-$2.25 & +0.75 & 14/600 & 25 & 30 \\"
+    assert rows[-1].endswith(r"& 0/600 & -- & -- \\")                   # no capped run: shares undefined

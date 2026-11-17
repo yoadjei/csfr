@@ -323,7 +323,8 @@ PROSE_NAMES = {"csfr_tv_only": "the TV-only arm", "bilinear": "linear interpolat
                "guleryuz": "block-DCT thresholding", "fsr": "FSR", "shiftmap": "shift-map",
                "criminisi": "exemplar inpainting"}
 FAMILY_FIELDS = ("RankMin", "RankMax", "NFirst", "Strongest", "BehindMin", "BehindMax", "NBehindSig",
-                 "AheadMax", "NAheadSig", "LamaBehindMax", "LamaAheadMax", "NLamaBehindSig", "NLamaAheadSig")
+                 "AheadMax", "NAheadSig", "LamaBehindMax", "LamaAheadMax", "NLamaBehindSig", "NLamaAheadSig",
+                 "LedMin", "LedMax", "CapfreeNAhead")
 CORPUS_FIELDS = ("NMethods", "NFirst", "GmsdNFirst", "GmsdRankMin", "CapfreeNFirst", "CapfreeNewStrongest",
                  "CapfreeNSignFlip")
 
@@ -346,7 +347,9 @@ def comparison_macros(prefix: str, sweep: Path) -> dict[str, str]:
     order of first appearance; the smallest and largest deficit where a method
     is ahead (dB, magnitudes) and the levels where its source-image interval
     lies below zero; the largest lead where CSFR is ahead and the levels whose
-    interval lies above zero; the same against LaMa. Per corpus: the classical
+    interval lies above zero; the same against LaMa; the range of the share of
+    source images in which CSFR has the higher mean (percent); the levels at
+    which CSFR is ahead of the same strongest method on the cap-free patches. Per corpus: the classical
     method count, the cells CSFR ranks first on hole PSNR and on GMSD, its best
     GMSD rank, and the cells whose strongest method or difference sign changes
     on the cap-free patches. An empty range prints a dash."""
@@ -378,6 +381,10 @@ def comparison_macros(prefix: str, sweep: Path) -> dict[str, str]:
                 "NBehindSig": str(sum(h < 0 for h in hi)),
                 "AheadMax": fmt([d for d in diffs if d > 0], max),
                 "NAheadSig": str(sum(x > 0 for x in lo)),
+                "LedMin": f"{100 * min(float(c['best']['frac_images_csfr_leads']) for c in cs):.0f}",
+                "LedMax": f"{100 * max(float(c['best']['frac_images_csfr_leads']) for c in cs):.0f}",
+                "CapfreeNAhead": str(sum(float(c["best"]["diff_mean_capfree"]) > 0 for c in cs
+                                         if c["best"].get("diff_mean_capfree", "") != "")),
                 "LamaBehindMax": fmt([-d for d in ld if d < 0], max),
                 "LamaAheadMax": fmt([d for d in ld if d > 0], max),
                 "NLamaBehindSig": str(sum(float(e["ci_cluster_hi"]) < 0 for e in ext)),
@@ -407,6 +414,55 @@ def comparison_macros(prefix: str, sweep: Path) -> dict[str, str]:
     return out
 
 
+MECH_NAMES = ("mechContigCappedMin", "mechContigCappedMax", "mechContigCapPartMin", "mechContigCapPartMax",
+              "mechContigRestMin", "mechContigRestMax", "mechContigFlatShare", "mechContigBiasMin",
+              "mechContigBiasMax", "mechContigWithinShare", "mechContigCsfrPsnrMin", "mechContigCsfrPsnrMax",
+              "mechContigTvExactShare")
+CONTIGUOUS = ("CF3", "CF4")
+
+
+def mechanism_macros(d: Path = ROOT / "results" / "cap_mechanism") -> dict[str, str]:
+    """Where the contiguous-loss deficit on the primary corpus comes from
+    (scripts/cap_mechanism.py, GovDocs1, every CF3 and CF4 cell): the range of
+    patches the strongest method reconstructs to the cap; the range of their
+    part of the difference (dB, magnitudes) and of the rest; the share of the
+    capped patch-runs whose true hole is flat; per cell, the median signed error
+    of CSFR's fill of those flat holes (grey levels, magnitudes); the share of
+    flat capped runs CSFR fills within one grey level; the range of the
+    per-cell median of CSFR's hole PSNR on the capped runs; and the share of the
+    flat capped runs that CSFR's TV-only arm also reproduces exactly. The text says that
+    the capped patches account for the whole deficit, that CSFR is ahead on the
+    rest, and that its flat fills are darker than the page, in every such cell:
+    the macros are refused if any of these fails, and Kodak, said to have no
+    capped patch in these families, must have none."""
+    gov, kodak = d / "sweep_v2_govdocs1.csv", d / "sweep_v2_kodak.csv"
+    if not gov.exists() or not kodak.exists():
+        return _pending(*MECH_NAMES)
+    rows = [r for r in _rows(gov) if r["family"] in CONTIGUOUS]
+    if len(rows) != len(CONTIGUOUS) * len(LEVELS):
+        raise ValueError(f"{gov.name}: {len(rows)} contiguous-loss cells, not {len(CONTIGUOUS) * len(LEVELS)}")
+    cap = [float(r["capped_part"]) for r in rows]
+    rest = [float(r["rest_part"]) for r in rows]
+    if not all(c < 0 < x and c + x < 0 for c, x in zip(cap, rest)):
+        raise ValueError("a contiguous-loss cell of GovDocs1 is not a deficit carried by its capped patches")
+    bias = [float(r["csfr_flat_mean_err_median"]) for r in rows]
+    if not all(b < 0 for b in bias):
+        raise ValueError("a cell's flat fills are not darker than the page")
+    if any(int(r["n_patches_capped"]) for r in _rows(kodak) if r["family"] in CONTIGUOUS):
+        raise ValueError("Kodak has a capped patch under CF3 or CF4")
+    runs = sum(int(r["n_runs_capped"]) for r in rows)
+    flat = sum(int(r["n_runs_capped_flat"]) for r in rows)
+    within = sum(int(r["n_runs_capped_flat_csfr_within_1"]) for r in rows)
+    tv = sum(int(r["n_runs_capped_flat_tv_only_at_cap"]) for r in rows)
+    capped = [int(r["n_patches_capped"]) for r in rows]
+    psnr = [float(r["csfr_psnr_capped_median"]) for r in rows]
+    return dict(zip(MECH_NAMES, (
+        str(min(capped)), str(max(capped)), f"{-max(cap):.2f}", f"{-min(cap):.2f}",
+        f"{min(rest):.2f}", f"{max(rest):.2f}", f"{100 * flat / runs:.0f}",
+        f"{-max(bias):.2f}", f"{-min(bias):.2f}", f"{100 * within / flat:.0f}",
+        f"{min(psnr):.0f}", f"{max(psnr):.0f}", f"{100 * tv / flat:.0f}")))
+
+
 def all_comparison_macros(results: Path = ROOT / "results") -> dict[str, str]:
     return {k: v for prefix, s in COMPARISON_SWEEPS.items()
             for k, v in comparison_macros(prefix, results / s).items()}
@@ -416,7 +472,7 @@ def render() -> str:
     macros = {**config_macros(), **calibration_macros(), **corpus_macros(), **method_macros(),
               **environment_macros(), **stats_macros(), **fidelity_macros(), **fallback_macros(),
               **bu_macros(), **shiftmap_macros(), **dictlearn_cap_macros(), **coherence_macros(),
-              **r1_hole_whole_macros(), **all_comparison_macros()}
+              **r1_hole_whole_macros(), **all_comparison_macros(), **mechanism_macros()}
     lines = ["% GENERATED by scripts/render_numbers_v2.py. Do not edit; re-run the script.",
              "% Every number stated in the running text of the revised manuscript."]
     for k in sorted(macros):

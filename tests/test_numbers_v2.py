@@ -42,12 +42,40 @@ def test_typed_claims_about_the_calibration_hold():
     assert "No calibration solve reached the iteration cap" in tex
 
 
+def test_typed_claims_about_the_primary_comparison_hold():
+    """The words the quality section types around the comparison macros
+    ("every", "none", "the other way") hold for the committed values, and the
+    sentences that carry them are still in the manuscript."""
+    import re
+    v = dict(re.findall(r"\\providecommand\{\\([A-Za-z]+)\}\{(.*)\}$",
+                        (ROOT / "paper" / "numbers_v2.tex").read_text(encoding="utf-8"), re.M))
+    tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
+    claims = {
+        r"The strongest method at every level is \qGovCFoneStrongest":
+            " and " not in v["qGovCFoneStrongest"] and v["qGovCFoneNFirst"] == "0",
+        "Block thresholding stays ahead at every level on the patches that no method reconstructs to the cap":
+            v["qGovCFoneStrongest"] == "block-DCT thresholding" and v["qGovCFoneCapfreeNAhead"] == "0",
+        "CSFR is ahead of LaMa at every CF1 level": v["qGovCFoneLamaBehindMax"] == "--",
+        "LaMa is ahead of CSFR at every CF2 level": v["qGovCFtwoLamaAheadMax"] == "--",
+        "Per source image the comparison goes the other way":
+            v["qGovCFthreeNFirst"] == v["qGovCFfourNFirst"] == "0"
+            and min(int(v["qGovCFthreeLedMin"]), int(v["qGovCFfourLedMin"])) > 50,
+        "CSFR is ahead of the strongest method at every CF3 and CF4 level":
+            v["qGovCFthreeCapfreeNAhead"] == v["qGovCFfourCapfreeNAhead"] == "5",
+        "and below zero at none": v["qGovCFthreeNLamaBehindSig"] == v["qGovCFfourNLamaBehindSig"] == "0",
+        "CSFR is not the best method on hole GMSD in any cell": v["qGovGmsdNFirst"] == "0",
+    }
+    for sentence, holds in claims.items():
+        assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
+        assert holds, f"the manuscript says '{sentence}', which the generated values contradict"
+
+
 def test_every_macro_the_manuscript_uses_is_generated():
     m = _mod()
     import re
     tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
     generated = set(re.findall(r"\\providecommand\{\\([A-Za-z]+)\}", m.render()))
-    used = set(re.findall(r"\\((?:csfr|rec|calib|oracle|corpus|methods|env|sweep|stats|fallback|bu|shiftmap|dictlearn)[A-Z][A-Za-z]*)", tex))
+    used = set(re.findall(r"\\((?:csfr|rec|calib|oracle|corpus|methods|env|sweep|stats|fallback|bu|shiftmap|dictlearn|mech|q(?:Gov|Dfrws|Kodak))[A-Z][A-Za-z]*)", tex))
     assert used, "the manuscript uses no number macros; the regex has rotted"
     assert used <= generated, f"manuscript uses undefined number macros: {sorted(used - generated)}"
 
@@ -229,10 +257,12 @@ def _paired(d, cells, missing_lama=None):
             rows.append({"family": f, "level": lv, "metric": "psnr_hole", "method": meth,
                          "csfr_mean": 30.0, "method_mean": 30.0 - diff, "diff_mean": diff,
                          "ci_cluster_lo": lo, "ci_cluster_hi": hi,
+                         "frac_images_csfr_leads": 0.1 + 0.1 * int(lv[1]),          # 20 % at L1 .. 60 % at L5
                          "diff_mean_capfree": "" if meth == "lama" else cf})
         rows.append({"family": f, "level": lv, "metric": "gmsd_hole", "method": "fsr",
                      "csfr_mean": 0.2, "method_mean": 0.1, "diff_mean": -0.1,
-                     "ci_cluster_lo": -0.2, "ci_cluster_hi": -0.05, "diff_mean_capfree": ""})
+                     "ci_cluster_lo": -0.2, "ci_cluster_hi": -0.05, "frac_images_csfr_leads": 0.0,
+                     "diff_mean_capfree": ""})
     (d / "stats").mkdir(parents=True)
     with (d / "stats" / "paired_tests.csv").open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0]))
@@ -283,6 +313,68 @@ def test_comparison_macros_read_rank_gap_and_intervals_per_family(tmp_path):
     assert (q["qGovGmsdNFirst"], q["qGovGmsdRankMin"]) == ("0", "2")
     assert (q["qGovCapfreeNewStrongest"], q["qGovCapfreeNSignFlip"]) == ("1", "1")
     assert q["qGovCapfreeNFirst"] == "11"                           # CF2 L4 is no longer first
+    assert (q["qGovCFoneLedMin"], q["qGovCFoneLedMax"]) == ("20", "60")
+    assert (q["qGovCFoneCapfreeNAhead"], q["qGovCFtwoCapfreeNAhead"], q["qGovCFthreeCapfreeNAhead"]) == ("0", "1", "5")
+
+
+def _mech_row(fam, lv, **kw):
+    r = {"sweep": "s", "family": fam, "level": lv, "strongest": "criminisi", "n_patches": 600, "n_seeds": 3,
+         "diff_mean": -1.0, "capped_part": -2.0, "rest_part": 1.0, "n_patches_capped": 20, "n_runs_capped": 60,
+         "n_runs_capped_flat": 30, "n_runs_capped_csfr_within_1": 10, "n_runs_capped_flat_csfr_within_1": 10,
+         "n_runs_capped_flat_tv_only_at_cap": 27,
+         "csfr_psnr_capped_median": 55.0, "csfr_flat_mean_err_median": -0.5, "csfr_flat_max_abs_err_median": 1.0}
+    r.update(kw)
+    return r
+
+
+def _mech(d, gov_overrides=None, kodak_capped=0):
+    gov = [_mech_row(f, lv) for f in ("CF1", "CF2", "CF3", "CF4") for lv in ("L1", "L2", "L3", "L4", "L5")]
+    cf3_l1 = {"n_patches_capped": 5, "capped_part": -4.5, "rest_part": 0.25,
+              "csfr_flat_mean_err_median": -0.1, "csfr_psnr_capped_median": 48.0, **(gov_overrides or {})}
+    gov[10] = _mech_row("CF3", "L1", **cf3_l1)
+    kodak = [_mech_row(f, lv, n_patches_capped=kodak_capped if f == "CF4" else 0)
+             for f in ("CF1", "CF2", "CF3", "CF4") for lv in ("L1", "L2", "L3", "L4", "L5")]
+    _write_rows(d / "sweep_v2_govdocs1.csv", gov)
+    _write_rows(d / "sweep_v2_kodak.csv", kodak)
+
+
+def _write_rows(path, rows):
+    import csv
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+
+
+def test_mechanism_macros_read_the_contiguous_cells_of_the_primary_corpus(tmp_path):
+    m = _mod()
+    assert set(m.mechanism_macros(tmp_path).values()) == {m.PLACEHOLDER}
+    _mech(tmp_path)
+    q = m.mechanism_macros(tmp_path)
+    assert (q["mechContigCappedMin"], q["mechContigCappedMax"]) == ("5", "20")
+    assert (q["mechContigCapPartMin"], q["mechContigCapPartMax"]) == ("2.00", "4.50")
+    assert (q["mechContigRestMin"], q["mechContigRestMax"]) == ("0.25", "1.00")
+    assert (q["mechContigBiasMin"], q["mechContigBiasMax"]) == ("0.10", "0.50")
+    assert (q["mechContigFlatShare"], q["mechContigWithinShare"]) == ("50", "33")
+    assert (q["mechContigCsfrPsnrMin"], q["mechContigCsfrPsnrMax"]) == ("48", "55")
+    assert q["mechContigTvExactShare"] == "90"
+
+
+@pytest.mark.parametrize("bad", [{"rest_part": -0.1}, {"capped_part": 0.5, "rest_part": 0.1},
+                                 {"capped_part": -0.2, "rest_part": 0.3}, {"csfr_flat_mean_err_median": 0.1}])
+def test_mechanism_macros_refuse_a_cell_that_contradicts_the_text(tmp_path, bad):
+    m = _mod()
+    _mech(tmp_path, gov_overrides=bad)
+    with pytest.raises(ValueError):
+        m.mechanism_macros(tmp_path)
+
+
+def test_mechanism_macros_refuse_a_capped_kodak_patch(tmp_path):
+    m = _mod()
+    _mech(tmp_path, kodak_capped=1)
+    with pytest.raises(ValueError, match="Kodak"):
+        m.mechanism_macros(tmp_path)
 
 
 def test_comparison_macros_need_lama_at_every_level(tmp_path):

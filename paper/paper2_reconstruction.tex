@@ -403,7 +403,17 @@ The results follow the order of the contributions: quality on the primary corpus
 
 Tables~\ref{tab:quality} and~\ref{tab:gmsd} give hole PSNR and GMSD on GovDocs1 at three of the five severity levels. The supplement gives all five levels, and hole SSIM. Table~\ref{tab:paired-v2} compares CSFR at every level with the strongest classical method of the cell and with LaMa.
 
-\resultpending{rank and gap to the strongest classical method per family, with intervals; the CF1 deficit to block-DCT thresholding; the gaps to LaMa; GMSD; what the cap-free subset changes}
+\textbf{Scattered loss.} Under CF1, CSFR ranks between \qGovCFoneRankMin\ and \qGovCFoneRankMax\ among itself and the classical methods (\qGovNMethods\ in all). The strongest method at every level is \qGovCFoneStrongest, ahead by \qGovCFoneBehindMin\ to \qGovCFoneBehindMax\,dB, with an interval that excludes zero at \qGovCFoneNBehindSig\ of the five levels; CSFR has the higher mean in at most \qGovCFoneLedMax\% of the source images. Block thresholding stays ahead at every level on the patches that no method reconstructs to the cap ($\Delta_{\mathrm{cf}}$), so this deficit is not an effect of the cap. CSFR is ahead of LaMa at every CF1 level, by up to \qGovCFoneLamaAheadMax\,dB.
+
+\textbf{Burst loss.} Under CF2, CSFR ranks between \qGovCFtwoRankMin\ and \qGovCFtwoRankMax\ and is first at \qGovCFtwoNFirst\ of the five levels, by \qGovCFtwoAheadMax\,dB. The strongest other method of a level is \qGovCFtwoStrongest; where it is ahead, its lead is \qGovCFtwoBehindMin\ to \qGovCFtwoBehindMax\,dB. On the patches that no method reconstructs to the cap, CSFR is ahead of the same method at \qGovCFtwoCapfreeNAhead\ of the five levels. LaMa is ahead of CSFR at every CF2 level, by up to \qGovCFtwoLamaBehindMax\,dB.
+
+\textbf{Contiguous loss.} Under CF3, CSFR ranks between \qGovCFthreeRankMin\ and \qGovCFthreeRankMax, and under CF4 between \qGovCFfourRankMin\ and \qGovCFfourRankMax. The strongest method is ahead by \qGovCFthreeBehindMin\ to \qGovCFthreeBehindMax\,dB (CF3) and \qGovCFfourBehindMin\ to \qGovCFfourBehindMax\,dB (CF4), with intervals that exclude zero at \qGovCFthreeNBehindSig\ and \qGovCFfourNBehindSig\ of the five levels. Per source image the comparison goes the other way: CSFR has the higher mean in \qGovCFthreeLedMin\% to \qGovCFthreeLedMax\% of the source images under CF3 and \qGovCFfourLedMin\% to \qGovCFfourLedMax\% under CF4.
+
+The two readings differ because of the 100\,dB cap. In each CF3 and CF4 cell, the strongest method reconstructs between \mechContigCappedMin\ and \mechContigCappedMax\ of the \corpusGovN\ patches exactly at one mask seed or more. Those patches carry the whole deficit: they lower CSFR's mean difference by \mechContigCapPartMin\ to \mechContigCapPartMax\,dB, while on the other patches CSFR is ahead by \mechContigRestMin\ to \mechContigRestMax\,dB. Of the exact reconstructions, \mechContigFlatShare\% are holes whose true content is flat, such as blank page, which copying, block thresholding and diffusion reproduce exactly. CSFR's fill of a flat hole is darker than the true value, by a per-cell median of \mechContigBiasMin\ to \mechContigBiasMax\ grey levels, and stays within one grey level in \mechContigWithinShare\% of these holes. CSFR's TV-only arm, which differs from it only by the DCT and high-frequency terms, reproduces \mechContigTvExactShare\% of these flat holes exactly; the DCT term is computed over the whole patch, so content outside the hole enters CSFR's fill. On the patches the strongest method reconstructs exactly, CSFR scores a per-cell median of \mechContigCsfrPsnrMin\ to \mechContigCsfrPsnrMax\,dB. On the patches that no method reconstructs to the cap, which the analysis plan declares as a sensitivity analysis, CSFR is ahead of the strongest method at every CF3 and CF4 level and ranks first in \qGovCapfreeNFirst\ of the 20 cells, against \qGovNFirst\ in the primary analysis. Against LaMa, CSFR's interval lies above zero at \qGovCFthreeNLamaAheadSig\ CF3 and \qGovCFfourNLamaAheadSig\ CF4 levels and below zero at none.
+
+\textbf{Edge fidelity.} CSFR is not the best method on hole GMSD in any cell; its best rank is \qGovGmsdRankMin\ (Table~\ref{tab:gmsd}).
+
+The supplement gives this split for every cell of the three corpora; \texttt{scripts/\allowbreak cap\allowbreak\_mechanism.py} computes it from the per-patch scores and checks each cell's difference against the one in Table~\ref{tab:paired-v2}.
 
 \begin{table*}[!t]
 \centering
@@ -423,12 +433,12 @@ TV-only & 28.77 & 26.49 & 23.36 & 26.97 & 21.63 & 18.35 & 29.46 & 20.04 & 16.20 
 Linear & 25.67 & 24.24 & 21.12 & 26.74 & 21.05 & 17.73 & 6.05 & 5.65 & 5.21 & 6.36 & 5.67 & 5.47 \\
 Telea & 24.77 & 23.15 & 21.92 & 24.32 & 20.10 & 17.25 & 27.92 & 19.66 & 15.98 & 26.85 & 18.97 & 16.06 \\
 Navier--Stokes & 26.37 & 25.23 & 22.77 & 25.69 & 20.42 & 17.29 & 28.82 & 19.56 & 15.95 & 27.78 & 19.41 & 16.33 \\
-Dict.\ learning & 16.09$^{\dagger}$ & 15.95 & 15.95 & 19.15 & 17.11 & 15.98 & 22.57 & 15.87 & 15.00 & 22.01 & 15.78 & 14.89 \\
+Dict.\ learning & 16.09$^{\dagger}$ & 15.95$^{\dagger}$ & 15.95$^{\dagger}$ & 19.15 & 17.11 & 15.98$^{\dagger}$ & 22.57 & 15.87 & 15.00 & 22.01 & 15.78 & 14.89 \\
 Biharmonic & 29.44 & 27.52 & 24.30 & 26.30 & 20.89 & 17.12 & 29.36 & 18.85 & 14.76 & 28.15 & 18.29 & 14.86 \\
 Block-DCT thr. & \textbf{35.22} & \textbf{31.33} & \textbf{26.40} & \textbf{27.92} & 21.96 & 18.01 & \textbf{30.75} & 17.66 & 15.35 & \textbf{28.28} & 17.34 & 15.28 \\
 FSR & 26.68 & 25.78 & 23.72 & 26.21 & 21.66 & 17.71 & 24.03 & 19.97 & 16.13 & 23.74 & 19.05 & 16.12 \\
 Shift-map & 18.78 & 14.59 & 12.62 & 23.13 & 16.70 & 12.91 & 22.17 & 15.41 & 5.62 & 19.49 & 14.66 & 8.23 \\
-Exemplar & 18.74 & 21.17 & 15.79 & 27.17 & 19.82 & 15.22 & 30.06 & \textbf{21.03} & \textbf{16.75} & 28.15 & 19.23 & \textbf{16.53} \\
+Exemplar & 18.74 & 21.17 & 15.79$^{\dagger}$ & 27.17 & 19.82 & 15.22 & 30.06 & \textbf{21.03} & \textbf{16.75} & 28.15 & 19.23 & \textbf{16.53} \\
 LaMa & 26.54 & 24.55 & 18.70 & 25.40 & \textbf{22.16} & \textbf{19.28} & 24.46 & 18.96 & 15.76 & 24.07 & 18.43 & 15.44 \\
 \midrule
 Zero-fill (floor) & 5.08 & 5.07 & 5.07 & 6.15 & 5.51 & 5.19 & 6.05 & 5.65 & 5.21 & 6.36 & 5.67 & 5.47 \\
@@ -458,12 +468,12 @@ TV-only & 0.020 & 0.070 & 0.168 & 0.232 & 0.262 & 0.282 & 0.222 & 0.277 & 0.295 
 Linear & 0.033 & 0.089 & 0.166 & 0.200 & 0.232 & 0.261 & 0.356 & 0.309 & 0.307 & 0.355 & 0.311 & 0.309 \\
 Telea & 0.036 & 0.101 & 0.170 & 0.211 & 0.243 & 0.277 & 0.193 & 0.259 & 0.281 & 0.196 & 0.268 & 0.283 \\
 Navier--Stokes & 0.032 & 0.089 & 0.161 & 0.212 & 0.244 & 0.276 & 0.200 & 0.257 & 0.278 & 0.201 & 0.271 & 0.283 \\
-Dict.\ learning & 0.132$^{\dagger}$ & 0.205 & 0.243 & 0.271 & 0.300 & 0.310 & 0.206 & 0.305 & 0.308 & 0.210 & 0.309 & 0.309 \\
+Dict.\ learning & 0.132$^{\dagger}$ & 0.205$^{\dagger}$ & 0.243$^{\dagger}$ & 0.271 & 0.300 & 0.310$^{\dagger}$ & 0.206 & 0.305 & 0.308 & 0.210 & 0.309 & 0.309 \\
 Biharmonic & 0.024 & 0.074 & 0.144 & 0.193 & 0.222 & 0.252 & 0.181 & 0.258 & 0.288 & 0.180 & 0.266 & 0.290 \\
 Block-DCT thr. & \textbf{0.015} & \textbf{0.054} & \textbf{0.119} & 0.212 & 0.256 & 0.286 & 0.175 & 0.284 & 0.297 & 0.181 & 0.290 & 0.300 \\
 FSR & 0.036 & 0.088 & 0.155 & 0.182 & 0.211 & 0.258 & 0.203 & 0.243 & 0.277 & 0.201 & 0.253 & 0.278 \\
 Shift-map & 0.088 & 0.240 & 0.304 & 0.231 & 0.272 & 0.318 & 0.242 & 0.281 & 0.323 & 0.251 & 0.285 & 0.340 \\
-Exemplar & 0.074 & 0.135 & 0.244 & 0.197 & 0.239 & 0.283 & 0.185 & 0.246 & 0.266 & 0.188 & 0.256 & 0.268 \\
+Exemplar & 0.074 & 0.135 & 0.244$^{\dagger}$ & 0.197 & 0.239 & 0.283 & 0.185 & 0.246 & 0.266 & 0.188 & 0.256 & 0.268 \\
 LaMa & 0.033 & 0.100 & 0.202 & \textbf{0.160} & \textbf{0.186} & \textbf{0.224} & \textbf{0.171} & \textbf{0.230} & \textbf{0.256} & \textbf{0.174} & \textbf{0.238} & \textbf{0.260} \\
 \midrule
 Zero-fill (floor) & 0.310 & 0.325 & 0.320 & 0.343 & 0.344 & 0.332 & 0.356 & 0.309 & 0.307 & 0.355 & 0.311 & 0.309 \\
@@ -540,11 +550,25 @@ Each arm removes one part of CSFR and is solved to the same certificate (Section
 
 \begin{table*}[!t]
 \centering
-\caption{Constraint ablation on GovDocs1 at mask seed \sweepAblationSeeds: hole PSNR of CSFR minus the arm (dB), with Holm-adjusted Wilcoxon tests across the arms.}
+\caption{Constraint ablation on GovDocs1 at mask seed \sweepAblationSeeds: hole PSNR of CSFR minus the arm (dB), with Holm-adjusted Wilcoxon tests across the arms. TV only: $\lambda_{\ell_1} = \lambda_{\mathrm{FC}} = 0$. DCT only: $\lambda_{\mathrm{TV}} = 0$. No HF penalty: $\lambda_{\mathrm{FC}} = 0$. No C3: no range constraint.}
 \label{tab:ablation-v2}
 \footnotesize
 % BEGIN AUTO ABLATION_V2
-\textbf{[pending]}
+\begin{tabular}{@{}l*{12}{r}@{}}
+\toprule
+ & \multicolumn{3}{c}{CF1} & \multicolumn{3}{c}{CF2} & \multicolumn{3}{c}{CF3} & \multicolumn{3}{c}{CF4} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}\cmidrule(l){11-13}
+Arm & L1 & L3 & L5 & L1 & L3 & L5 & L1 & L3 & L5 & L1 & L3 & L5 \\
+\midrule
+TV only & $-$1.13$^{*}$ & $-$0.26$^{*}$ & +0.73$^{*}$ & $-$2.05$^{*}$ & $-$0.37$^{*}$ & +0.24$^{*}$ & $-$3.36$^{*}$ & $-$1.27$^{*}$ & $-$0.33$^{*}$ & $-$2.92$^{*}$ & $-$1.05$^{*}$ & $-$0.48$^{*}$ \\
+DCT only & +1.41$^{*}$ & +0.97$^{*}$ & +0.44$^{*}$ & +4.66$^{*}$ & +2.81$^{*}$ & +1.69$^{*}$ & +7.25$^{*}$ & +3.88$^{*}$ & +2.15$^{*}$ & +6.41$^{*}$ & +3.66$^{*}$ & +2.16$^{*}$ \\
+No HF penalty & $-$2.43$^{*}$ & $-$1.30$^{*}$ & +0.35$^{*}$ & $-$0.71$^{*}$ & $-$0.17$^{*}$ & +0.06$^{*}$ & $-$1.67 & $-$0.02$^{*}$ & +0.04$^{*}$ & $-$1.56 & $-$0.04$^{*}$ & +0.01$^{*}$ \\
+No C3 & +0.00$^{*}$ & +0.00$^{*}$ & +0.00 & $-$0.05 & $-$0.00$^{*}$ & +0.00$^{*}$ & +0.01 & $-$0.04 & $-$0.00$^{*}$ & +0.06 & +0.07$^{*}$ & $-$0.00$^{*}$ \\
+\midrule
+\multicolumn{13}{@{}l}{\footnotesize $^{*}$ Holm-adjusted Wilcoxon $p < 0.05$ across the arms.} \\
+\multicolumn{13}{@{}l}{\footnotesize Without C3, 2.63\% of the imputed pixels leave $[0, 255]$, by up to 158.4 grey levels; with it, none do.} \\
+\bottomrule
+\end{tabular}
 % END AUTO ABLATION_V2
 \end{table*}
 
@@ -568,7 +592,29 @@ For up to three observed pixels per patch, at distances 1, 3 and at least 8 from
 \label{tab:fidelity}
 \footnotesize
 % BEGIN AUTO FIDELITY
-\textbf{[pending]}
+\begin{tabular}{@{}l r r r r r r r@{}}
+\toprule
+ & & \multicolumn{2}{c}{Rel.\ error (\%)} & \multicolumn{2}{c}{SRF (\%)} & & \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+Cell & Queries & Median & P90 & ref & op & Sign (\%) & ms \\
+\midrule
+CF1~L1 & 24 & 1 & 2.8 & 95.8 & 95.8 & 100.0 & 84 \\
+CF1~L3 & 15 & 1.35 & 11.6 & 86.7 & 86.7 & 100.0 & 134 \\
+CF1~L5 & 10 & 6.23 & 13.8 & 70.0 & 70.0 & 100.0 & 236 \\
+\midrule
+CF2~L1 & 30 & 0.825 & 2.22 & 100.0 & 100.0 & 100.0 & 242 \\
+CF2~L3 & 30 & 0.957 & 1.36 & 100.0 & 100.0 & 100.0 & 374 \\
+CF2~L5 & 30 & 0.748 & 2.41 & 100.0 & 100.0 & 100.0 & 486 \\
+\midrule
+CF3~L1 & 30 & 0.958 & 3.76 & 96.7 & 96.7 & 100.0 & 185 \\
+CF3~L3 & 30 & 0.761 & 14.8 & 86.7 & 86.7 & 100.0 & 324 \\
+CF3~L5 & 30 & 0.737 & 9.96 & 90.0 & 90.0 & 100.0 & 451 \\
+\midrule
+CF4~L1 & 30 & 1.09 & 13.6 & 86.7 & 86.7 & 100.0 & 182 \\
+CF4~L3 & 30 & 0.802 & 8.8 & 90.0 & 90.0 & 100.0 & 352 \\
+CF4~L5 & 30 & 0.937 & 11.8 & 83.3 & 83.3 & 100.0 & 454 \\
+\bottomrule
+\end{tabular}
 % END AUTO FIDELITY
 \end{table}
 
@@ -579,15 +625,30 @@ For the same query pixels, Table~\ref{tab:records} sets the CSFR record beside t
 
 \resultpending{how the records differ in norm, support and reach; the instability of finite-difference records of the 8-bit methods}
 
-\begin{table}[!t]
+\begin{table*}[!t]
 \centering
-\caption{Records of CSFR and of the comparison methods for the same query pixels on GovDocs1: $\ell_1$ norm, support size, $|w|$-weighted mean distance from the query, and for finite-difference records the relative difference between perturbations of one and four grey levels.}
+\caption{Records of CSFR and of the comparison methods for the same query pixels on GovDocs1, medians over the queries: $\ell_1$ norm, support size, $|w|$-weighted mean distance from the query, and for finite-difference records the relative difference between perturbations of one and four grey levels, over the queries whose four-grey-level column is not zero.}
 \label{tab:records}
 \footnotesize
 % BEGIN AUTO RECORDS_CMP
-\textbf{[pending]}
+\begin{tabular}{@{}l*{8}{r}@{}}
+\toprule
+ & \multicolumn{4}{c}{CF1--CF2} & \multicolumn{4}{c}{CF3--CF4} \\
+\cmidrule(lr){2-5}\cmidrule(l){6-9}
+Record & $\ell_1$ & Supp. & Dist. & FD $1/4$ & $\ell_1$ & Supp. & Dist. & FD $1/4$ \\
+\midrule
+CSFR & 1.82 & 1229 & 32.8 & -- & 2.14 & 1216 & 29.8 & -- \\
+Linear, exact & 1.04 & 2 & 1.2 & -- & -- & -- & -- & -- \\
+Linear, FD $\delta = 1$ & 1.04 & 2 & 1.2 & 0.00 & -- & -- & -- & -- \\
+Linear, FD $\delta = 4$ & 1.04 & 2 & 1.2 & 0.00 & -- & -- & -- & -- \\
+Telea, FD $\delta = 1$ & 1.50 & 2 & 2.0 & 2.75 & 11.50 & 8 & 3.8 & 3.00 \\
+Telea, FD $\delta = 4$ & 0.75 & 3 & 2.0 & 1.00 & 6.75 & 25 & 7.3 & 1.00 \\
+Navier--Stokes, FD $\delta = 1$ & 2.00 & 2 & 1.5 & 1.18 & 45.00 & 45 & 10.1 & 1.38 \\
+Navier--Stokes, FD $\delta = 4$ & 1.50 & 4 & 1.9 & 1.00 & 28.12 & 82 & 11.6 & 1.00 \\
+\bottomrule
+\end{tabular}
 % END AUTO RECORDS_CMP
-\end{table}
+\end{table*}
 
 \subsection{What the observed pixels can determine}
 \label{sec:results:oracle}
@@ -619,7 +680,47 @@ Table~\ref{tab:external-v2} repeats the comparison of Table~\ref{tab:paired-v2} 
 \label{tab:external-v2}
 \footnotesize
 % BEGIN AUTO EXTERNAL_V2
-\textbf{[pending]}
+\begin{tabular}{@{}l c l r c r r r c@{}}
+\toprule
+ & & \multicolumn{5}{c}{Strongest classical method} & \multicolumn{2}{c}{LaMa} \\
+\cmidrule(lr){3-7}\cmidrule(l){8-9}
+Cell & Rank & Method & $\Delta$ & 95\% CI & Led (\%) & $\Delta_{\mathrm{cf}}$ & $\Delta$ & 95\% CI \\
+\midrule
+\multicolumn{9}{@{}l}{\emph{DFRWS 2006}} \\
+CF1~L1 & 4/11 & Block-DCT thr. & $-$5.62 & [$-$10.05, $-$1.43] & 0 & $-$5.42 & +1.57 & [+0.04, +7.27] \\
+CF1~L3 & 4/11 & Block-DCT thr. & $-$3.59 & [$-$6.40, $-$1.37] & 0 & $-$3.37 & +3.06 & [+0.74, +10.01] \\
+CF1~L5 & 3/11 & Block-DCT thr. & $-$1.45 & [$-$2.52, $-$1.12] & 0 & $-$1.45 & +6.43 & [+4.48, +13.04] \\
+\midrule
+CF2~L1 & 3/11 & FSR & $-$0.73 & [$-$0.81, $-$0.51] & 17 & $-$0.74 & $-$0.72 & [$-$0.95, $-$0.18] \\
+CF2~L3 & 2/11 & FSR & $-$0.25 & [$-$0.38, $-$0.03] & 33 & $-$0.24 & $-$1.23 & [$-$3.03, $-$0.58] \\
+CF2~L5 & 1/11 & TV-only & +0.36 & [+0.28, +0.46] & 100 & +0.36 & $-$1.07 & [$-$3.60, $-$0.28] \\
+\midrule
+CF3~L1 & 1/11 & TV-only & +0.28 & [$-$0.59, +0.52] & 50 & +0.37 & +1.53 & [+0.39, +5.84] \\
+CF3~L3 & 2/11 & FSR & $-$0.63 & [$-$2.23, $-$0.20] & 33 & $-$0.49 & $-$0.74 & [$-$3.41, +0.45] \\
+CF3~L5 & 2/11 & TV-only & $-$0.07 & [$-$1.49, +0.23] & 67 & +0.13 & $-$0.32 & [$-$1.62, +0.76] \\
+\midrule
+CF4~L1 & 3/11 & Navier--Stokes & $-$0.22 & [$-$2.14, +0.29] & 67 & +0.13 & +0.67 & [+0.11, +1.57] \\
+CF4~L3 & 3/11 & FSR & $-$0.40 & [$-$1.90, +0.04] & 33 & $-$0.26 & $-$0.88 & [$-$4.12, +0.09] \\
+CF4~L5 & 2/11 & FSR & $-$0.17 & [$-$0.80, +0.22] & 67 & $-$0.18 & $-$0.31 & [$-$1.59, +0.53] \\
+\midrule
+\multicolumn{9}{@{}l}{\emph{Kodak}} \\
+CF1~L1 & 4/11 & Block-DCT thr. & $-$3.10 & [$-$3.67, $-$2.57] & 0 & $-$3.10 & +1.37 & [+0.68, +2.08] \\
+CF1~L3 & 4/11 & Block-DCT thr. & $-$2.51 & [$-$2.92, $-$2.11] & 0 & $-$2.51 & +2.56 & [+1.72, +3.44] \\
+CF1~L5 & 3/11 & Block-DCT thr. & $-$1.65 & [$-$2.05, $-$1.28] & 4 & $-$1.65 & +5.31 & [+4.47, +6.20] \\
+\midrule
+CF2~L1 & 3/11 & Block-DCT thr. & $-$0.48 & [$-$0.87, $-$0.15] & 29 & $-$0.36 & +0.05 & [$-$0.42, +0.51] \\
+CF2~L3 & 3/11 & FSR & $-$0.13 & [$-$0.38, +0.10] & 38 & $-$0.14 & $-$0.45 & [$-$0.97, +0.05] \\
+CF2~L5 & 1/11 & TV-only & +0.36 & [+0.26, +0.48] & 100 & +0.34 & $-$0.10 & [$-$0.52, +0.26] \\
+\midrule
+CF3~L1 & 1/11 & TV-only & +0.43 & [+0.17, +0.79] & 88 & +0.43 & +2.09 & [+1.69, +2.50] \\
+CF3~L3 & 2/11 & FSR & $-$0.03 & [$-$0.36, +0.27] & 62 & $-$0.03 & $-$0.04 & [$-$0.65, +0.52] \\
+CF3~L5 & 1/11 & TV-only & +0.07 & [$-$0.02, +0.15] & 58 & +0.07 & $-$0.12 & [$-$0.51, +0.24] \\
+\midrule
+CF4~L1 & 2/11 & Navier--Stokes & $-$0.05 & [$-$0.48, +0.33] & 67 & $-$0.05 & +1.65 & [+1.16, +2.20] \\
+CF4~L3 & 2/11 & FSR & $-$0.18 & [$-$0.49, +0.11] & 54 & $-$0.18 & $-$0.24 & [$-$0.73, +0.19] \\
+CF4~L5 & 5/11 & FSR & $-$0.14 & [$-$0.58, +0.23] & 62 & $-$0.14 & +0.05 & [$-$0.44, +0.53] \\
+\bottomrule
+\end{tabular}
 % END AUTO EXTERNAL_V2
 \end{table*}
 

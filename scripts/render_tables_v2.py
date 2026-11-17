@@ -84,6 +84,9 @@ def _summary(sweep: Path) -> dict[tuple[str, str, str], dict] | None:
 
 FALLBACKS = ROOT / "results" / "baseline_fallbacks" / "fallbacks.csv"
 DAGGER = r"$^{\dagger}$"
+# what a dagger cites, in the document its table is in (the supplement cannot see the paper's labels)
+MAIN_FALLBACK_REF = r"Section~\ref{sec:experiments:methods}"
+SUPP_FALLBACK_REF = r"Table~\ref{tab:supp:fallbacks}"
 
 
 def _note(text: str, ncols: int) -> str:
@@ -136,12 +139,13 @@ def family_level_header(levels: tuple[str, ...], first: str = "Method",
 def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool | None, digits: int,
                          levels: tuple[str, ...] = MAIN_LEVELS, with_cap_note: bool = False,
                          fallbacks: Path = FALLBACKS, families: tuple[str, ...] = FAMILIES,
-                         column: str | None = None) -> str | None:
+                         column: str | None = None, fallback_ref: str = MAIN_FALLBACK_REF) -> str | None:
     """Rows are methods, columns are (family, level) cells of the summary
     column `{metric}_mean` (or `column`, for a count such as n_at_cap). The best
     value of each column among the compared methods (not the floor) is bold,
     unless higher_is_better is None (a descriptive statistic), and a value a
-    method mostly produced by its mean-fill fallback carries a dagger. Methods
+    method mostly produced by its mean-fill fallback carries a dagger, whose note
+    cites fallback_ref (a label of the document the table is in). Methods
     the sweep does not configure have no row. Returns the complete tabular."""
     s = _summary(sweep)
     if s is None:
@@ -151,7 +155,7 @@ def method_by_cell_table(sweep: Path, metric: str, higher_is_better: bool | None
     notes = []
     if any((*c, m) in fell_back for c in cells for m, _ in METHOD_ORDER):
         notes.append(DAGGER + r" The method filled the hole with the observed mean in most patch-runs "
-                     r"(Section~\ref{sec:experiments:methods}).")
+                     rf"({fallback_ref}).")
     if with_cap_note:
         notes.append(cap_note(s, cells))
     return cell_table(s, column or f"{metric}_mean", higher_is_better, digits, levels, fell_back, notes,
@@ -341,10 +345,9 @@ def external_v2(sweeps: dict[str, Path] = SECONDARY) -> str | None:
     return tabular(COMPARISON_SPEC, COMPARISON_HEADER, body)
 
 
-ABLATION_ARMS = [("csfr_tv_only", r"TV only ($\lambda_{\ell_1} = \lambda_{\mathrm{FC}} = 0$)"),
-                 ("csfr_dct_only", r"DCT only ($\lambda_{\mathrm{TV}} = 0$)"),
-                 ("csfr_no_fc", r"No high-frequency penalty ($\lambda_{\mathrm{FC}} = 0$)"),
-                 ("csfr_no_clip", r"No range constraint (C3)")]
+# short names: the full-width table has twelve numeric columns; the caption gives the weights each arm zeroes
+ABLATION_ARMS = [("csfr_tv_only", "TV only"), ("csfr_dct_only", "DCT only"),
+                 ("csfr_no_fc", "No HF penalty"), ("csfr_no_clip", "No C3")]
 NO_RANGE = "csfr_no_clip"
 ALPHA = 0.05
 
@@ -495,9 +498,10 @@ RECORD_GROUPS = [("CF1--CF2", ("CF1", "CF2")), ("CF3--CF4", ("CF3", "CF4"))]
 def records_cmp(d: Path = FIDELITY_DIR) -> str | None:
     """Per record kind and family group, medians over query pixels: L1 norm,
     support size, |w|-weighted mean distance from the query, and for finite
-    differences the relative difference between delta 1 and 4. A kind with no
-    non-zero record in a group (linear interpolation outside its convex hull)
-    shows dashes."""
+    differences the relative difference between delta 1 and 4, over the queries
+    whose delta-4 column is not zero (it is undefined, NaN in the CSV, where the
+    output did not change at delta 4). A kind with no non-zero record in a group
+    (linear interpolation outside its convex hull) shows dashes."""
     rows = _csv(d / "records_compare.csv")
     if rows is None:
         return None
@@ -515,6 +519,7 @@ def records_cmp(d: Path = FIDELITY_DIR) -> str | None:
                 continue
             med = lambda k, rr=nz: float(np.median([float(r[k]) for r in rr]))  # noqa: E731
             fd = [float(r["fd_rel_diff_delta1_vs_4"]) for r in nz if r.get("fd_rel_diff_delta1_vs_4", "") != ""]
+            fd = [x for x in fd if np.isfinite(x)]
             out += [f"{med('l1_norm'):.2f}", f"{med('support'):.0f}", f"{med('mean_distance'):.1f}",
                     f"{np.median(fd):.2f}" if fd else "--"]
         body.append(f"{name} & " + " & ".join(out) + r" \\")
@@ -539,11 +544,14 @@ def sci_compact(x: float) -> str:
 def oracle(d: Path = ORACLE_DIR) -> str | None:
     """Per cell and corpus: median oracle hole PSNR, the median and 90th
     percentile condition number of the observed rows of the oracle basis, and
-    the share of patches above 10^3."""
+    the share of patches above 10^3. Pending until every cell of both corpora is
+    in oracle.csv, which the diagnostic rewrites after each cell."""
     rows = _csv(d / "oracle.csv")
     if rows is None:
         return None
     by = {(r["corpus"], r["family"], r["level"]): r for r in rows}
+    if any((c, f, lv) not in by for c, _ in ORACLE_CORPORA for f in FAMILIES for lv in MAIN_LEVELS):
+        return None
     body = []
     for fam in FAMILIES:
         if body:
@@ -551,9 +559,7 @@ def oracle(d: Path = ORACLE_DIR) -> str | None:
         for lv in MAIN_LEVELS:
             out = [f"{fam}~{lv}"]
             for corpus, _ in ORACLE_CORPORA:
-                r = by.get((corpus, fam, lv))
-                if r is None:
-                    raise ValueError(f"oracle: no row for {corpus} {fam} {lv}")
+                r = by[(corpus, fam, lv)]
                 out += [f"{float(r['oracle_psnr_hole_median']):.1f}", sci_compact(float(r["cond_median"])),
                         sci_compact(float(r["cond_p90"])), f"{100 * float(r['frac_cond_above_1e3']):.0f}"]
             body.append(" & ".join(out) + r" \\")
@@ -788,9 +794,11 @@ def five_level_panels(sweep: Path, metric: str, higher_is_better: bool | None, d
                       with_cap_note: bool = False, column: str | None = None,
                       fallbacks: Path = FALLBACKS) -> str | None:
     """A method-by-cell table at every severity level, in two panels (CF1 and
-    CF2, then CF3 and CF4) so that each fits the page width."""
+    CF2, then CF3 and CF4) so that each fits the page width. These tables are in
+    the supplement, so a dagger cites the supplement's fallback table."""
     parts = [method_by_cell_table(sweep, metric, higher_is_better, digits, ALL_LEVELS, with_cap_note,
-                                  fallbacks, families=fams, column=column) for fams in FAMILY_PANELS]
+                                  fallbacks, families=fams, column=column, fallback_ref=SUPP_FALLBACK_REF)
+             for fams in FAMILY_PANELS]
     return None if parts[0] is None else PANEL_SEP.join(parts)
 
 
@@ -810,6 +818,40 @@ def supp_hrp() -> str | None:
 def supp_cap() -> str | None:
     """Patch-runs per cell at the hole-PSNR cap, the counts behind the cap-free analysis."""
     return five_level_panels(SWEEP, "n_at_cap", None, 0, column="n_at_cap")
+
+
+CAP_MECHANISM_DIR = ROOT / "results" / "cap_mechanism"
+CAP_MECHANISM_CORPORA = [("sweep_v2_govdocs1", "GovDocs1"), ("sweep_v2_dfrws", "DFRWS 2006"),
+                         ("sweep_v2_kodak", "Kodak")]
+
+
+def supp_cap_mechanism(d: Path = CAP_MECHANISM_DIR) -> str | None:
+    """Per corpus and cell (L1, L3, L5): CSFR's difference to the strongest
+    classical method split into the patches that method reconstructs to the cap
+    and the rest (scripts/cap_mechanism.py), the capped patches, the share of
+    the capped patch-runs whose true hole is flat, and the share of those flat
+    holes CSFR fills within one grey level. Pending until every corpus is in."""
+    panels = {name: _csv(d / f"{s}.csv") for s, name in CAP_MECHANISM_CORPORA}
+    if any(rows is None for rows in panels.values()):
+        return None
+    pct = lambda a, b: f"{100 * a / b:.0f}" if b else "--"  # noqa: E731
+    body = []
+    for name, rows in panels.items():
+        by = {(r["family"], r["level"]): r for r in rows}
+        if body:
+            body.append(r"\midrule")
+        body.append(rf"\multicolumn{{8}}{{@{{}}l}}{{\emph{{{name}}}}} \\")
+        for fam in FAMILIES:
+            for lv in MAIN_LEVELS:
+                r = by[(fam, lv)]
+                flat = int(r["n_runs_capped_flat"])
+                body.append(" & ".join([
+                    f"{fam}~{lv}", dict(METHOD_ORDER)[r["strongest"]], signed(float(r["diff_mean"])),
+                    signed(float(r["capped_part"])), signed(float(r["rest_part"])),
+                    f"{r['n_patches_capped']}/{r['n_patches']}", pct(flat, int(r["n_runs_capped"])),
+                    pct(int(r["n_runs_capped_flat_csfr_within_1"]), flat)]) + r" \\")
+    header = [r"Cell & Strongest & $\Delta$ & Capped & Rest & Capped patches & Flat (\%) & Within 1 (\%) \\"]
+    return tabular(r"@{}l l r r r r r r@{}", header, body)
 
 
 FALLBACK_ROWS = [("dictlearn", "Dict.\\ learning"), ("criminisi", "Exemplar")]
@@ -978,7 +1020,8 @@ TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_
           # supplement
           "SUPP_PSNR": supp_psnr, "SUPP_SSIM": supp_ssim, "SUPP_HRP": supp_hrp, "SUPP_CAP": supp_cap,
           "SUPP_FALLBACKS": supp_fallbacks, "SUPP_CALIBRATION": supp_calibration,
-          "SUPP_SHIFTMAP": supp_shiftmap, "SUPP_DICTCAP": supp_dictcap, "SUPP_FIDELITY": supp_fidelity}
+          "SUPP_SHIFTMAP": supp_shiftmap, "SUPP_DICTCAP": supp_dictcap, "SUPP_FIDELITY": supp_fidelity,
+          "SUPP_CAP_MECHANISM": supp_cap_mechanism}
 
 
 def main() -> int:
