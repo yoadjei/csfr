@@ -54,3 +54,33 @@ def test_finite_difference_column_is_zero_on_observed_pixels():
     col = finite_difference_column(lambda yy, mm: BASELINES["inpaint_ns"](yy, mm), y, M, k, delta=4.0)
     assert col.shape == (16, 16)
     assert np.all(col[M[0] == 1] == 0)
+
+
+def _degenerate(observed):
+    """A 16 x 16 patch observed only at the given pixels."""
+    y = np.zeros((1, 16, 16), np.float32)
+    M = np.zeros((1, 16, 16), np.float32)
+    for k, (r, c) in enumerate(observed):
+        M[0, r, c], y[0, r, c] = 1.0, 50.0 + 10 * k
+    return y, M
+
+
+def test_linear_interpolation_fills_a_hull_without_interior_like_outside_the_hull():
+    """Fewer than three observed pixels, or all of them on one line (as a
+    one-pixel erosion of a scattered-loss mask can leave), span no triangle:
+    every hole pixel is outside the hull and gets the fill value, zero, and the
+    exact record is empty. The observed pixels are kept."""
+    for observed in ([], [(15, 3)], [(15, 3), (15, 9)], [(15, 1), (15, 6), (15, 12)],
+                     [(2, 2), (5, 5), (9, 9), (12, 12)]):
+        y, M = _degenerate(observed)
+        out = BASELINES["bilinear"](y, M)
+        assert np.array_equal(out[M == 1], y[M == 1])
+        assert np.all(out[M == 0] == 0.0)
+        assert bilinear_weights(M[0]) == {}
+
+
+def test_linear_interpolation_is_unchanged_for_a_hull_with_interior():
+    y, M = _degenerate([(15, 1), (15, 6), (12, 12)])
+    out = BASELINES["bilinear"](y, M)
+    assert np.any(out[M == 0] != 0.0)
+    assert bilinear_weights(M[0])

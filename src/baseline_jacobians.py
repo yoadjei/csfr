@@ -14,6 +14,8 @@ from typing import Callable
 import numpy as np
 from scipy.spatial import Delaunay
 
+from baselines import spans_a_triangle
+
 Pixel = tuple[int, int]
 
 
@@ -28,7 +30,7 @@ def bilinear_weights(M: np.ndarray) -> dict[Pixel, list[tuple[Pixel, float]]]:
     yy, xx = np.mgrid[0:h, 0:w]
     obs = M == 1
     pts = np.stack([yy[obs], xx[obs]], axis=1).astype(np.float64)
-    if len(pts) < 3:
+    if not spans_a_triangle(pts):          # no hull interior: every hole pixel gets the fill
         return {}
     tri = Delaunay(pts)
     hole = np.argwhere(~obs).astype(np.float64)

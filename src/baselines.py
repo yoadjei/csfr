@@ -31,16 +31,27 @@ def baseline_zero(y: np.ndarray, M: np.ndarray) -> np.ndarray:
     return out
 
 
+def spans_a_triangle(pts: np.ndarray) -> bool:
+    """Whether the points (n, 2) have a convex hull with an interior: at least
+    three of them, not all on one line."""
+    return len(pts) >= 3 and int(np.linalg.matrix_rank(pts - pts.mean(axis=0))) == 2
+
+
 def baseline_bilinear(y: np.ndarray, M: np.ndarray) -> np.ndarray:
+    """Delaunay linear interpolation of the observed pixels; a hole pixel outside
+    their convex hull gets the fill value zero. When the observed pixels span no
+    triangle (fewer than three, or all on one line, as a one-pixel erosion of a
+    scattered-loss mask can leave), every hole pixel is outside the hull."""
     from scipy.interpolate import griddata
     b, h, w = y.shape
     out = np.zeros_like(y)
     yy, xx = np.mgrid[0:h, 0:w]
     for i in range(b):
         Mi = M[i] == 1
-        if not Mi.any():
-            continue
         pts = np.stack([yy[Mi], xx[Mi]], axis=1)
+        if not spans_a_triangle(pts):
+            out[i][Mi] = y[i][Mi]
+            continue
         vals = y[i][Mi]
         grid = griddata(pts, vals, (yy, xx), method="linear", fill_value=0.0)
         out[i] = grid
