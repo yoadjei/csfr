@@ -629,7 +629,7 @@ CF4~L5 & 30 & 0.937 & 11.8 & 83.3 & 83.3 & 100.0 & 454 \\
 \subsection{Comparison records}
 \label{sec:results:records}
 
-For the same query pixels, Table~\ref{tab:records} sets the CSFR record beside the exact record of linear interpolation and finite-difference records of linear interpolation and of Telea and Navier--Stokes inpainting at perturbations of one and four grey levels. Linear interpolation has a record only for hole pixels inside the convex hull of the observed pixels, so it has none under CF3 and CF4.
+For the same query pixels, Table~\ref{tab:records} sets the CSFR record beside the exact record of linear interpolation and finite-difference records of linear interpolation and of Telea and Navier--Stokes inpainting at perturbations of one and four grey levels. Linear interpolation has a record only for hole pixels inside the convex hull of the observed pixels, so it has none under CF3 and CF4. Fig.~\ref{fig:records} shows the records of one query pixel.
 
 The CSFR record is global. For every query its column is non-zero on at least \recCsfrSupportMinShare\% of the free hole pixels, and the median distance of its weight from the queried pixel is \recCsfrReachMin\ to \recCsfrReachMax\ pixels. The records of the comparison methods are concentrated near the query: where they are not zero, their median support is at most \recCmpSupportMax\ hole pixels and the median distance of their weight from the query at most \recCmpReachMax\ pixels (Table~\ref{tab:records}).
 
@@ -661,6 +661,13 @@ Navier--Stokes, FD $\delta = 4$ & 1.50 & 4 & 1.9 & 68 & 28.12 & 82 & 11.6 & 63 \
 \end{tabular}
 % END AUTO RECORDS_CMP
 \end{table*}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{figures/record_comparison.pdf}
+\caption{Records of one observed pixel $k$: the first patch of GovDocs1 under CF2~L3 at mask seed~0 and its first observed pixel at distance 1 from the hole, one of the queries of Table~\ref{tab:records}. (a)~Observed pixels and $k$. (b)~The CSFR column and (c)~the exact column of linear interpolation: the change of each hole pixel per grey level of $Y_{k}$. (d)~The sum of $|c|$ over the hole pixels at each distance from $k$. (e)--(h)~Finite-difference columns of Telea and Navier--Stokes inpainting at perturbations of $\delta = 1$ and $4$ grey levels. Each map is on its own symmetric logarithmic scale in units of its largest $|c|$, linear below $10^{-3}$ of it; observed pixels are white and the outline marks the hole. Below each map: the largest $|c|$, the $\ell_1$ norm and the support. The CSFR column is non-zero on every hole pixel, also in the part of the hole that does not touch $k$; the other records are zero outside the part next to $k$, and the finite-difference records change with $\delta$. Rendered by \texttt{scripts/\allowbreak render\allowbreak\_figures\allowbreak\_v2.py}, which recomputes the records, checks them against the saved comparison and writes the numbers shown to \texttt{results/\allowbreak figures\allowbreak\_v2/}.}
+\label{fig:records}
+\end{figure*}
 
 \subsection{What the observed pixels can determine}
 \label{sec:results:oracle}

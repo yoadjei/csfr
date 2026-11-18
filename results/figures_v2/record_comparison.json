@@ -1,0 +1,75 @@
+{
+  "sweep": "sweep_v2_govdocs1",
+  "cell": "CF2_L3",
+  "seed": 0,
+  "patch": 0,
+  "query_pixel": [
+    2,
+    0
+  ],
+  "query_distance": 1,
+  "n_hole_components": 2,
+  "n_hole": 1440,
+  "records": [
+    {
+      "method": "csfr",
+      "record": "implicit_function",
+      "title": "CSFR",
+      "l1_norm": 9.878423344231663,
+      "max_abs": 0.2743943399178046,
+      "support": 1440.0,
+      "mean_distance": 28.829710170941752,
+      "components_reached": 2
+    },
+    {
+      "method": "bilinear",
+      "record": "exact_barycentric",
+      "title": "Linear interp., exact",
+      "l1_norm": 15.600000000000001,
+      "max_abs": 0.9230769230769231,
+      "support": 42.0,
+      "mean_distance": 4.5,
+      "components_reached": 1
+    },
+    {
+      "method": "inpaint_telea",
+      "record": "finite_difference_delta1",
+      "title": "Telea, $\\delta=1$",
+      "l1_norm": 3.0,
+      "max_abs": 1.0,
+      "support": 3.0,
+      "mean_distance": 2.3333333333333335,
+      "components_reached": 1
+    },
+    {
+      "method": "inpaint_telea",
+      "record": "finite_difference_delta4",
+      "title": "Telea, $\\delta=4$",
+      "l1_norm": 1.0,
+      "max_abs": 0.25,
+      "support": 4.0,
+      "mean_distance": 2.0,
+      "components_reached": 1
+    },
+    {
+      "method": "inpaint_ns",
+      "record": "finite_difference_delta1",
+      "title": "Navier-Stokes, $\\delta=1$",
+      "l1_norm": 0.0,
+      "max_abs": 0.0,
+      "support": 0.0,
+      "mean_distance": null,
+      "components_reached": 0
+    },
+    {
+      "method": "inpaint_ns",
+      "record": "finite_difference_delta4",
+      "title": "Navier-Stokes, $\\delta=4$",
+      "l1_norm": 3.5,
+      "max_abs": 0.75,
+      "support": 8.0,
+      "mean_distance": 2.857142857142857,
+      "components_reached": 1
+    }
+  ]
+}

@@ -17,6 +17,7 @@ Figures so far:
 """
 from __future__ import annotations
 
+import csv
 import importlib.util
 import json
 import sys
@@ -29,7 +30,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
-from matplotlib.colors import LinearSegmentedColormap, ListedColormap  # noqa: E402
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap, SymLogNorm  # noqa: E402
+from scipy.ndimage import label  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -292,7 +294,183 @@ def record_walkthrough(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw)
     return draw_walkthrough(data, fig_dir)
 
 
-FIGURES = {"record_walkthrough": record_walkthrough}
+# ------------------------------------------------------------ record comparison
+
+CMP_CELL, CMP_SEED, CMP_PATCH = "CF2_L3", 0, 0      # the first patch of the cell, as in the walkthrough
+CMP_N_PATCHES = 10                                    # run_sensitivity_fidelity --patches (default)
+# (method, record, panel title): the records of one observed pixel, as records_compare.csv names them
+CMP_RECORDS = (
+    ("csfr", "implicit_function", "CSFR"),
+    ("bilinear", "exact_barycentric", "Linear interp., exact"),
+    ("inpaint_telea", "finite_difference_delta1", r"Telea, $\delta=1$"),
+    ("inpaint_telea", "finite_difference_delta4", r"Telea, $\delta=4$"),
+    ("inpaint_ns", "finite_difference_delta1", r"Navier-Stokes, $\delta=1$"),
+    ("inpaint_ns", "finite_difference_delta4", r"Navier-Stokes, $\delta=4$"),
+)
+CMP_STATS = ("l1_norm", "max_abs", "support", "mean_distance")
+CMP_LINTHRESH = 1e-3            # the maps are linear below this fraction of their largest entry
+
+
+def comparison_columns(y: np.ndarray, M: np.ndarray, patch: int, k: tuple[int, int]) -> dict:
+    """The columns of observed pixel k of one patch, as records_unit in
+    scripts/run_sensitivity_fidelity.py computes them: the batch is solved
+    together with the default configuration, then CSFR's implicit-function
+    column, the exact barycentric column of linear interpolation, and
+    finite-difference columns of Telea and Navier-Stokes at delta 1 and 4.
+    records_unit computes every query of a cell at once, and its file cannot
+    change without invalidating the saved units, so these lines repeat it;
+    comparison_data checks the result against the saved row. Keyed by
+    (method, record)."""
+    cfg, rc = SolverConfig(), RecordConfig()
+    X, _ = solve(torch.from_numpy(y), torch.from_numpy(M), cfg)
+    Mb = M[patch] == 1
+    col, _ = sensitivity_column(X[patch], torch.from_numpy(y[patch]), torch.from_numpy(Mb), k, cfg, rc)
+    exact = np.zeros(Mb.shape)
+    for p, entries in _fid.bilinear_weights(M[patch]).items():
+        for q, wt in entries:
+            if q == k:
+                exact[p] = wt
+    out = {("csfr", "implicit_function"): col.numpy(), ("bilinear", "exact_barycentric"): exact}
+    y1, M1 = y[patch:patch + 1].astype(np.float32), M[patch:patch + 1]
+    for name in ("inpaint_telea", "inpaint_ns"):
+        fn = _fid.BASELINES[name]
+        for dl in (1.0, 4.0):
+            out[name, f"finite_difference_delta{dl:g}"] = _fid.finite_difference_column(
+                lambda a, b, fn=fn: fn(a, b), y1, M1, k, dl)
+    return out
+
+
+def comparison_data(sweep: Path = ROOT / "results" / "sweep_v2_govdocs1",
+                    saved: Path = ROOT / "results" / "sensitivity_fidelity" / "records_compare.csv",
+                    cell: str = CMP_CELL, seed: int = CMP_SEED, patch: int = CMP_PATCH,
+                    n_patches: int = CMP_N_PATCHES) -> dict | None:
+    """The records of the observed pixel at distance 1 from the hole of one patch,
+    recomputed and checked against the row the record comparison saved for it, so
+    the figure shows the records Table RECORDS_CMP summarises."""
+    d = sweep / cell / f"seed{seed}"
+    if not saved.exists() or not all((d / f).exists() for f in ("y.npy", "mask.npy")):
+        return None
+    y, M, _, _ = _fid._cell_inputs(sweep, cell, seed, n_patches)
+    Mb = M[patch] == 1
+    dist, k = observed_queries(Mb)[0]
+    if dist != 1:
+        raise RuntimeError(f"{d}: patch {patch} has no observed pixel at distance 1 from the hole")
+    cols = comparison_columns(y, M, patch, k)
+    rows = {(r["method"], r["record"]): r for r in _fid_rows(saved)
+            if r["cell"] == cell and int(r["patch"]) == patch and int(r["query_distance"]) == dist}
+    records = []
+    for method, record, title in CMP_RECORDS:
+        stats = _fid._record_stats(cols[method, record], k, ~Mb)
+        row = rows.get((method, record))
+        if row is None:
+            raise RuntimeError(f"{saved.name}: no {method} {record} row for {cell} patch {patch}")
+        for key in CMP_STATS:
+            a, b = float(stats[key]), float(row[key])
+            if not (np.isclose(a, b, rtol=1e-6, atol=1e-9) or (np.isnan(a) and np.isnan(b))):
+                raise RuntimeError(f"{method} {record}: {key} {a} differs from the saved {b}")
+        records.append({"method": method, "record": record, "title": title, "column": cols[method, record],
+                        **{key: float(stats[key]) for key in CMP_STATS},
+                        "components_reached": components_reached(cols[method, record], ~Mb)})
+    return {"sweep": sweep.name, "cell": cell, "seed": seed, "patch": patch, "query_pixel": list(k),
+            "query_distance": int(dist), "observed": Mb, "y": y[patch], "records": records,
+            "n_hole_components": int(label(~Mb, structure=np.ones((3, 3)))[1])}
+
+
+def components_reached(column: np.ndarray, hole: np.ndarray) -> int:
+    """How many connected parts of the hole (8-connected) hold an entry of the
+    column above the support threshold of the record comparison (1e-6 of the
+    largest |entry|)."""
+    a = np.abs(np.where(hole, column, 0.0))
+    if a.max() == 0:
+        return 0
+    parts, _ = label(hole, structure=np.ones((3, 3)))
+    return len(np.unique(parts[a > 1e-6 * a.max()]))
+
+
+def _fid_rows(path: Path) -> list[dict]:
+    with path.open(newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def comparison_numbers(data: dict) -> dict:
+    return {k: data[k] for k in ("sweep", "cell", "seed", "patch", "query_pixel", "query_distance",
+                                 "n_hole_components")} | {
+        "n_hole": int((~data["observed"]).sum()),
+        "records": [{k: (None if isinstance(v, float) and np.isnan(v) else v) for k, v in r.items()
+                     if k != "column"} for r in data["records"]]}
+
+
+def reach(column: np.ndarray, k: tuple[int, int], hole: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """sum |column| over the hole pixels at each Chebyshev distance from k."""
+    rr, cc = np.nonzero(hole)
+    d = np.maximum(np.abs(rr - k[0]), np.abs(cc - k[1]))
+    a = np.abs(column[rr, cc])
+    ds = np.arange(1, int(d.max()) + 1)
+    return ds, np.array([a[d == x].sum() for x in ds])
+
+
+def draw_comparison(data: dict, fig_dir: Path = FIG_DIR, name: str = "record_comparison") -> Path:
+    """Two rows of four panels. Top: the observed patch with the queried pixel k,
+    the CSFR column and the exact column of linear interpolation, and how the
+    weight of those two columns falls off with distance from k. Bottom: the
+    finite-difference columns of Telea and Navier-Stokes at delta 1 and 4. Each
+    column is on its own symmetric logarithmic scale over the hole, linear below
+    CMP_LINTHRESH of its largest entry, so that entries a hundred times smaller
+    than the largest stay visible; observed pixels are white."""
+    hole = ~data["observed"]
+    k = tuple(data["query_pixel"])
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(2, 4, figsize=(TEXT_WIDTH_IN, 4.15), layout="constrained")
+        _image(axes[0, 0], data["y"], "(a) Observed (grey: hole)", hole)
+        _callouts(axes[0, 0], [(k, "k")], hole.shape)
+        maps = [axes[0, 1], axes[0, 2], *axes[1, :]]
+        for i, (r, ax) in enumerate(zip(data["records"], maps)):
+            c = np.where(hole, r["column"], np.nan)
+            vmax = float(np.nanmax(np.abs(c))) or 1.0
+            norm = SymLogNorm(linthresh=CMP_LINTHRESH * vmax, linscale=0.5, vmin=-vmax, vmax=vmax, base=10)
+            im = ax.imshow(c, cmap=SIGNED, norm=norm, interpolation="nearest")
+            ax.contour(hole.astype(float), levels=[0.5], colors=INK_MUTED, linewidths=0.4)
+            _callouts(ax, [(k, "k")], hole.shape)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(f"({'bcefgh'[i]}) {r['title']}")
+            if r["l1_norm"] == 0:
+                ax.text(0.5, 0.5, "zero: output\nunchanged", transform=ax.transAxes, ha="center",
+                        va="center", fontsize=7, color=INK_MUTED,
+                        bbox={"facecolor": "white", "edgecolor": "none", "pad": 1})
+            cb = fig.colorbar(im, ax=ax, orientation="horizontal", fraction=0.06, pad=0.02)
+            cb.set_ticks([-vmax, -1e-2 * vmax, 0.0, 1e-2 * vmax, vmax],
+                         labels=["−1", r"$-10^{-2}$", "0", r"$10^{-2}$", "1"])
+            cb.ax.tick_params(labelsize=6)
+            scale = f"c / {r['max_abs']:.2g}" if r["max_abs"] > 0 else "c = 0"
+            cb.set_label(rf"{scale};  $\ell_1$ {r['l1_norm']:.3g}, support {r['support']:.0f}",
+                         fontsize=7, labelpad=2)
+
+        ax = axes[0, 3]
+        for i, r in enumerate(data["records"][:2]):
+            ds, mass = reach(r["column"], k, hole)
+            keep = mass > 0
+            ax.semilogy(ds[keep], mass[keep], marker=MARKERS[i], ms=3, lw=1.0, color=SERIES[i],
+                        label=r["title"])
+        ax.set_xlabel("distance from k (pixels)")
+        ax.set_ylabel(r"$\sum |c|$ at that distance")
+        ax.set_title("(d) Reach of the columns")
+        ax.legend(loc="lower right", frameon=False, handletextpad=0.3, handlelength=1.5, borderaxespad=0.1)
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.grid(True, color="#e4e3df", lw=0.4)
+        ax.set_axisbelow(True)
+        return _save(fig, name, fig_dir)
+
+
+def record_comparison(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw) -> Path | None:
+    data = comparison_data(**kw)
+    if data is None:
+        return None
+    _write_json(data_dir / "record_comparison.json", comparison_numbers(data))
+    return draw_comparison(data, fig_dir)
+
+
+FIGURES = {"record_walkthrough": record_walkthrough, "record_comparison": record_comparison}
 
 
 def main(argv: list[str] | None = None) -> int:

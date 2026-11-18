@@ -109,6 +109,92 @@ def test_walkthrough_refuses_patches_that_are_not_the_observed_ones(tmp_path):
         m.walkthrough_data(**kw)
 
 
+def _records(tmp_path):
+    """A sweep cell and the records_compare.csv that run_sensitivity_fidelity
+    --records-compare writes for it."""
+    import argparse
+    m = _mod()
+    kw, M = _sweep(tmp_path)
+    args = argparse.Namespace(sweep_dir=str(kw["sweep"]), seed=0, patches=2)
+    saved = tmp_path / "records_compare.csv"
+    m._fid._write_csv(saved, m._fid.records_unit(args, kw["cell"]))
+    return {"sweep": kw["sweep"], "saved": saved, "cell": kw["cell"], "seed": 0, "patch": 0,
+            "n_patches": 2}, M
+
+
+def test_record_comparison_is_pending_without_the_saved_records(tmp_path):
+    m = _mod()
+    kw, _ = _sweep(tmp_path)
+    assert m.record_comparison(fig_dir=tmp_path / "fig", data_dir=tmp_path / "data", sweep=kw["sweep"],
+                               saved=tmp_path / "none.csv", cell=kw["cell"]) is None
+    assert not (tmp_path / "fig").exists()
+
+
+def test_record_comparison_shows_the_saved_records_of_one_observed_pixel(tmp_path):
+    m = _mod()
+    kw, M = _records(tmp_path)
+    pdf = m.record_comparison(fig_dir=tmp_path / "fig", data_dir=tmp_path / "data", **kw)
+    doc = pdf.read_bytes()
+    assert b"/FontFile2" in doc and b"/Type3" not in doc
+    numbers = json.loads((tmp_path / "data" / "record_comparison.json").read_text())
+    dist, k = m.observed_queries(M[0] == 1)[0]
+    assert (numbers["query_distance"], tuple(numbers["query_pixel"])) == (1, k)
+    assert [(r["method"], r["record"]) for r in numbers["records"]] == [(a, b) for a, b, _ in m.CMP_RECORDS]
+    csfr = numbers["records"][0]
+    assert csfr["support"] == numbers["n_hole"]                     # CSFR's column covers the hole
+    again = m.record_comparison(fig_dir=tmp_path / "fig2", data_dir=tmp_path / "data2", **kw)
+    assert again.read_bytes() == doc
+
+
+def test_record_comparison_refuses_a_saved_row_it_does_not_reproduce(tmp_path):
+    import csv
+    m = _mod()
+    kw, _ = _records(tmp_path)
+    with kw["saved"].open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    for r in rows:
+        if r["patch"] == "0" and r["method"] == "bilinear" and r["record"] == "exact_barycentric"                 and r["query_distance"] == "1":
+            r["l1_norm"] = str(float(r["l1_norm"]) + 0.5)
+    m._fid._write_csv(kw["saved"], rows)
+    with pytest.raises(RuntimeError, match="differs from the saved"):
+        m.comparison_data(**kw)
+
+
+def test_record_comparison_caption_holds_for_the_committed_numbers():
+    """The caption of Fig. fig:records describes the committed figure's numbers."""
+    tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
+    n = json.loads((ROOT / "results" / "figures_v2" / "record_comparison.json").read_text(encoding="utf-8"))
+    rec = {(r["method"], r["record"]): r for r in n["records"]}
+    csfr = rec["csfr", "implicit_function"]
+    others = [r for key, r in rec.items() if key[0] != "csfr"]
+    fd = lambda m, d: rec[m, f"finite_difference_delta{d}"]["l1_norm"]          # noqa: E731
+    claims = {
+        "the first patch of GovDocs1 under CF2~L3 at mask seed~0 and its first observed pixel at distance 1":
+            (n["sweep"], n["cell"], n["seed"], n["patch"], n["query_distance"])
+            == ("sweep_v2_govdocs1", "CF2_L3", 0, 0, 1),
+        "The CSFR column is non-zero on every hole pixel, also in the part of the hole that does not touch $k$":
+            csfr["support"] == n["n_hole"] and csfr["components_reached"] == n["n_hole_components"] > 1,
+        "the other records are zero outside the part next to $k$":
+            all(r["components_reached"] <= 1 for r in others),
+        "and the finite-difference records change with $\delta$":
+            all(fd(m, 1) != fd(m, 4) for m in ("inpaint_telea", "inpaint_ns")),
+        "linear below $10^{-3}$ of it": _mod().CMP_LINTHRESH == 1e-3,
+    }
+    for sentence, holds in claims.items():
+        assert sentence in tex, f"caption sentence gone (update this test): {sentence}"
+        assert holds, f"the caption says '{sentence}', which the committed numbers contradict"
+
+
+def test_reach_sums_the_column_at_each_distance():
+    m = _mod()
+    hole = np.zeros((5, 5), bool)
+    hole[1:, 1:] = True
+    col = np.zeros((5, 5))
+    col[1, 1], col[2, 1], col[4, 4] = 0.5, -0.25, 2.0
+    ds, mass = m.reach(col, (0, 0), hole)
+    assert ds.tolist() == [1, 2, 3, 4] and mass.tolist() == [0.5, 0.25, 0.0, 2.0]
+
+
 def test_every_included_figure_is_generated_and_current(tmp_path):
     r"""Each \includegraphics of the manuscript and the supplement names a PDF
     that a generator of render_figures_v2 writes, and the committed file is the
