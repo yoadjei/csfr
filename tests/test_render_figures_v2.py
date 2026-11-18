@@ -185,6 +185,36 @@ def test_record_comparison_caption_holds_for_the_committed_numbers():
         assert holds, f"the caption says '{sentence}', which the committed numbers contradict"
 
 
+def test_overview_is_pending_without_its_cell(tmp_path):
+    m = _mod()
+    assert m.method_overview(fig_dir=tmp_path / "fig", data_dir=tmp_path / "data", sweep=tmp_path) is None
+    assert not (tmp_path / "fig").exists()
+
+
+def test_overview_shows_the_row_of_the_first_queried_pixel(tmp_path):
+    m = _mod()
+    kw, M = _sweep(tmp_path)
+    kw = {k: kw[k] for k in ("sweep", "cell", "seed", "patch")}
+    pdf = m.method_overview(fig_dir=tmp_path / "fig", data_dir=tmp_path / "data", **kw)
+    doc = pdf.read_bytes()
+    assert b"/FontFile2" in doc and b"/Type3" not in doc
+    numbers = json.loads((tmp_path / "data" / "method_overview.json").read_text())
+    assert tuple(numbers["row_pixel"]) == m.imputed_queries(M[0] == 1)[0]
+    assert numbers["gap"] <= m.SolverConfig(tol=1e-6).tol
+    again = m.method_overview(fig_dir=tmp_path / "fig2", data_dir=tmp_path / "data2", **kw)
+    assert again.read_bytes() == doc
+
+
+def test_overview_caption_names_the_walkthrough_patch_and_pixel():
+    tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
+    assert r"The patch and the pixel are those of Fig.~\ref{fig:record}(e)." in tex
+    data = ROOT / "results" / "figures_v2"
+    over = json.loads((data / "method_overview.json").read_text(encoding="utf-8"))
+    walk = json.loads((data / "record_walkthrough.json").read_text(encoding="utf-8"))
+    assert all(over[k] == walk[k] for k in ("sweep", "cell", "seed", "patch"))
+    assert over["row_pixel"] == walk["rows"][0]["pixel"]                 # panel (e) is the first row
+
+
 def test_reach_sums_the_column_at_each_distance():
     m = _mod()
     hole = np.zeros((5, 5), bool)

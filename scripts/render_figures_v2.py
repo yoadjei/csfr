@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap, SymLogNorm  # noqa: E402
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch  # noqa: E402
 from scipy.ndimage import label  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -93,6 +94,21 @@ def sci(x: float, digits: int = 1) -> str:
 
 WALK_CELL, WALK_SEED, WALK_PATCH = "CF3_L5", 0, 0     # the patch whose manifest E6 writes
 WALK_DELTAS = (0.25, 1.0, 4.0)
+SAVED_CELL = ("y.npy", "mask.npy", "x_hat_csfr.npy", "metrics.json")    # what a sweep cell leaves
+
+
+def resolve_saved(d: Path, patch: int):
+    """Re-solve one patch of a saved sweep cell with the configuration the sweep
+    recorded, and refuse it unless it converges to the saved output.
+    Returns (y, M, X, certificate, config), each batch of one patch."""
+    y = np.load(d / "y.npy")[patch:patch + 1]
+    M = np.load(d / "mask.npy")[patch:patch + 1]
+    cfg = SolverConfig(**json.loads((d / "metrics.json").read_text(encoding="utf-8"))["methods"]["csfr"]["solver"])
+    X, cert = solve(torch.from_numpy(y), torch.from_numpy(M), cfg)
+    dev = float(np.abs(X[0].numpy() - np.load(d / "x_hat_csfr.npy")[patch]).max())
+    if not bool(cert.converged[0]) or dev > 1e-3:
+        raise RuntimeError(f"{d}: re-solved patch {patch} differs from the sweep by {dev}")
+    return y, M, X, cert, cfg
 
 
 def walkthrough_data(sweep: Path = ROOT / "results" / "sweep_v2_govdocs1",
@@ -110,18 +126,12 @@ def walkthrough_data(sweep: Path = ROOT / "results" / "sweep_v2_govdocs1",
     sensitivity.fidelity_patch, so the figure shows what the experiment measures.
     """
     d = sweep / cell / f"seed{seed}"
-    if not all((d / f).exists() for f in ("y.npy", "mask.npy", "x_hat_csfr.npy", "metrics.json")):
+    if not all((d / f).exists() for f in SAVED_CELL):
         return None
-    y = np.load(d / "y.npy")[patch:patch + 1]
-    M = np.load(d / "mask.npy")[patch:patch + 1]
+    y, M, X, cert, cfg = resolve_saved(d, patch)
     truth = np.load(patches_path)[patch].astype(np.float32)
     if not np.array_equal(truth * M[0], y[0]):
         raise RuntimeError(f"{d}: patch {patch} of {patches_path.name} is not the observed patch")
-    cfg = SolverConfig(**json.loads((d / "metrics.json").read_text(encoding="utf-8"))["methods"]["csfr"]["solver"])
-    X, cert = solve(torch.from_numpy(y), torch.from_numpy(M), cfg)
-    dev = float(np.abs(X[0].numpy() - np.load(d / "x_hat_csfr.npy")[patch]).max())
-    if not bool(cert.converged[0]) or dev > 1e-3:
-        raise RuntimeError(f"{d}: re-solved patch {patch} differs from the sweep by {dev}")
 
     Mb = torch.from_numpy(M[0] == 1)
     yi = torch.from_numpy(y[0]).to(torch.float64)
@@ -470,7 +480,133 @@ def record_comparison(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw) 
     return draw_comparison(data, fig_dir)
 
 
-FIGURES = {"record_walkthrough": record_walkthrough, "record_comparison": record_comparison}
+# ------------------------------------------------------------ method overview
+
+def overview_data(sweep: Path = ROOT / "results" / "sweep_v2_govdocs1", cell: str = WALK_CELL,
+                  seed: int = WALK_SEED, patch: int = WALK_PATCH) -> dict | None:
+    """The patch of the walkthrough, re-solved and checked against the sweep, and
+    the record of its first queried pixel (distance 1 from the observed region),
+    for the thumbnails of the overview."""
+    d = sweep / cell / f"seed{seed}"
+    if not all((d / f).exists() for f in SAVED_CELL):
+        return None
+    y, M, X, cert, cfg = resolve_saved(d, patch)
+    Mb = M[0] == 1
+    q = imputed_queries(Mb)[0]
+    w, info = sensitivity_row(X[0].to(torch.float64), torch.from_numpy(y[0]).to(torch.float64),
+                              torch.from_numpy(Mb), q, cfg, RecordConfig())
+    return {"sweep": sweep.name, "cell": cell, "seed": seed, "patch": patch, "observed": Mb, "y": y[0],
+            "reconstruction": X[0].numpy(), "row_pixel": list(q), "row": w.numpy(),
+            "iterations": int(cert.iterations[0]), "gap": float(cert.gap[0]),
+            "row_support": int(info["support"])}
+
+
+def overview_numbers(data: dict) -> dict:
+    return {k: data[k] for k in ("sweep", "cell", "seed", "patch", "row_pixel", "iterations", "gap",
+                                 "row_support")}
+
+
+def _box(fig, x0: float, x1: float, title: str, lines: list[str] = (), y0: float = 0.06,
+         y1: float = 0.94) -> None:
+    """A rounded box between figure fractions x0 and x1, beneath every axes, with
+    a title and lines of text."""
+    fig.patches.append(FancyBboxPatch((x0, y0), x1 - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=0.012",
+                                      transform=fig.transFigure, facecolor="#f7f6f3", edgecolor=INK_MUTED,
+                                      linewidth=0.6, zorder=-10))
+    fig.text((x0 + x1) / 2, y1 - 0.05, title, ha="center", va="top", fontsize=8, weight="bold")
+    if lines:
+        fig.text(x0 + 0.012, y1 - 0.2, "\n".join(lines), ha="left", va="top", fontsize=7, linespacing=1.6)
+
+
+def _arrow(fig, x0: float, x1: float, y: float = 0.5) -> None:
+    fig.add_artist(FancyArrowPatch((x0, y), (x1, y), transform=fig.transFigure, arrowstyle="-|>",
+                                   mutation_scale=7, color=INK_MUTED, linewidth=0.8))
+
+
+# x extents (inches) of the five stages of the overview, left to right
+OVERVIEW_X = {"observed": (0.06, 0.96), "problem": (1.16, 3.06), "solver": (3.26, 4.66),
+              "reconstruction": (4.86, 5.76), "record": (5.96, 7.12)}
+
+
+def draw_overview(data: dict, fig_dir: Path = FIG_DIR, name: str = "method_overview") -> Path:
+    """Left to right: the observed patch, the problem CSFR solves (three penalty
+    terms, two hard constraints), the solver and its certificate, the
+    reconstruction, and the record of one imputed pixel (its row over the
+    observed pixels, as in the walkthrough)."""
+    W, H = TEXT_WIDTH_IN, 1.75
+    hole = ~data["observed"]
+    X = {k: (a / W, b / W) for k, (a, b) in OVERVIEW_X.items()}
+    with plt.rc_context(STYLE):
+        fig = plt.figure(figsize=(W, H))
+
+        def thumb(stage: str, title: str, below: str, size_in: float = 0.9):
+            x0, x1 = OVERVIEW_X[stage]
+            left = (x0 + x1) / 2 - size_in / 2
+            ax = fig.add_axes((left / W, (H - size_in) / 2 / H, size_in / W, size_in / H))
+            ax.set_xticks([])
+            ax.set_yticks([])
+            mid = (x0 + x1) / 2 / W
+            fig.text(mid, (H + size_in) / 2 / H + 0.04, title, ha="center", va="bottom", fontsize=8,
+                     weight="bold")
+            fig.text(mid, (H - size_in) / 2 / H - 0.04, below, ha="center", va="top", fontsize=7,
+                     linespacing=1.4)
+            return ax
+
+        _image(thumb("observed", "Observed", r"$Y_{\Omega}$; grey: hole"), data["y"], "", hole)
+        _box(fig, *X["problem"], "Problem", [
+            r"minimise $J(X)$, the sum of",
+            r"   DCT sparsity, weight $\lambda_{\ell_1}$",
+            r"   C2 continuity (TV), weight $\lambda_{\mathrm{TV}}$",
+            r"   C4 frequency coherence, weight $\lambda_{\mathrm{FC}}$",
+            "subject to the hard constraints",
+            r"   C1  $X_{\Omega} = Y_{\Omega}$",
+            r"   C3  $0 \leq X \leq 255$"])
+        _box(fig, *X["solver"], "Solver", [
+            "projected FISTA with",
+            "adaptive restart; every",
+            "iterate satisfies C1, C3",
+            r"gap $G(X) \geq J(X) - J(X^{\star})$",
+            r"stops at $G \leq \mathrm{tol}$",
+            "certificate: gap,",
+            "iterations, converged"])
+        _image(thumb("reconstruction", "Reconstruction", r"$X^{\star}$, the unique" + "\nminimiser"),
+               data["reconstruction"], "")
+
+        x0, x1 = X["record"]
+        _box(fig, x0, x1, "Record")
+        fig.text((x0 + x1) / 2, 0.76, r"$\partial X^{\star}_{F} / \partial Y_{\Omega}$", ha="center",
+                 va="center", fontsize=7)
+        size = 0.6
+        ax = fig.add_axes(((x0 + x1) / 2 - size / 2 / W, 0.31, size / W, size / H))
+        w = np.where(data["observed"], data["row"], np.nan)
+        vmax = float(np.nanmax(np.abs(w)))
+        ax.imshow(w, cmap=SIGNED, interpolation="nearest",
+                  norm=SymLogNorm(linthresh=CMP_LINTHRESH * vmax, linscale=0.5, vmin=-vmax, vmax=vmax, base=10))
+        ax.imshow(np.where(hole, 1.0, np.nan), cmap=ListedColormap([HOLE]), vmin=0, vmax=1,
+                  interpolation="nearest")
+        r, c = data["row_pixel"]
+        ax.plot(c, r, marker="x", ms=2.5, mew=0.7, color="#0b0b0b", clip_on=False)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        fig.text((x0 + x1) / 2, 0.27, "row of the marked pixel;\nchecked by re-solves", ha="center",
+                 va="top", fontsize=7, linespacing=1.4)
+
+        stages = list(OVERVIEW_X.values())
+        for (_, a), (b, _) in zip(stages, stages[1:]):
+            _arrow(fig, (a + 0.02) / W, (b - 0.02) / W)
+        return _save(fig, name, fig_dir)
+
+
+def method_overview(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw) -> Path | None:
+    data = overview_data(**kw)
+    if data is None:
+        return None
+    _write_json(data_dir / "method_overview.json", overview_numbers(data))
+    return draw_overview(data, fig_dir)
+
+
+FIGURES = {"method_overview": method_overview, "record_walkthrough": record_walkthrough,
+           "record_comparison": record_comparison}
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1,0 +1,13 @@
+{
+  "sweep": "sweep_v2_govdocs1",
+  "cell": "CF3_L5",
+  "seed": 0,
+  "patch": 0,
+  "row_pixel": [
+    44,
+    0
+  ],
+  "iterations": 1500,
+  "gap": 9.885055894344896e-07,
+  "row_support": 1216
+}

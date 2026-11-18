@@ -129,7 +129,14 @@ The components above are standard. This paper contributes their combination into
 \subsection{Observation model and scope}
 \label{sec:problem:scope}
 
-A grey-level patch $X \in [0,255]^{H \times W}$ with $N = HW$ pixels is observed on a set $\Omega$ of positions, recorded as a binary mask $\mathbf{M}$ with $\mathbf{M}_{rc} = 1$ on $\Omega$. The observed values $Y_{\Omega} = X_{\Omega}$ are known exactly; the remaining pixels, the hole $\Omega^{c}$, are unknown. Observation is noiseless on $\Omega$ by assumption, because an observed pixel is evidence and is reproduced rather than denoised. What happens when $\Omega$ itself is wrong is measured in Section~\ref{sec:results:maskerr}.
+A grey-level patch $X \in [0,255]^{H \times W}$ with $N = HW$ pixels is observed on a set $\Omega$ of positions, recorded as a binary mask $\mathbf{M}$ with $\mathbf{M}_{rc} = 1$ on $\Omega$. The observed values $Y_{\Omega} = X_{\Omega}$ are known exactly; the remaining pixels, the hole $\Omega^{c}$, are unknown. Observation is noiseless on $\Omega$ by assumption, because an observed pixel is evidence and is reproduced rather than denoised. What happens when $\Omega$ itself is wrong is measured in Section~\ref{sec:results:maskerr}. Fig.~\ref{fig:overview} summarises the method on one patch.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{figures/method_overview.pdf}
+\caption{CSFR on one patch, from the observed pixels $Y_{\Omega}$ (grey: the hole) to the record. Problem: Eq.~\eqref{eq:objective}, the three terms of Eq.~\eqref{eq:J} subject to the hard constraints C1 and C3 (Table~\ref{tab:constraints}). Solver: Algorithm~\ref{alg:csfr}, which stops when the Frank--Wolfe gap of Eq.~\eqref{eq:gap} is below the tolerance and writes a certificate. Reconstruction: the unique minimiser of Proposition~\ref{prop:unique}. Record: Eq.~\eqref{eq:record}, here the row of the marked imputed pixel over the observed pixels on a symmetric logarithmic scale (red: positive, blue: negative), whose accuracy is measured by perturbing an observed pixel and re-solving (Section~\ref{sec:results:fidelity}). The patch and the pixel are those of Fig.~\ref{fig:record}(e). Rendered by \texttt{scripts/\allowbreak render\allowbreak\_figures\allowbreak\_v2.py}, which re-solves the patch and checks it against the released output.}
+\label{fig:overview}
+\end{figure*}
 
 \textbf{Domain of reconstruction.} CSFR operates on decoded pixel arrays and does not recover the encoded bitstream. Locating, ordering and decoding fragments is the work of the carver and decoder that precede it, and re-encoding a repaired file is outside the method. The experiments use two kinds of input: synthetic masks applied to decoded images (Section~\ref{sec:experiments}), and JPEG files whose bytes were corrupted and then decoded by a standard decoder, with three ways of obtaining the mask (Section~\ref{sec:results:jpeg}). Every statement about the record refers to the pixel-domain map from $(Y_{\Omega}, \mathbf{M})$ to the output.
 
@@ -682,7 +689,29 @@ Table~\ref{tab:oracle} reports the oracle-support diagnostic of Section~\ref{sec
 \label{tab:oracle}
 \footnotesize
 % BEGIN AUTO ORACLE
-\textbf{[pending]}
+\begin{tabular}{@{}l*{8}{r}@{}}
+\toprule
+ & \multicolumn{4}{c}{GovDocs1} & \multicolumn{4}{c}{DFRWS 2006} \\
+\cmidrule(lr){2-5}\cmidrule(l){6-9}
+Cell & PSNR & $\kappa_{50}$ & $\kappa_{90}$ & $>10^{3}$ (\%) & PSNR & $\kappa_{50}$ & $\kappa_{90}$ & $>10^{3}$ (\%) \\
+\midrule
+CF1~L1 & 25.6 & 1 & 1 & 0 & 26.9 & 1 & 1 & 0 \\
+CF1~L3 & 25.4 & 1 & 1 & 0 & 26.6 & 1 & 1 & 0 \\
+CF1~L5 & 24.9 & 2 & 3 & 0 & 26.1 & 2 & 3 & 0 \\
+\midrule
+CF2~L1 & 24.4 & 3 & 6 & 0 & 25.2 & 3 & 9 & 0 \\
+CF2~L3 & 21.8 & 8 & 31 & 0 & 22.8 & 12 & 41 & 0 \\
+CF2~L5 & -0.3 & 814 & $2.4{\times}10^{4}$ & 47 & -6.2 & $2.0{\times}10^{3}$ & $5.2{\times}10^{4}$ & 62 \\
+\midrule
+CF3~L1 & 23.0 & 2 & 6 & 3 & 24.4 & 3 & 5 & 0 \\
+CF3~L3 & -16.7 & $1.2{\times}10^{4}$ & $1.0{\times}10^{15}$ & 66 & -27.9 & $3.2{\times}10^{4}$ & $8.0{\times}10^{7}$ & 72 \\
+CF3~L5 & -166.4 & $1.0{\times}10^{16}$ & $8.5{\times}10^{16}$ & 100 & -171.3 & $9.4{\times}10^{15}$ & $7.3{\times}10^{16}$ & 100 \\
+\midrule
+CF4~L1 & 22.7 & 2 & 6 & 3 & 23.6 & 3 & 5 & 0 \\
+CF4~L3 & -15.8 & $1.2{\times}10^{4}$ & $9.1{\times}10^{14}$ & 66 & -26.8 & $3.2{\times}10^{4}$ & $8.0{\times}10^{7}$ & 72 \\
+CF4~L5 & -165.3 & $9.2{\times}10^{15}$ & $8.4{\times}10^{16}$ & 100 & -171.3 & $9.0{\times}10^{15}$ & $4.6{\times}10^{16}$ & 100 \\
+\bottomrule
+\end{tabular}
 % END AUTO ORACLE
 \end{table}
 
@@ -857,7 +886,26 @@ The Bounded-Unknown diagnostic of Section~\ref{sec:framework:warnings} is comput
 \label{tab:bu}
 \footnotesize
 % BEGIN AUTO BU
-\textbf{[pending]}
+\begin{tabular}{@{}l*{6}{r}@{}}
+\toprule
+ & & \multicolumn{4}{c}{By family} & \\
+\cmidrule(lr){3-6}
+Predictor & Pooled & CF1 & CF2 & CF3 & CF4 & Within (median) \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{Outcome: CSFR hole PSNR below 20\,dB}} \\
+Isolated-missing fraction (Bounded-Unknown) & 0.74 & 0.57 & 0.59 & 0.67 & 0.67 & 0.50 \\
+Mean distance to an observed pixel & 0.74 & 0.57 & 0.59 & 0.67 & 0.67 & 0.50 \\
+Hole fraction & 0.62 & 0.57 & 0.59 & 0.67 & 0.67 & 0.50 \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{Outcome: CSFR hole PSNR below 25\,dB}} \\
+Isolated-missing fraction (Bounded-Unknown) & 0.72 & 0.58 & 0.60 & 0.71 & 0.69 & 0.50 \\
+Mean distance to an observed pixel & 0.72 & 0.58 & 0.60 & 0.71 & 0.69 & 0.50 \\
+Hole fraction & 0.63 & 0.58 & 0.61 & 0.71 & 0.69 & 0.50 \\
+\midrule
+\multicolumn{7}{@{}l}{\footnotesize Below 20\,dB: best predictor mean distance to an observed pixel; 0\% of 40 cells above the within-cell minimum; reported as a diagnostic.} \\
+\multicolumn{7}{@{}l}{\footnotesize Below 25\,dB: best predictor mean distance to an observed pixel; 0\% of 40 cells above the within-cell minimum; reported as a diagnostic.} \\
+\bottomrule
+\end{tabular}
 % END AUTO BU
 \end{table}
 
