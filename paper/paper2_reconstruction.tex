@@ -408,7 +408,14 @@ The results follow the order of the contributions: quality on the primary corpus
 \subsection{Reconstruction quality on the primary corpus}
 \label{sec:results:quality}
 
-Tables~\ref{tab:quality} and~\ref{tab:gmsd} give hole PSNR and GMSD on GovDocs1 at three of the five severity levels. The supplement gives all five levels, and hole SSIM. Table~\ref{tab:paired-v2} compares CSFR at every level with the strongest classical method of the cell and with LaMa.
+Tables~\ref{tab:quality} and~\ref{tab:gmsd} give hole PSNR and GMSD on GovDocs1 at three of the five severity levels. The supplement gives all five levels, and hole SSIM. Table~\ref{tab:paired-v2} compares CSFR at every level with the strongest classical method of the cell and with LaMa, and Fig.~\ref{fig:accuracy} shows these comparisons on all three corpora.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{figures/accuracy_by_level.pdf}
+\caption{CSFR's mean hole PSNR minus that of another method, per corpus, family and level, with 95\% intervals over source images: the strongest classical method of the cell (filled circles; the method Tables~\ref{tab:paired-v2} and~\ref{tab:external-v2} name, which can differ from one level to the next, so no line joins the levels), the same method on the patches that no method reconstructs to the cap (open circles), and LaMa (squares). Above zero, CSFR is ahead. The panels of a row share a scale; the erased fraction of each level is given in Table~\ref{tab:severity}. Rendered by \texttt{scripts/\allowbreak render\allowbreak\_figures\allowbreak\_v2.py} from the paired tests, with the numbers shown written to \texttt{results/\allowbreak figures\allowbreak\_v2/}.}
+\label{fig:accuracy}
+\end{figure*}
 
 \textbf{Scattered loss.} Under CF1, CSFR ranks between \qGovCFoneRankMin\ and \qGovCFoneRankMax\ among itself and the classical methods (\qGovNMethods\ in all). The strongest method at every level is \qGovCFoneStrongest, ahead by \qGovCFoneBehindMin\ to \qGovCFoneBehindMax\,dB, with an interval that excludes zero at \qGovCFoneNBehindSig\ of the five levels; CSFR has the higher mean in at most \qGovCFoneLedMax\% of the source images. Block thresholding stays ahead at every level on the patches that no method reconstructs to the cap ($\Delta_{\mathrm{cf}}$), so this deficit is not an effect of the cap. CSFR is ahead of LaMa at every CF1 level, by up to \qGovCFoneLamaAheadMax\,dB.
 

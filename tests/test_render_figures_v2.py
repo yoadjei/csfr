@@ -243,3 +243,52 @@ def test_every_included_figure_is_generated_and_current(tmp_path):
         if fresh is None:
             continue                                                 # inputs absent on this machine
         assert fresh.read_bytes() == (paper / g).read_bytes(), f"{g} is stale: run scripts/render_figures_v2.py"
+
+
+def _paired(results, sweep, capfree=True):
+    """A paired_tests.csv in which guleryuz is the strongest classical method of
+    every cell, with LaMa scored."""
+    import csv
+    rows = []
+    for fam in ("CF1", "CF2", "CF3", "CF4"):
+        for lv in ("L1", "L2", "L3", "L4", "L5"):
+            for method, d in (("guleryuz", -2.0), ("bilinear", 1.0), ("lama", 0.5)):
+                rows.append({"sweep": sweep, "family": fam, "level": lv, "metric": "psnr_hole", "method": method,
+                             "diff_mean": d, "ci_cluster_lo": d - 0.3, "ci_cluster_hi": d + 0.3,
+                             "frac_images_csfr_leads": 0.4, "n_images": 10,
+                             "diff_mean_capfree": (d + 1.0) if capfree else "",
+                             "ci_cluster_lo_capfree": (d + 0.8) if capfree else "",
+                             "ci_cluster_hi_capfree": (d + 1.2) if capfree else ""})
+    out = results / sweep / "stats" / "paired_tests.csv"
+    out.parent.mkdir(parents=True)
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+
+
+def test_accuracy_figure_is_pending_until_every_corpus_has_its_statistics(tmp_path):
+    m = _mod()
+    sweeps = [s for s, _ in m._tables.CAP_MECHANISM_CORPORA]
+    for s in sweeps[:-1]:
+        _paired(tmp_path, s)
+    assert m.accuracy_by_level(fig_dir=tmp_path / "fig", data_dir=tmp_path / "data", results=tmp_path) is None
+    assert not (tmp_path / "fig").exists()
+
+
+def test_accuracy_figure_compares_with_the_strongest_method_and_lama(tmp_path):
+    m = _mod()
+    sweeps = [s for s, _ in m._tables.CAP_MECHANISM_CORPORA]
+    for s in sweeps:
+        _paired(tmp_path, s, capfree=(s != sweeps[-1]))
+    pdf = m.accuracy_by_level(fig_dir=tmp_path / "fig", data_dir=tmp_path / "data", results=tmp_path)
+    assert b"/FontFile2" in pdf.read_bytes() and b"/Type3" not in pdf.read_bytes()
+    data = json.loads((tmp_path / "data" / "accuracy_by_level.json").read_text())
+    names = [n for _, n in m._tables.CAP_MECHANISM_CORPORA]
+    assert list(data["corpora"]) == names
+    cell = data["corpora"][names[0]]["CF3_L2"]
+    assert cell["method"] == "guleryuz"                                  # the most negative classical difference
+    assert cell["best"] == {"diff": -2.0, "lo": -2.3, "hi": -1.7}
+    assert cell["capfree"] == {"diff": -1.0, "lo": -1.2, "hi": -0.8}
+    assert cell["lama"] == {"diff": 0.5, "lo": 0.2, "hi": 0.8}
+    assert data["corpora"][names[-1]]["CF1_L1"]["capfree"] is None      # no cap-free value: not drawn

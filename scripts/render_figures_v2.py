@@ -480,6 +480,101 @@ def record_comparison(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw) 
     return draw_comparison(data, fig_dir)
 
 
+# ------------------------------------------------------------ accuracy by family and level
+
+_tspec = importlib.util.spec_from_file_location("_tables", ROOT / "scripts" / "render_tables_v2.py")
+_tables = importlib.util.module_from_spec(_tspec)
+_tspec.loader.exec_module(_tables)
+
+ACC_LEVELS = ("L1", "L2", "L3", "L4", "L5")
+ACC_FAMILY_TITLES = {"CF1": "CF1 (scattered)", "CF2": "CF2 (burst)", "CF3": "CF3 (contiguous, top)",
+                     "CF4": "CF4 (contiguous, bottom)"}
+# the three comparisons of each cell: (key, legend label, colour slot, marker, filled)
+ACC_SERIES = (("best", "strongest classical method", 0, "o", True),
+              ("capfree", "same method, patches not at the cap", 0, "o", False),
+              ("lama", "LaMa", 1, "s", True))
+
+
+def _diff(row: dict, suffix: str = "") -> dict | None:
+    if row is None or row.get(f"diff_mean{suffix}", "") == "":
+        return None
+    return {"diff": float(row[f"diff_mean{suffix}"]), "lo": float(row[f"ci_cluster_lo{suffix}"]),
+            "hi": float(row[f"ci_cluster_hi{suffix}"])}
+
+
+def accuracy_data(results: Path = ROOT / "results", metric: str = "psnr_hole") -> dict | None:
+    """Per corpus, family and level, CSFR's mean hole PSNR minus that of the
+    strongest classical method of the cell (as Tables PAIRED_V2 and EXTERNAL_V2
+    name it, through render_tables_v2.cell_comparison), the same on the patches
+    that no method reconstructs to the cap, and minus LaMa's; each with its
+    interval over source images. None until every corpus has its statistics."""
+    out = {}
+    for sweep, name in _tables.CAP_MECHANISM_CORPORA:
+        rows = _tables._csv(results / sweep / "stats" / "paired_tests.csv")
+        if rows is None:
+            return None
+        cells = {}
+        for fam in _tables.FAMILIES:
+            for lv in ACC_LEVELS:
+                c = _tables.cell_comparison(rows, fam, lv, metric, sweep)
+                cells[f"{fam}_{lv}"] = {"method": c["best"]["method"], "best": _diff(c["best"]),
+                                        "capfree": _diff(c["best"], "_capfree"), "lama": _diff(c["ext"])}
+        out[name] = cells
+    return {"metric": metric, "corpora": out}
+
+
+def draw_accuracy(data: dict, fig_dir: Path = FIG_DIR, name: str = "accuracy_by_level") -> Path:
+    """One row per corpus and one column per family: the three differences of
+    each level with their intervals, dodged so the intervals do not overlap,
+    and a line at zero (parity). No line joins the levels: the strongest
+    classical method can differ from one level to the next. Rows share a
+    y-scale, so the families of a corpus can be compared."""
+    corpora = list(data["corpora"])
+    fams = list(ACC_FAMILY_TITLES)
+    x = np.arange(len(ACC_LEVELS))
+    dodge = {"best": -0.18, "capfree": 0.0, "lama": 0.18}
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(len(corpora), len(fams), figsize=(TEXT_WIDTH_IN, 4.6), sharey="row",
+                                 layout="constrained")
+        for i, corpus in enumerate(corpora):
+            for j, fam in enumerate(fams):
+                ax = axes[i, j]
+                ax.axhline(0.0, color=INK_MUTED, lw=0.6, zorder=0)
+                for key, label, slot, marker, filled in ACC_SERIES:
+                    pts = [(x[k] + dodge[key], data["corpora"][corpus][f"{fam}_{lv}"][key])
+                           for k, lv in enumerate(ACC_LEVELS)]
+                    pts = [(xx, d) for xx, d in pts if d is not None]
+                    if not pts:
+                        continue
+                    xs = [p[0] for p in pts]
+                    ys = [p[1]["diff"] for p in pts]
+                    err = [[p[1]["diff"] - p[1]["lo"] for p in pts], [p[1]["hi"] - p[1]["diff"] for p in pts]]
+                    ax.errorbar(xs, ys, yerr=err, fmt=marker, ms=3.2, lw=0.8, capsize=0, color=SERIES[slot],
+                                mfc=SERIES[slot] if filled else "white", mec=SERIES[slot], mew=0.8,
+                                ls="none", label=label)
+                ax.set_xticks(x, ACC_LEVELS)
+                ax.set_xlim(-0.5, len(ACC_LEVELS) - 0.5)
+                ax.spines[["top", "right"]].set_visible(False)
+                ax.grid(True, axis="y", color="#e4e3df", lw=0.4)
+                ax.set_axisbelow(True)
+                if i == 0:
+                    ax.set_title(ACC_FAMILY_TITLES[fam])
+                if j == 0:
+                    ax.set_ylabel(f"{corpus}\nCSFR minus method (dB)")
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="outside lower center", ncol=3, frameon=False, handletextpad=0.4,
+                   columnspacing=1.5)
+        return _save(fig, name, fig_dir)
+
+
+def accuracy_by_level(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw) -> Path | None:
+    data = accuracy_data(**kw)
+    if data is None:
+        return None
+    _write_json(data_dir / "accuracy_by_level.json", data)
+    return draw_accuracy(data, fig_dir)
+
+
 # ------------------------------------------------------------ method overview
 
 def overview_data(sweep: Path = ROOT / "results" / "sweep_v2_govdocs1", cell: str = WALK_CELL,
@@ -605,8 +700,8 @@ def method_overview(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw) ->
     return draw_overview(data, fig_dir)
 
 
-FIGURES = {"method_overview": method_overview, "record_walkthrough": record_walkthrough,
-           "record_comparison": record_comparison}
+FIGURES = {"method_overview": method_overview, "accuracy_by_level": accuracy_by_level,
+           "record_walkthrough": record_walkthrough, "record_comparison": record_comparison}
 
 
 def main(argv: list[str] | None = None) -> int:
