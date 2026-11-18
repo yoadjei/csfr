@@ -754,6 +754,135 @@ def ablation_macros(mech: Path = ROOT / "results" / "ablation_mechanism" / "swee
         level_trend(col(tv_sc, "diff_mean")), level_trend(col(fc_sc, "diff_mean")))))
 
 
+ORACLE_NAMES = ("oracleKappa", "oracleSparseErrMin", "oracleSparseErrMax", "oracleScatterCondMax",
+                "oracleScatterPsnrMin", "oracleScatterPsnrMax", "oracleBurstCondFirstMin",
+                "oracleBurstCondFirstMax", "oracleBurstCondLastMin", "oracleBurstCondLastMax",
+                "oracleBurstAboveLastMin", "oracleBurstAboveLastMax", "oracleContigIllLevel",
+                "oracleContigRankMin")
+ORACLE_CORPORA = ("govdocs1_v2", "dfrws2006")
+ORACLE_ILL = 1e4                  # "the median condition number exceeds 10^4"
+
+
+def oracle_macros(path: Path = ROOT / "results" / "oracle_diagnostic" / "oracle.csv") -> dict[str, str]:
+    """What the observed pixels can determine (Section VI-F; scripts/run_oracle_diagnostic.py),
+    over the primary and the forensic corpus:
+
+      Kappa, SparseErr   the support size and the range of the median relative
+                         error of the best Kappa-term DCT approximation
+      Scatter            CF1: the largest median condition number and the range of
+                         the median oracle hole PSNR
+      Burst              CF2: the range over corpora of the median condition number
+                         at L1 and at L5, and of the share of patches above 10^3 at L5
+      ContigIllLevel     the lowest level from which every CF3 and CF4 cell of both
+                         corpora has a median condition number above ORACLE_ILL and
+                         a negative median oracle hole PSNR
+      ContigRankMin      the smallest share of rank-deficient patches at L5 (CF3, CF4)
+
+    The text states the following, and the macros are refused if any fails: no
+    CF1 patch has a condition number above 10^3; under CF2 the median condition
+    number rises at every level on each corpus; under CF3-CF4 the two criteria of
+    ContigIllLevel start at the same level and hold at every level above it."""
+    rows = _rows(path) if path.exists() else []
+    by = {(r["corpus"], r["family"], r["level"]): r for r in rows}
+    if any((c, f, lv) not in by for c in ORACLE_CORPORA for f in FAMILY_WORDS for lv in LEVELS):
+        return _pending(*ORACLE_NAMES)
+
+    def get(fams: tuple[str, ...], levels: tuple[str, ...], key: str) -> list[float]:
+        return [float(by[c, f, lv][key]) for c in ORACLE_CORPORA for f in fams for lv in levels]
+
+    if max(get(("CF1",), LEVELS, "frac_cond_above_1e3")) > 0:
+        raise ValueError("a CF1 patch with a condition number above 10^3")
+    for c in ORACLE_CORPORA:
+        if level_trend([float(by[c, "CF2", lv]["cond_median"]) for lv in LEVELS]) != "rises":
+            raise ValueError(f"{c}: the CF2 median condition number does not rise at every level")
+
+    def first_level(ok) -> str | None:
+        for i, lv in enumerate(LEVELS):
+            if all(ok(by[c, f, x]) for c in ORACLE_CORPORA for f in ("CF3", "CF4") for x in LEVELS[i:]):
+                return lv
+        return None
+
+    ill = first_level(lambda r: float(r["cond_median"]) > ORACLE_ILL)
+    neg = first_level(lambda r: float(r["oracle_psnr_hole_median"]) < 0)
+    if ill is None or ill != neg:
+        raise ValueError(f"under CF3-CF4 the conditioning fails from {ill} but the oracle fit from {neg}")
+    kappa = {r["kappa"] for r in rows}
+    if len(kappa) != 1:
+        raise ValueError(f"{path.name}: more than one support size {sorted(kappa)}")
+    err = [float(by[c, "CF1", "L1"]["sparse_approx_rel_err_median"]) for c in ORACLE_CORPORA]
+    first, last = get(("CF2",), ("L1",), "cond_median"), get(("CF2",), ("L5",), "cond_median")
+    above = get(("CF2",), ("L5",), "frac_cond_above_1e3")
+    fmt_cond = "{:.0f}".format
+    return dict(zip(ORACLE_NAMES, (
+        kappa.pop(), f"{100 * min(err):.1f}", f"{100 * max(err):.1f}",
+        f"{max(get(('CF1',), LEVELS, 'cond_median')):.2f}",
+        f"{min(get(('CF1',), LEVELS, 'oracle_psnr_hole_median')):.1f}",
+        f"{max(get(('CF1',), LEVELS, 'oracle_psnr_hole_median')):.1f}",
+        f"{min(first):.1f}", f"{max(first):.1f}", fmt_cond(min(last)), fmt_cond(max(last)),
+        f"{100 * min(above):.0f}", f"{100 * max(above):.0f}", ill,
+        f"{100 * min(get(('CF3', 'CF4'), ('L5',), 'frac_rank_deficient')):.0f}")))
+
+
+BU_RESULT_NAMES = ("buNCells", "buFailLow", "buFailHigh", "buBuPooledLow", "buBuPooledHigh",
+                   "buDistPooledLow", "buDistPooledHigh", "buFracPooledLow", "buFracPooledHigh",
+                   "buWithinMax", "buEceMax", "buLogitAurocLow", "buLogitAurocHigh")
+
+
+def bu_result_macros(d: Path = ROOT / "results" / "bu_evaluation") -> dict[str, str]:
+    """What the pre-specified Bounded-Unknown rule found (Section VI-K;
+    scripts/run_bu_evaluation.py): the cells, the share of reconstructions below
+    each outcome threshold, the pooled AUROC of each predictor at each threshold,
+    the largest AUROC within any cell, and the largest expected calibration error
+    and the AUROC at each threshold of the cross-validated logistic model of the
+    three statistics.
+
+    The text states the following, and the macros are refused if any fails: the
+    rule is met at neither threshold; no predictor reaches the within-cell
+    minimum in any cell; every CF3 and CF4 cell has a within-cell AUROC of
+    exactly one half (its masks are identical); the logistic model's AUROC
+    equals that of the best single statistic to two decimals."""
+    auroc, decision = d / "auroc.csv", d / "decision.json"
+    if not (auroc.exists() and decision.exists()):
+        return _pending(*BU_RESULT_NAMES)
+    rows = _rows(auroc)
+    dec = json.loads(decision.read_text(encoding="utf-8"))["by_threshold"]
+    if any(v["keep_as_contribution"] for v in dec.values()):
+        raise ValueError("the Bounded-Unknown rule is met at a threshold")
+    within_min = bu_macros()["buWithinMin"]
+    cells = [r for r in rows if r["scope"] == "cell" and r["auroc"] != ""]
+    if max(float(r["auroc"]) for r in cells) >= float(within_min):
+        raise ValueError("a cell where a predictor reaches the within-cell minimum")
+    if any(float(r["auroc"]) != 0.5 for r in cells if r["group"].split(":")[1][:3] in ("CF3", "CF4")):
+        raise ValueError("a CF3 or CF4 cell whose masks separate the patches")
+    n_cells = {v["cells_with_outcome_variance"] for v in dec.values()}
+    if len(n_cells) != 1:
+        raise ValueError(f"the thresholds have different numbers of cells: {sorted(n_cells)}")
+    low, high = sorted({float(r["threshold_db"]) for r in rows})
+    pooled = {(float(r["threshold_db"]), r["predictor"]): r for r in rows if r["scope"] == "pooled"}
+
+    def auc(t: float, p: str) -> str:
+        return f"{float(pooled[t, p]['auroc']):.2f}"
+
+    def logit(t: float) -> str:
+        model = f"{dec[f'{t:g}dB']['logistic_cv_auroc']:.2f}"
+        best = max(float(pooled[t, p]["auroc"]) for p in ("isolated_missing_frac", "mean_hole_distance", "hole_frac"))
+        if model != f"{best:.2f}":
+            raise ValueError(f"{t:g} dB: the logistic model's AUROC {model} differs from the best statistic's {best:.2f}")
+        return model
+
+    def fail(t: float) -> str:
+        r = pooled[t, "hole_frac"]
+        return f"{100 * int(r['n_fail']) / int(r['n']):.0f}"
+
+    return dict(zip(BU_RESULT_NAMES, (
+        str(n_cells.pop()), fail(low), fail(high),
+        auc(low, "isolated_missing_frac"), auc(high, "isolated_missing_frac"),
+        auc(low, "mean_hole_distance"), auc(high, "mean_hole_distance"),
+        auc(low, "hole_frac"), auc(high, "hole_frac"),
+        f"{max(float(r['auroc']) for r in cells):.2f}",
+        f"{max(v['logistic_cv_ece_10bins'] for v in dec.values()):.3f}", logit(low), logit(high))))
+
+
 def all_comparison_macros(results: Path = ROOT / "results") -> dict[str, str]:
     return {k: v for prefix, s in COMPARISON_SWEEPS.items()
             for k, v in comparison_macros(prefix, results / s).items()}
@@ -764,7 +893,8 @@ def render() -> str:
               **environment_macros(), **stats_macros(), **fidelity_macros(), **fallback_macros(),
               **bu_macros(), **shiftmap_macros(), **dictlearn_cap_macros(), **coherence_macros(),
               **r1_hole_whole_macros(), **all_comparison_macros(), **mechanism_macros(),
-              **ablation_macros(), **record_fidelity_macros(), **record_comparison_macros()}
+              **ablation_macros(), **record_fidelity_macros(), **record_comparison_macros(),
+              **oracle_macros(), **bu_result_macros()}
     lines = ["% GENERATED by scripts/render_numbers_v2.py. Do not edit; re-run the script.",
              "% Every number stated in the running text of the revised manuscript."]
     for k in sorted(macros):

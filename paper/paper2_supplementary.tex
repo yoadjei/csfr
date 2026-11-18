@@ -631,4 +631,47 @@ CF3~L5 & $10^{-10}$ & 0.737 & 90.0 & 90.0 & 100 \\
 % END AUTO SUPP_FIDELITY
 \end{table}
 
+%%======================================================================
+\section{Calibration of the failure model}
+\label{sec:supp:bucal}
+
+The paper evaluates mask statistics as predictors of a CSFR failure by their
+AUROC. Table~\ref{tab:supp:bucal} gives the calibration of a logistic model on
+the best predictor at each outcome threshold, fitted and evaluated by
+cross-validation over the reconstructions of the primary and the forensic corpus.
+
+\begin{table}[htbp]
+\centering
+\caption{Calibration of the cross-validated logistic model of a CSFR failure on the best mask statistic: per bin of predicted probability, the reconstructions in the bin, their mean predicted probability and their observed failure rate; below each panel the model's AUROC and expected calibration error (ECE, ten bins).}
+\label{tab:supp:bucal}
+\footnotesize
+% BEGIN AUTO SUPP_BU_CALIBRATION
+\begin{tabular}{@{}l r r r@{}}
+\toprule
+Predicted & $n$ & Mean predicted & Observed \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{CSFR hole PSNR below 20\,dB}} \\
+0.1--0.2 & 10800 & 0.158 & 0.166 \\
+0.2--0.3 & 2702 & 0.265 & 0.251 \\
+0.3--0.4 & 5836 & 0.377 & 0.349 \\
+0.4--0.5 & 4468 & 0.463 & 0.445 \\
+0.5--0.6 & 11365 & 0.539 & 0.548 \\
+0.6--0.7 & 8029 & 0.624 & 0.642 \\
+0.7--0.8 & 10800 & 0.750 & 0.744 \\
+\multicolumn{4}{@{}l}{\footnotesize 10-fold AUROC 0.74, ECE 0.013} \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{CSFR hole PSNR below 25\,dB}} \\
+0.3--0.4 & 5400 & 0.381 & 0.382 \\
+0.4--0.5 & 5400 & 0.455 & 0.464 \\
+0.5--0.6 & 8546 & 0.578 & 0.568 \\
+0.6--0.7 & 5138 & 0.661 & 0.641 \\
+0.7--0.8 & 16175 & 0.749 & 0.759 \\
+0.8--0.9 & 7941 & 0.859 & 0.861 \\
+0.9--1.0 & 5400 & 0.928 & 0.918 \\
+\multicolumn{4}{@{}l}{\footnotesize 10-fold AUROC 0.72, ECE 0.009} \\
+\bottomrule
+\end{tabular}
+% END AUTO SUPP_BU_CALIBRATION
+\end{table}
+
 \end{document}

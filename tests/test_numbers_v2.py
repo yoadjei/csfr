@@ -146,6 +146,27 @@ def test_typed_claims_about_the_primary_comparison_hold():
             v["ablTvScatterAheadShareMax"] != PENDING and int(v["ablTvScatterAheadShareMax"]) < 50,
         "while CSFR is ahead of it on the other holes and in the median under burst and contiguous loss":
             v["ablTvBcRestMin"] != PENDING,
+        # What the observed pixels can determine (sec:results:oracle; R2.1b, R2.1c).
+        # oracle_macros refuses data that break its "every"/"no" sentences.
+        "no CF1 patch exceeds $10^{3}$": v["oracleScatterCondMax"] != PENDING,
+        "Under burst loss the median condition number rises at every level": v["oracleBurstCondLastMin"] != PENDING,
+        "In every CF3 and CF4 cell from that level, on both corpora, the median condition number exceeds $10^{4}$":
+            v["oracleContigIllLevel"] != PENDING,
+        "which uses a DCT sparsity model without CSFR's penalties, is the strongest method at every level":
+            all(v[f"q{c}CFoneStrongest"] == "block-DCT thresholding" and v[f"q{c}CFoneNFirst"] == "0"
+                for c in ("Gov", "Dfrws")),
+        "removing TV lowers hole PSNR in every cell": v["ablNoTvMin"] != PENDING,
+        "CSFR is ahead of the strongest method at every contiguous-loss level of the primary corpus":
+            v["qGovCFthreeCapfreeNAhead"] == v["qGovCFfourCapfreeNAhead"] == "5",
+        # The Bounded-Unknown diagnostic (sec:results:bu; R1.9, R2.m3). bu_result_macros
+        # refuses a met rule, a cell at the within-cell minimum, a contiguous-loss cell
+        # whose masks separate the patches, and a model that adds discrimination.
+        "The rule is met at neither threshold": v["buNCells"] != PENDING,
+        "no statistic reaches an AUROC of": v["buWithinMax"] != PENDING,
+        "so its within-cell AUROC is exactly one half": v["buWithinMax"] != PENDING,
+        "combining and calibrating the statistics adds no discrimination": v["buLogitAurocLow"] != PENDING,
+        "it does not meet the rule": v["buNCells"] != PENDING,
+        "does not identify the reconstructions that fail": v["buNCells"] != PENDING,
     }
     for sentence, holds in claims.items():
         assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
@@ -671,3 +692,95 @@ def test_comparison_macros_need_lama_at_every_level(tmp_path):
     _paired(tmp_path, _comparison_cells(), missing_lama=("CF3", "L2"))
     with pytest.raises(ValueError, match="LaMa is not scored"):
         m.comparison_macros("Gov", tmp_path)
+
+
+# ---------------------------------------------------------------- oracle (Section VI-F)
+
+ORACLE_COND = {  # family -> median condition number per level (both corpora)
+    "CF1": (1.1, 1.2, 1.4, 1.7, 2.3), "CF2": (2.8, 4.1, 8.4, 36.9, 814.0),
+    "CF3": (2.5, 31.0, 1.2e4, 4.9e10, 1e16), "CF4": (2.5, 31.0, 1.2e4, 4.9e10, 1e16)}
+ORACLE_PSNR = {"CF1": (25.6, 25.5, 25.4, 25.2, 24.9), "CF2": (24.4, 23.6, 21.8, 16.9, -0.3),
+               "CF3": (23.0, 16.2, -16.7, -109.4, -166.4), "CF4": (22.7, 15.9, -15.8, -108.2, -165.3)}
+
+
+def _oracle(tmp_path, overrides=None):
+    rows = []
+    for corpus, scale, err in (("govdocs1_v2", 1.0, 0.093), ("dfrws2006", 2.0, 0.103)):
+        for fam in ("CF1", "CF2", "CF3", "CF4"):
+            for i, lv in enumerate(ABL_LEVELS):
+                cond = ORACLE_COND[fam][i] * (scale if fam == "CF2" else 1.0)
+                r = {"corpus": corpus, "family": fam, "level": lv, "frac": 0.05, "n_patches": 10,
+                     "seeds": "0 1 2", "kappa": 205, "oracle_psnr_hole_median": ORACLE_PSNR[fam][i],
+                     "cond_median": cond, "cond_p90": 2 * cond, "frac_cond_above_1e3": 0.5 if cond > 1e3 else 0.0,
+                     "frac_rank_deficient": 0.86 if (fam in ("CF3", "CF4") and lv == "L5") else 0.0,
+                     "smin_median": 1 / cond, "sparse_approx_rel_err_median": err}
+                r.update((overrides or {}).get((corpus, fam, lv), {}))
+                rows.append(r)
+    _write_rows(tmp_path / "oracle.csv", rows)
+    return tmp_path / "oracle.csv"
+
+
+def test_oracle_macros_say_where_the_observations_determine_the_model(tmp_path):
+    m = _mod()
+    assert set(m.oracle_macros(tmp_path / "none.csv").values()) == {m.PLACEHOLDER}
+    q = m.oracle_macros(_oracle(tmp_path))
+    assert (q["oracleKappa"], q["oracleSparseErrMin"], q["oracleSparseErrMax"]) == ("205", "9.3", "10.3")
+    assert (q["oracleScatterCondMax"], q["oracleScatterPsnrMin"], q["oracleScatterPsnrMax"]) == (
+        "2.30", "24.9", "25.6")
+    assert (q["oracleBurstCondFirstMin"], q["oracleBurstCondFirstMax"]) == ("2.8", "5.6")
+    assert (q["oracleBurstCondLastMin"], q["oracleBurstCondLastMax"]) == ("814", "1628")
+    assert (q["oracleBurstAboveLastMin"], q["oracleBurstAboveLastMax"]) == ("0", "50")
+    assert (q["oracleContigIllLevel"], q["oracleContigRankMin"]) == ("L3", "86")
+
+
+@pytest.mark.parametrize("key,bad", [
+    (("dfrws2006", "CF1", "L4"), {"frac_cond_above_1e3": 0.01}),          # "no CF1 patch above 10^3"
+    (("govdocs1_v2", "CF2", "L3"), {"cond_median": 50.0}),               # "rises at every level"
+    (("govdocs1_v2", "CF3", "L4"), {"cond_median": 900.0}),              # ill from L3 on, at every level above
+    (("dfrws2006", "CF4", "L3"), {"oracle_psnr_hole_median": 1.0}),      # the fit fails from the same level
+])
+def test_oracle_macros_refuse_data_that_contradict_the_text(tmp_path, key, bad):
+    with pytest.raises(ValueError):
+        _mod().oracle_macros(_oracle(tmp_path, overrides={key: bad}))
+
+
+# ------------------------------------------------------- Bounded-Unknown (Section VI-K)
+
+def _bu(tmp_path, keep=False, cell_auc=0.55, contig_auc=0.5, logit_gain=0.001):
+    import json
+    rows = []
+    for t, n_fail in ((20.0, 480), (25.0, 680)):
+        for p, a in (("isolated_missing_frac", 0.737), ("mean_hole_distance", 0.741), ("hole_frac", 0.62)):
+            rows.append({"threshold_db": t, "scope": "pooled", "group": "all", "predictor": p, "n": 1000,
+                         "n_fail": n_fail, "auroc": a - (0.02 if t == 25.0 else 0.0)})
+            for cell in ("sweep_v2_govdocs1:CF1_L1", "sweep_v2_govdocs1:CF3_L2"):
+                rows.append({"threshold_db": t, "scope": "cell", "group": cell, "predictor": p, "n": 100,
+                             "n_fail": 50, "auroc": contig_auc if "CF3" in cell else cell_auc})
+    _write_rows(tmp_path / "auroc.csv", rows)
+    dec = {f"{t:g}dB": {"best_predictor": "mean_hole_distance", "pooled_auroc": 0.74,
+                        "cells_with_outcome_variance": 2, "fraction_cells_within_auroc_above_min": 0.0,
+                        "keep_as_contribution": keep, "logistic_cv_auroc": 0.74,
+                        "logistic_cv_ece_10bins": 0.012, "cv_folds": 10} for t in (20.0, 25.0)}
+    dec["25dB"]["logistic_cv_auroc"] = 0.72 + logit_gain
+    (tmp_path / "decision.json").write_text(json.dumps({"by_threshold": dec}), encoding="utf-8")
+    return tmp_path
+
+
+def test_bu_result_macros_report_the_rule_as_applied(tmp_path):
+    m = _mod()
+    assert set(m.bu_result_macros(tmp_path / "none").values()) == {m.PLACEHOLDER}
+    q = m.bu_result_macros(_bu(tmp_path))
+    assert (q["buNCells"], q["buFailLow"], q["buFailHigh"]) == ("2", "48", "68")
+    assert (q["buBuPooledLow"], q["buBuPooledHigh"], q["buDistPooledLow"], q["buDistPooledHigh"]) == (
+        "0.74", "0.72", "0.74", "0.72")
+    assert (q["buFracPooledLow"], q["buFracPooledHigh"], q["buWithinMax"]) == ("0.62", "0.60", "0.55")
+    assert (q["buEceMax"], q["buLogitAurocLow"], q["buLogitAurocHigh"]) == ("0.012", "0.74", "0.72")
+
+
+@pytest.mark.parametrize("kw", [{"keep": True},           # "the rule is met at neither threshold"
+                                {"cell_auc": 0.7},        # "in no cell"
+                                {"contig_auc": 0.52},     # "exactly one half in every contiguous-loss cell"
+                                {"logit_gain": 0.03}])    # "adds no discrimination"
+def test_bu_result_macros_refuse_data_that_contradict_the_text(tmp_path, kw):
+    with pytest.raises(ValueError):
+        _mod().bu_result_macros(_bu(tmp_path, **kw))

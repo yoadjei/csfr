@@ -603,3 +603,26 @@ def test_supp_cap_mechanism_has_a_panel_per_corpus_and_waits_for_all_three(tmp_p
     assert len(rows) == 3 * 12
     assert rows[0] == r"CF1~L1 & Exemplar & $-$1.50 & $-$2.25 & +0.75 & 14/600 & 25 & 30 \\"
     assert rows[-1].endswith(r"& 0/600 & -- & -- \\")                   # no capped run: shares undefined
+
+
+def test_supp_bu_calibration_lists_the_bins_and_the_model_scores(tmp_path):
+    import json
+    m = _mod()
+    assert m.supp_bu_calibration(tmp_path) is None
+    _write_csv(tmp_path / "calibration.csv", [
+        {"threshold_db": t, "bin": b, "lo": 0.1 * b, "hi": 0.1 * (b + 1), "n": 100 * b,
+         "mean_predicted": 0.1 * b + 0.05, "observed_rate": 0.1 * b + 0.04}
+        for t in (20.0, 25.0) for b in (1, 2)])
+    assert m.supp_bu_calibration(tmp_path) is None                      # waits for the decision
+    dec = {f"{t:g}dB": {"logistic_cv_auroc": 0.738,
+                        "logistic_cv_ece_10bins": 0.0125, "cv_folds": 10} for t in (20.0, 25.0)}
+    (tmp_path / "decision.json").write_text(json.dumps({"by_threshold": dec}), encoding="utf-8")
+    lines = m.supp_bu_calibration(tmp_path).splitlines()
+    assert sum(ln.startswith(r"\multicolumn{4}{@{}l}{\emph{CSFR hole PSNR below") for ln in lines) == 2
+    assert "0.1--0.2 & 100 & 0.150 & 0.140 \\\\" in lines
+    assert lines.count(r"\multicolumn{4}{@{}l}{\footnotesize 10-fold AUROC 0.74, ECE 0.013} \\") == 2
+
+
+def test_plain_prints_a_typographic_minus_and_no_plus():
+    m = _mod()
+    assert (m.plain(-0.31), m.plain(24.94), m.plain(-166.36, 2)) == ("$-$0.3", "24.9", "$-$166.36")

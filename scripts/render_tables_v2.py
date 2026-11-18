@@ -256,6 +256,11 @@ def signed(x: float, digits: int = 2) -> str:
     return f"{x:+.{digits}f}".replace("-", "$-$")
 
 
+def plain(x: float, digits: int = 1) -> str:
+    """0.52 / $-$1.21: no plus sign, a typographic minus in text mode."""
+    return f"{x:.{digits}f}".replace("-", "$-$")
+
+
 def interval(lo: float, hi: float, digits: int = 2) -> str:
     return f"[{signed(lo, digits)}, {signed(hi, digits)}]"
 
@@ -569,7 +574,7 @@ def oracle(d: Path = ORACLE_DIR) -> str | None:
             out = [f"{fam}~{lv}"]
             for corpus, _ in ORACLE_CORPORA:
                 r = by[(corpus, fam, lv)]
-                out += [f"{float(r['oracle_psnr_hole_median']):.1f}", sci_compact(float(r["cond_median"])),
+                out += [plain(float(r["oracle_psnr_hole_median"])), sci_compact(float(r["cond_median"])),
                         sci_compact(float(r["cond_p90"])), f"{100 * float(r['frac_cond_above_1e3']):.0f}"]
             body.append(" & ".join(out) + r" \\")
     header = [" & " + " & ".join(rf"\multicolumn{{4}}{{c}}{{{n}}}" for _, n in ORACLE_CORPORA) + r" \\",
@@ -917,6 +922,33 @@ def supp_image_level(results: Path = ROOT / "results", metric: str = "psnr_hole"
     return tabular(r"@{}l l r r r c r@{}", header, body)
 
 
+def supp_bu_calibration(d: Path = BU_DIR) -> str | None:
+    """Calibration of the cross-validated logistic model of the three mask
+    statistics at each outcome threshold (scripts/run_bu_evaluation.py): per bin
+    of predicted probability, the reconstructions in it, the mean predicted
+    probability and the observed failure rate; then the model's AUROC and
+    expected calibration error (decision.json)."""
+    import json
+    rows = _csv(d / "calibration.csv")
+    if rows is None or not (d / "decision.json").exists():
+        return None
+    dec = json.loads((d / "decision.json").read_text(encoding="utf-8"))["by_threshold"]
+    body = []
+    for t in sorted({float(r["threshold_db"]) for r in rows}):
+        dd = dec[f"{t:g}dB"]
+        if body:
+            body.append(r"\midrule")
+        body.append(rf"\multicolumn{{4}}{{@{{}}l}}{{\emph{{CSFR hole PSNR below {t:g}\,dB}}}} \\")
+        for r in (r for r in rows if float(r["threshold_db"]) == t):
+            body.append(" & ".join([f"{float(r['lo']):.1f}--{float(r['hi']):.1f}", r["n"],
+                                    f"{float(r['mean_predicted']):.3f}", f"{float(r['observed_rate']):.3f}"])
+                        + r" \\")
+        body.append(rf"\multicolumn{{4}}{{@{{}}l}}{{\footnotesize {dd['cv_folds']}-fold AUROC "
+                    rf"{dd['logistic_cv_auroc']:.2f}, ECE {dd['logistic_cv_ece_10bins']:.3f}}} \\")
+    header = [r"Predicted & $n$ & Mean predicted & Observed \\"]
+    return tabular(r"@{}l r r r@{}", header, body)
+
+
 FALLBACK_ROWS = [("dictlearn", "Dict.\\ learning"), ("criminisi", "Exemplar")]
 
 
@@ -1084,7 +1116,7 @@ TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_
           "SUPP_PSNR": supp_psnr, "SUPP_SSIM": supp_ssim, "SUPP_HRP": supp_hrp, "SUPP_CAP": supp_cap,
           "SUPP_FALLBACKS": supp_fallbacks, "SUPP_CALIBRATION": supp_calibration,
           "SUPP_SHIFTMAP": supp_shiftmap, "SUPP_DICTCAP": supp_dictcap, "SUPP_FIDELITY": supp_fidelity,
-          "SUPP_CAP_MECHANISM": supp_cap_mechanism, "SUPP_IMAGE_LEVEL": supp_image_level}
+          "SUPP_CAP_MECHANISM": supp_cap_mechanism, "SUPP_IMAGE_LEVEL": supp_image_level, "SUPP_BU_CALIBRATION": supp_bu_calibration}
 
 
 def main() -> int:

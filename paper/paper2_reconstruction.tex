@@ -298,7 +298,7 @@ The \emph{Sensitivity Record Fidelity} (SRF) of a set of queries is the fraction
 The implementation issues two warnings and states one limitation.
 \begin{enumerate}
   \item A patch whose solve reaches the iteration cap is released with a not-converged flag, and its certificate says so.
-  \item The Bounded-Unknown diagnostic is the isolated-missing fraction of the mask, the share of hole pixels with no observed four-neighbour. It is computed from the mask alone (\texttt{scripts/\allowbreak run\allowbreak\_downstream.py}), and a patch where it exceeds one half is labelled Bounded-Unknown for review. The label does not withhold the numerical output. Whether the statistic predicts reconstruction failure well enough to act on is tested against a rule fixed before the data were seen (Section~\ref{sec:results:bu}).
+  \item The Bounded-Unknown diagnostic is the isolated-missing fraction of the mask, the share of hole pixels with no observed four-neighbour. It is computed from the mask alone (\texttt{scripts/\allowbreak run\allowbreak\_downstream.py}), and a patch where it exceeds one half is labelled Bounded-Unknown. The label describes the corruption and does not withhold the numerical output. Whether the statistic predicts reconstruction failure well enough to act on was tested against a rule fixed before the data were seen; it does not meet the rule (Section~\ref{sec:results:bu}).
   \item The method does not certify that reconstructed content is correct. The certificate concerns the optimisation and the record concerns the solution map, so both should be treated as aids to examination, not as proof of recoverability.
 \end{enumerate}
 No stage uses a learned prior trained on data from outside the patch under examination.
@@ -544,7 +544,22 @@ The released solver ran Adam for a fixed budget on a different objective (Sectio
 \label{tab:solver}
 \footnotesize
 % BEGIN AUTO SOLVER_CMP
-\textbf{[pending]}
+\begin{tabular}{@{}l*{4}{r}rrr@{}}
+\toprule
+ & \multicolumn{4}{c}{Hole PSNR (dB)} & & & \\
+\cmidrule(lr){2-5}
+Solver & CF1 & CF2 & CF3 & CF4 & s/cell & Iter. & Cert.\ (\%) \\
+\midrule
+Adam, 600 iterations (released, GPU) & 30.09 & 19.68 & 14.49 & 14.57 & 24 & 600 & -- \\
+Adam, 600 iterations (CPU) & -- & -- & -- & -- & 13 & 600 & -- \\
+Adam, 2400 iterations (CPU) & 30.08 & 22.73 & 18.49 & 18.66 & 52 & 2400 & -- \\
+Convergent, gap $10^{-4}$ & 30.13 & 22.82 & 20.22 & 20.62 & 27 & 650 & 100.0 \\
+Convergent, gap $10^{-6}$ (default) & 30.13 & 22.82 & 20.22 & 20.62 & 38 & 905 & 100.0 \\
+Convergent, gap $10^{-10}$ & 30.13 & 22.82 & 20.22 & 20.62 & 750 & 1425 & 100.0 \\
+\midrule
+\multicolumn{8}{@{}l}{\footnotesize The CPU re-run of the released budget differs from the released outputs by at most 0 grey levels; its row reports time only.} \\
+\bottomrule
+\end{tabular}
 % END AUTO SOLVER_CMP
 \end{table*}
 
@@ -681,9 +696,11 @@ Navier--Stokes, FD $\delta = 4$ & 1.50 & 4 & 1.9 & 68 & 28.12 & 82 & 11.6 & 63 \
 
 Table~\ref{tab:oracle} reports the oracle-support diagnostic of Section~\ref{sec:problem:oracle} for the primary and the forensic corpus.
 
-\resultpending{conditioning per family; what it implies for scattered against contiguous loss}
+Scattered loss leaves the oracle problem well conditioned at every level. On both corpora the median condition number of the observed rows is at most \oracleScatterCondMax, no CF1 patch exceeds $10^{3}$, and the oracle fit reaches a median hole PSNR of \oracleScatterPsnrMin\ to \oracleScatterPsnrMax\,dB. That fit is limited by the model, not by the mask: the best approximation of a patch by its \oracleKappa\ largest DCT coefficients leaves a median relative error of \oracleSparseErrMin\ to \oracleSparseErrMax\%. Under burst loss the median condition number rises at every level, from \oracleBurstCondFirstMin\ to \oracleBurstCondFirstMax\ at L1 to \oracleBurstCondLastMin\ to \oracleBurstCondLastMax\ at L5, where \oracleBurstAboveLastMin\ to \oracleBurstAboveLastMax\% of the patches exceed $10^{3}$. Under contiguous loss the observations stop determining the model from \oracleContigIllLevel\ on. In every CF3 and CF4 cell from that level, on both corpora, the median condition number exceeds $10^{4}$ and the least-squares fit, which is not clipped to the grey-level range, has a negative median hole PSNR; at L5 at least \oracleContigRankMin\% of the patches are rank-deficient on the oracle support.
 
-\begin{table}[!t]
+The measurement supports the incoherence argument about which masks determine a sparse model, but not the expectation that CSFR is most accurate where they do. Where the model is determined, under scattered loss, block-DCT thresholding, which uses a DCT sparsity model without CSFR's penalties, is the strongest method at every level (Section~\ref{sec:discussion:convexity}). Under contiguous loss, where the model is not determined, the penalty terms decide the fill: removing TV lowers hole PSNR in every cell (Section~\ref{sec:results:ablation}), and on the patches that no method reconstructs exactly CSFR is ahead of the strongest method at every contiguous-loss level of the primary corpus (Section~\ref{sec:results:quality}).
+
+\begin{table*}[!t]
 \centering
 \caption{Oracle-support diagnostic: median hole PSNR of the least-squares fit on the true support of the largest DCT coefficients, and the condition number of the observed rows of that basis (median, 90th percentile, share above $10^{3}$).}
 \label{tab:oracle}
@@ -701,19 +718,19 @@ CF1~L5 & 24.9 & 2 & 3 & 0 & 26.1 & 2 & 3 & 0 \\
 \midrule
 CF2~L1 & 24.4 & 3 & 6 & 0 & 25.2 & 3 & 9 & 0 \\
 CF2~L3 & 21.8 & 8 & 31 & 0 & 22.8 & 12 & 41 & 0 \\
-CF2~L5 & -0.3 & 814 & $2.4{\times}10^{4}$ & 47 & -6.2 & $2.0{\times}10^{3}$ & $5.2{\times}10^{4}$ & 62 \\
+CF2~L5 & $-$0.3 & 814 & $2.4{\times}10^{4}$ & 47 & $-$6.2 & $2.0{\times}10^{3}$ & $5.2{\times}10^{4}$ & 62 \\
 \midrule
 CF3~L1 & 23.0 & 2 & 6 & 3 & 24.4 & 3 & 5 & 0 \\
-CF3~L3 & -16.7 & $1.2{\times}10^{4}$ & $1.0{\times}10^{15}$ & 66 & -27.9 & $3.2{\times}10^{4}$ & $8.0{\times}10^{7}$ & 72 \\
-CF3~L5 & -166.4 & $1.0{\times}10^{16}$ & $8.5{\times}10^{16}$ & 100 & -171.3 & $9.4{\times}10^{15}$ & $7.3{\times}10^{16}$ & 100 \\
+CF3~L3 & $-$16.7 & $1.2{\times}10^{4}$ & $1.0{\times}10^{15}$ & 66 & $-$27.9 & $3.2{\times}10^{4}$ & $8.0{\times}10^{7}$ & 72 \\
+CF3~L5 & $-$166.4 & $1.0{\times}10^{16}$ & $8.5{\times}10^{16}$ & 100 & $-$171.3 & $9.4{\times}10^{15}$ & $7.3{\times}10^{16}$ & 100 \\
 \midrule
 CF4~L1 & 22.7 & 2 & 6 & 3 & 23.6 & 3 & 5 & 0 \\
-CF4~L3 & -15.8 & $1.2{\times}10^{4}$ & $9.1{\times}10^{14}$ & 66 & -26.8 & $3.2{\times}10^{4}$ & $8.0{\times}10^{7}$ & 72 \\
-CF4~L5 & -165.3 & $9.2{\times}10^{15}$ & $8.4{\times}10^{16}$ & 100 & -171.3 & $9.0{\times}10^{15}$ & $4.6{\times}10^{16}$ & 100 \\
+CF4~L3 & $-$15.8 & $1.2{\times}10^{4}$ & $9.1{\times}10^{14}$ & 66 & $-$26.8 & $3.2{\times}10^{4}$ & $8.0{\times}10^{7}$ & 72 \\
+CF4~L5 & $-$165.3 & $9.2{\times}10^{15}$ & $8.4{\times}10^{16}$ & 100 & $-$171.3 & $9.0{\times}10^{15}$ & $4.6{\times}10^{16}$ & 100 \\
 \bottomrule
 \end{tabular}
 % END AUTO ORACLE
-\end{table}
+\end{table*}
 
 \subsection{Secondary corpora}
 \label{sec:results:external}
@@ -878,9 +895,9 @@ Two tasks test whether a reconstruction preserves what an examiner would read fr
 
 The Bounded-Unknown diagnostic of Section~\ref{sec:framework:warnings} is computed from the mask alone. Two other mask statistics, the mean distance of the hole pixels to the nearest observed pixel and the hole fraction, are evaluated with it as predictors of a CSFR hole PSNR below \buThreshLow\ and below \buThreshHigh\,dB. The rule for keeping the diagnostic as a contribution was fixed before the data were seen. It is kept only if the pooled AUROC of the best predictor exceeds \buPooledMin\ and its AUROC within cells exceeds \buWithinMin\ in at least \buWithinShare\% of the cells where the outcome varies; otherwise it is reported as a description of the geometry of the corruption. Table~\ref{tab:bu} gives the AUROCs and the decision.
 
-\resultpending{AUROCs and the decision of the rule}
+The rule is met at neither threshold, so the diagnostic is reported as a description of the corruption and not as a predictor of failure. Over the \buNCells\ cells of the primary and the forensic corpus, \buFailLow\% of the reconstructions fall below \buThreshLow\,dB and \buFailHigh\% below \buThreshHigh\,dB. Pooled over the cells, the isolated-missing fraction has an AUROC of \buBuPooledLow\ and \buBuPooledHigh\ for the two outcomes, the mean distance to an observed pixel \buDistPooledLow\ and \buDistPooledHigh, and the hole fraction \buFracPooledLow\ and \buFracPooledHigh. These values come from the differences between families and levels. Within a cell, where both are fixed, no statistic reaches an AUROC of \buWithinMin\ in any cell, and the largest is \buWithinMax. A contiguous-loss cell has one mask for all its patches, so its within-cell AUROC is exactly one half; under scattered and burst loss the masks of a cell differ, but not in a way that separates the reconstructions that fail. Within a cell, failure depends on the content of the patch, which no mask statistic sees. A cross-validated logistic model of the three statistics is well calibrated, with an expected calibration error of at most \buEceMax, and the supplement gives its reliability by bin. Its AUROC, \buLogitAurocLow\ and \buLogitAurocHigh, is that of the best single statistic to two decimals: combining and calibrating the statistics adds no discrimination.
 
-\begin{table}[!t]
+\begin{table*}[!t]
 \centering
 \caption{Mask statistics as predictors of reconstruction failure: AUROC pooled over cells, per family, and the median within cells; the decision of the pre-specified rule.}
 \label{tab:bu}
@@ -907,7 +924,7 @@ Hole fraction & 0.63 & 0.58 & 0.61 & 0.71 & 0.69 & 0.50 \\
 \bottomrule
 \end{tabular}
 % END AUTO BU
-\end{table}
+\end{table*}
 
 %%======================================================================
 \section{Discussion}
@@ -944,7 +961,7 @@ The design gives up non-convex steps, and the comparison measures what that cost
 \subsection{Operational Recommendation}
 \label{sec:discussion:recommendations}
 
-A cautious deployment would preserve the source image, store the reconstruction as a separate derivative, attach the certificate, the configuration and the records of the pixels in question, and require human review when the Bounded-Unknown label is raised and for any reconstruction offered as evidence. An output flagged as not converged is not the minimiser and should not be treated as one. \resultpending{what the downstream tasks imply for an examiner who reads a reconstruction} These findings do not establish that CSFR should replace other methods in operational casework.
+A cautious deployment would preserve the source image, store the reconstruction as a separate derivative, attach the certificate, the configuration and the records of the pixels in question, and require human review for any reconstruction offered as evidence. The Bounded-Unknown label describes the corruption but does not identify the reconstructions that fail (Section~\ref{sec:results:bu}), so it cannot replace that review. An output flagged as not converged is not the minimiser and should not be treated as one. \resultpending{what the downstream tasks imply for an examiner who reads a reconstruction} These findings do not establish that CSFR should replace other methods in operational casework.
 
 \subsection{Adoption Scope and Validation Priorities}
 \label{sec:discussion:scope}
