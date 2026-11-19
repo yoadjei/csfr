@@ -28,6 +28,11 @@ OUT = ROOT / "paper" / "numbers_v2.tex"
 PLACEHOLDER = r"\textbf{[pending]}"
 
 
+def _count(n: int) -> str:
+    """A count for the text, thousands separated by a thin space: 20000 -> 20\\,000."""
+    return f"{n:,}".replace(",", "\\,")
+
+
 def _sci(x: float, digits: int = 0) -> str:
     """Math-mode scientific notation: _sci(1e-6) -> 10^{-6};
     _sci(5e-12) -> 5\\times 10^{-12}; _sci(1.07e-3, 1) -> 1.1\\times 10^{-3}."""
@@ -41,9 +46,9 @@ def config_macros() -> dict[str, str]:
     return {
         "csfrLamLone": f"{s.lam_l1:g}", "csfrLamTV": f"{s.lam_tv:g}", "csfrLamFC": f"{s.lam_fc:g}",
         "csfrEps": f"{s.eps:g}", "csfrHFcut": f"{HF_CUTOFF:g}",
-        "csfrTol": _sci(s.tol), "csfrMaxIter": f"{s.max_iter:,}".replace(",", "\\,"),
+        "csfrTol": _sci(s.tol), "csfrMaxIter": _count(s.max_iter),
         "csfrCheckEvery": f"{s.check_every}",
-        "recCGrtol": _sci(r.cg_rtol), "recCGmax": f"{r.cg_max_iter:,}".replace(",", "\\,"),
+        "recCGrtol": _sci(r.cg_rtol), "recCGmax": _count(r.cg_max_iter),
         "recBoundMargin": _sci(r.bound_margin),
         "recSupport": _sci(r.support_rel), "recTopK": f"{r.top_k}", "recRefTol": _sci(r.ref_tol),
     }
@@ -148,7 +153,7 @@ def stats_macros() -> dict[str, str]:
     if not p.exists():
         return {**_pending("statsBoot"), **alpha}
     n = int(json.loads(p.read_text(encoding="utf-8"))["bootstrap_resamples"])
-    return {"statsBoot": f"{n:,}".replace(",", "\\,"), **alpha}
+    return {"statsBoot": _count(n), **alpha}
 
 
 def environment_macros() -> dict[str, str]:
@@ -883,6 +888,72 @@ def bu_result_macros(d: Path = ROOT / "results" / "bu_evaluation") -> dict[str, 
         f"{max(v['logistic_cv_ece_10bins'] for v in dec.values()):.3f}", logit(low), logit(high))))
 
 
+CONVERGENCE_NAMES = ("convNSolves", "convItersMin", "convItersMax", "convGovItersMax", "convArmNSolves",
+                     "convArmNCapped", "convTvNSolves", "convTvItersMax", "convArmCappedGapMax",
+                     "convArmCappedGapRatio")
+PRIMARY_SWEEP = "sweep_v2_govdocs1"
+
+
+def convergence_macros(results: Path = ROOT / "results") -> dict[str, str]:
+    """Convergence of the CSFR sweeps (Sections VI-A, VI-C and the Discussion;
+    Table S-convergence), from the summary.csv of each sweep in SWEEPS and the
+    certificates of the patch-solves that did not converge:
+
+      NSolves, Iters     CSFR: patch-solves over the three sweeps; the range over
+                         cells and corpora of the median iteration count
+      GovItersMax        CSFR: the largest median iteration count of a primary cell
+      ArmNSolves         patch-solves of the ablation arms (rows of kind csfr other
+                         than CSFR), and ArmNCapped of them not converged
+      TvNSolves          patch-solves of the TV-only arm on the primary corpus, and
+                         TvItersMax its largest median iteration count of a cell
+      ArmCappedGap*      the largest gap of a capped patch-solve, and its ratio to
+                         the default tolerance
+
+    The text says that every CSFR patch-solve met the certificate, that every
+    capped one belongs to the TV-only arm on the primary corpus and reached the
+    iteration cap, and that the TV-only arm needs more iterations than CSFR there;
+    the macros are refused if any of these fails, or if nothing was capped."""
+    sweeps = [results / s for s in SWEEPS]
+    if not all((d / "summary.csv").exists() for d in sweeps):
+        return _pending(*CONVERGENCE_NAMES)
+    rows = [(d, r) for d in sweeps for r in _rows(d / "summary.csv") if r["kind"] == "csfr"]
+
+    def n(r: dict, key: str) -> int:
+        return int(float(r[key]))
+
+    csfr = [(d, r) for d, r in rows if r["method"] == "csfr"]
+    arms = [(d, r) for d, r in rows if r["method"] != "csfr"]
+    if any(n(r, "n_converged") != n(r, "n_patches") for _, r in csfr):
+        raise ValueError("a CSFR patch-solve did not meet the certificate")
+    capped = [(d, r) for d, r in arms if n(r, "n_converged") != n(r, "n_patches")]
+    if not capped:
+        raise ValueError("no ablation-arm patch-solve was capped: the text says some were")
+    if {(d.name, r["method"]) for d, r in capped} != {(PRIMARY_SWEEP, "csfr_tv_only")}:
+        raise ValueError(f"capped patch-solves outside the primary TV-only arm: {[(d.name, r['method']) for d, r in capped]}")
+    cap, tol = SolverConfig().max_iter, SolverConfig().tol
+    gaps = []
+    for d, r in capped:
+        for cert in sorted((d / f"{r['family']}_{r['level']}").glob(f"seed*/certificate_{r['method']}.json")):
+            c = json.loads(cert.read_text(encoding="utf-8"))
+            for it, ok, g in zip(c["iterations"], c["converged"], c["gap"]):
+                if not ok:
+                    if it != cap:
+                        raise ValueError(f"{cert}: a patch-solve not converged before the cap ({it} < {cap})")
+                    gaps.append(g)
+    if len(gaps) != sum(n(r, "n_patches") - n(r, "n_converged") for _, r in capped):
+        raise ValueError("the certificates do not account for every capped patch-solve")
+    iters = [float(r["iters_median"]) for _, r in csfr]
+    gov = [float(r["iters_median"]) for d, r in csfr if d.name == PRIMARY_SWEEP]
+    tv = [(n(r, "n_patches"), float(r["iters_median"])) for d, r in arms
+          if d.name == PRIMARY_SWEEP and r["method"] == "csfr_tv_only"]
+    if max(i for _, i in tv) <= max(gov):
+        raise ValueError("the TV-only arm does not need more iterations than CSFR on the primary corpus")
+    return dict(zip(CONVERGENCE_NAMES, (
+        _count(sum(n(r, "n_patches") for _, r in csfr)), f"{min(iters):.0f}", f"{max(iters):.0f}", f"{max(gov):.0f}",
+        _count(sum(n(r, "n_patches") for _, r in arms)), str(len(gaps)), _count(sum(k for k, _ in tv)),
+        f"{max(i for _, i in tv):.0f}", _sci(max(gaps), 1), f"{max(gaps) / tol:.1f}")))
+
+
 SOLVER_NAMES = ("solverNPatches", "solverRetimeSeed", "solverScatterDiffMax", "solverAdamLongGainMin",
                 "solverAdamLongGainMax", "solverFistaOverLongMin", "solverFistaOverLongMax", "solverGainMin",
                 "solverGainMax", "solverTolLoose", "solverTolTight", "solverTolDiffMax", "solverItersMin",
@@ -998,7 +1069,8 @@ def render() -> str:
               **bu_macros(), **shiftmap_macros(), **dictlearn_cap_macros(), **coherence_macros(),
               **r1_hole_whole_macros(), **all_comparison_macros(), **mechanism_macros(),
               **ablation_macros(), **record_fidelity_macros(), **record_comparison_macros(),
-              **oracle_macros(), **bu_result_macros(), **solver_macros()}
+              **oracle_macros(), **bu_result_macros(), **solver_macros(),
+              **convergence_macros()}
     lines = ["% GENERATED by scripts/render_numbers_v2.py. Do not edit; re-run the script.",
              "% Every number stated in the running text of the revised manuscript."]
     for k in sorted(macros):

@@ -362,7 +362,7 @@ CSFR is compared with \methodsTotal\ methods under one harness, with the same pa
   \item \textbf{Iterated block-DCT thresholding} after Guleryuz~\cite{guleryuz2006nonlinear}: $8 \times 8$ DCT blocks on $16$ grid shifts, with the hard threshold decreasing geometrically from $128$ to $2$ over $100$ iterations and the hole initialised at the observed mean.
   \item \textbf{Frequency-selective reconstruction}~\cite{seiler2015resampling} in its fast mode and \textbf{shift-map} inpainting~\cite{pritch2009shift}, via OpenCV-contrib.
   \item \textbf{Exemplar-based inpainting} after Criminisi et al.~\cite{criminisi2004region}, with $9 \times 9$ patches, reduced to $7$, $5$ and $3$ when no fully observed exemplar exists. If none exists at size $3$, as under severe scattered loss, the remaining hole is filled with the observed mean and the patch is counted as a fallback; on the primary corpus that happened in \fallbackExemplarCFoneLfive\% of the CF1 L5 patch-runs. The quality tables mark every cell where a method fell back in most of its patch-runs.
-  \item \textbf{TV-only}: the objective of Eq.~\eqref{eq:J} with $\lambda_{\ell_1} = \lambda_{\mathrm{FC}} = 0$, solved to the same certificate. It is both a baseline and an ablation arm.
+  \item \textbf{TV-only}: the objective of Eq.~\eqref{eq:J} with $\lambda_{\ell_1} = \lambda_{\mathrm{FC}} = 0$, solved under the same stopping rule. It is both a baseline and an ablation arm.
   \item \textbf{LaMa}~\cite{suvorov2022resolution}, the external-prior method. It uses the released big-lama checkpoint through the simple-lama-inpainting package, with no fine-tuning, and runs at the native resolution of the input. The grey patch is replicated to three channels, and the output is composited onto the observed pixels. A single forward pass makes it deterministic. LaMa was trained on images much larger than $64 \times 64$, so the patch corpora lie outside its training distribution; the full-resolution experiment runs it in distribution (Section~\ref{sec:results:fullres}).
 \end{enumerate}
 The constraint ablation removes one part of CSFR at a time. Besides TV-only, it runs DCT-only ($\lambda_{\mathrm{TV}} = 0$), no high-frequency penalty ($\lambda_{\mathrm{FC}} = 0$) and no range constraint (C3 removed), at mask seed \sweepAblationSeeds\ of the primary corpus, for \methodsAblation\ arms in all. The fixed-budget Adam arm of Section~\ref{sec:framework:solver} runs on DFRWS 2006 only (Section~\ref{sec:results:solver}).
@@ -408,7 +408,7 @@ The results follow the order of the contributions: quality on the primary corpus
 \subsection{Reconstruction quality on the primary corpus}
 \label{sec:results:quality}
 
-Tables~\ref{tab:quality} and~\ref{tab:gmsd} give hole PSNR and GMSD on GovDocs1 at three of the five severity levels. The supplement gives all five levels, and hole SSIM. Table~\ref{tab:paired-v2} compares CSFR at every level with the strongest classical method of the cell and with LaMa, and Fig.~\ref{fig:accuracy} shows these comparisons on all three corpora.
+Tables~\ref{tab:quality} and~\ref{tab:gmsd} give hole PSNR and GMSD on GovDocs1 at three of the five severity levels. The supplement gives all five levels, and hole SSIM. Table~\ref{tab:paired-v2} compares CSFR at every level with the strongest classical method of the cell and with LaMa, and Fig.~\ref{fig:accuracy} shows these comparisons on all three corpora. Every CSFR solve met the certificate: all \convNSolves\ patch-solves of the three sweeps stopped with a gap of at most the default tolerance, after a median of \convItersMin\ to \convItersMax\ iterations, depending on the cell, and the supplement gives the iterations and the gap of every cell. The ablation arms run under the same stopping rule. Of their \convArmNSolves\ patch-solves, \convArmNCapped\ reached the cap of \csfrMaxIter\ iterations, all of them in the TV-only arm on the primary corpus, with a gap of at most $\convArmCappedGapMax$, \convArmCappedGapRatio\ times the tolerance. They are kept and flagged as not converged, as the solver flags every capped patch (Section~\ref{sec:framework:solver}).
 
 \begin{figure*}[!t]
 \centering
@@ -583,7 +583,7 @@ Convergent, gap $10^{-10}$ & 30.13 & 22.82 & 20.22 & 20.62 & 31 & 1425 & 100.0 \
 \subsection{Constraint ablation}
 \label{sec:results:ablation}
 
-Each arm removes one part of CSFR and is solved to the same certificate (Section~\ref{sec:experiments:methods}). Table~\ref{tab:ablation-v2} gives the hole-PSNR difference between CSFR and each arm on the primary corpus at mask seed \sweepAblationSeeds, and the share of imputed pixels that leave the range when C3 is removed.
+Each arm removes one part of CSFR and is solved under the same stopping rule (Section~\ref{sec:experiments:methods}); Section~\ref{sec:results:quality} gives the few patch-solves of the TV-only arm that reached the iteration cap. Table~\ref{tab:ablation-v2} gives the hole-PSNR difference between CSFR and each arm on the primary corpus at mask seed \sweepAblationSeeds, and the share of imputed pixels that leave the range when C3 is removed.
 
 Total variation carries the reconstruction. Without it (DCT only), hole PSNR is lower in every cell, by \ablNoTvMin\ to \ablNoTvMax\,dB, with a Holm-adjusted $p < \statsAlpha$ in every cell.
 
@@ -842,20 +842,7 @@ On the primary corpus at one mask seed, the true mask of CF1, CF2 and CF3 at L3 
 \label{tab:maskerr}
 \footnotesize
 % BEGIN AUTO MASKERR
-\begin{tabular}{@{}l*{9}{r}@{}}
-\toprule
- & \multicolumn{7}{c}{Change in hole PSNR (dB)} & \multicolumn{2}{c}{Wrong mask (\%)} \\
-\cmidrule(lr){2-8}\cmidrule(l){9-10}
-Perturbation & CSFR & Linear & Telea & Navier--Stokes & Biharmonic & Block-DCT thr. & FSR & FP & FN \\
-\midrule
-Erode 1\,px & $-$7.46 & $-$9.66 & $-$4.98 & $-$7.17 & $-$9.15 & $-$12.89 & $-$7.62 & 0.00 & 65.55 \\
-Erode 2\,px & $-$15.01 & $-$19.05 & $-$12.20 & $-$14.23 & $-$14.57 & $-$20.13 & $-$14.78 & 0.00 & 69.94 \\
-Dilate 1\,px & $-$21.16 & $-$19.16 & $-$18.07 & $-$20.15 & $-$22.43 & $-$26.23 & $-$20.68 & 30.00 & 0.00 \\
-Dilate 2\,px & $-$21.16 & $-$19.16 & $-$18.07 & $-$20.15 & $-$22.43 & $-$26.23 & $-$20.69 & 30.00 & 0.00 \\
-Flip 1\% & $-$4.86 & $-$3.77 & $-$3.04 & $-$4.39 & $-$6.10 & $-$9.56 & $-$4.59 & 0.30 & 0.70 \\
-Flip 5\% & $-$9.52 & $-$8.22 & $-$6.99 & $-$8.89 & $-$11.26 & $-$15.13 & $-$9.42 & 1.50 & 3.51 \\
-\bottomrule
-\end{tabular}
+\textbf{[pending]}
 % END AUTO MASKERR
 \end{table*}
 
@@ -1000,7 +987,7 @@ CSFR is not proposed as a replacement for inpainting in general. It is for workf
 
 The measurements show where CSFR's accuracy is closest to the best available. Under scattered loss it is not: block-DCT thresholding is ahead at every level of every corpus (Section~\ref{sec:discussion:convexity}). Under burst loss LaMa is ahead of CSFR at every level on the primary corpus and on DFRWS 2006. Under contiguous loss on DFRWS 2006 and Kodak, CSFR is first at some levels and elsewhere at most \qDfrwsCFthreeBehindMax\,dB behind the strongest method (Section~\ref{sec:results:external}). On the document pages of the primary corpus, CSFR is ahead of the strongest method at every contiguous-loss level on the patches that no method reconstructs exactly, and it has the higher mean in most source images. Its mean deficit there comes from holes over blank page, which copying, thresholding and diffusion reproduce exactly and which CSFR fills slightly dark (Section~\ref{sec:results:quality}). Contiguous loss with an audit requirement is therefore where CSFR is best suited, and on documents an examiner should expect blank regions to be filled close to the page value but not exactly at it.
 
-The same guarantees hold for CSFR's TV-only arm, which is the same problem with the DCT and high-frequency weights at zero: Proposition~\ref{prop:unique} covers it, and it is solved to the same certificate. It has the higher mean hole PSNR in \ablTvNBehind\ of the 20 primary-corpus cells, under burst and contiguous loss through the flat holes it reproduces exactly and under light scattered loss on most patches as well, while CSFR is ahead of it on the other holes and in the median under burst and contiguous loss (Section~\ref{sec:results:ablation}). The weights of CSFR were fixed before the evaluation and are not retuned here. A deployment on document images could reasonably prefer the TV-only setting; choosing the weights for a type of content, with the same guarantees, is left to future work.
+The same guarantees are available for CSFR's TV-only arm, which is the same problem with the DCT and high-frequency weights at zero: Proposition~\ref{prop:unique} covers it, and it runs under the same stopping rule. It converges more slowly: its median iteration count reaches \convTvItersMax\ in a cell of the primary corpus, against at most \convGovItersMax\ for CSFR, and \convArmNCapped\ of its \convTvNSolves\ patch-solves there reached the iteration cap before the certificate (Section~\ref{sec:results:quality}). It has the higher mean hole PSNR in \ablTvNBehind\ of the 20 primary-corpus cells, under burst and contiguous loss through the flat holes it reproduces exactly and under light scattered loss on most patches as well, while CSFR is ahead of it on the other holes and in the median under burst and contiguous loss (Section~\ref{sec:results:ablation}). The weights of CSFR were fixed before the evaluation and are not retuned here. A deployment on document images could reasonably prefer the TV-only setting; choosing the weights for a type of content, with the same guarantees, is left to future work.
 
 The auditability claim is narrower than a claim of operational benefit. The fidelity of the record is measured across perturbation sizes and at two re-solve tolerances; whether examiners decide better when given it has not been studied. Direct comparison with SHAP, saliency methods and influence functions also remains open. Those methods were developed to explain predictive models, whereas the record is the derivative of a reconstruction with respect to its observations. Uncertainty quantification for learned reconstruction~\cite{edupuganti2021uncertainty,narnhofer2022bayesian,ekmekci2022uncertainty} addresses a related but distinct question, the dispersion of outputs under a learned prior, and offers protocols that future comparisons could adapt. Such comparisons should evaluate repeatability, faithfulness to controlled perturbations and examiner usefulness rather than visual similarity alone.
 

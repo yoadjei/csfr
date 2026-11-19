@@ -4,6 +4,8 @@ import importlib.util
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 TEX = ROOT / "paper" / "paper2_reconstruction.tex"
 SUPP = ROOT / "paper" / "paper2_supplementary.tex"
@@ -399,8 +401,10 @@ def test_jpeg_rows_per_corruption_and_mask(tmp_path):
             mq += [{"kind": kind, "condition": cond, "visible_damage": v, "coverage_of_oracle_loss": c,
                     "false_pos_frac": f} for v, c, f in (("True", 0.9, 0.01), ("True", 0.7, 0.03),
                                                          ("False", 0.0, 0.5))]
-    _write_csv(tmp_path / "summary.csv", summ)
+    _write_csv(tmp_path / "summary.csv", [r for r in summ if r["method"] != "lama"])
     _write_csv(tmp_path / "masks_quality.csv", mq)
+    assert m.jpeg(tmp_path) is None                               # LaMa not scored yet
+    _write_csv(tmp_path / "summary.csv", summ)
     lines = _body(m.jpeg(tmp_path))
     assert lines[0] == (r"Truncation & Oracle & 20 & 25.00 & FSR & 25.40 & 24.70 & $-$0.40$^{*}$ & +0.30 "
                         r"& 80.0 & 2.00 \\")                      # invisible cases excluded from the mask means
@@ -420,9 +424,24 @@ def test_maskerr_averages_cells_per_perturbation(tmp_path):
                     r["degradation_mean"] = deg * (1 if cell == "CF1_L3" else 3)
                 rows.append(r)
     _write_csv(tmp_path / "robustness.csv", rows)
-    lines = _body(m.maskerr(tmp_path))
+    lines = _body(m.maskerr(tmp_path, cells=("CF1_L3", "CF2_L5")))
     assert lines == [r"Erode 1\,px & $-$1.00 & $-$3.00 & $-$0.50 & 2.00 & 2.00 \\",
                      r"Flip 5\% & $-$1.00 & $-$3.00 & $-$0.50 & 2.00 & 2.00 \\"]
+
+
+def test_maskerr_waits_for_every_cell_and_perturbation(tmp_path):
+    m = _mod()
+    def rows(cells, methods):
+        return [{"cell": c, "perturbation": p, "method": k, "false_pos_frac": 0.0, "false_neg_frac": 0.0,
+                 **({"degradation_mean": -1.0} if p != "exact" else {})}
+                for c in cells for p in ("exact", "erode1") for k in methods]
+
+    _write_csv(tmp_path / "robustness.csv", rows(m.MASKERR_CELLS[:-1], ("csfr", "lama")))   # last cell running
+    assert m.maskerr(tmp_path) is None
+    _write_csv(tmp_path / "robustness.csv", rows(m.MASKERR_CELLS, ("csfr",)))               # LaMa not scored yet
+    assert m.maskerr(tmp_path) is None
+    _write_csv(tmp_path / "robustness.csv", rows(m.MASKERR_CELLS, ("csfr", "lama")))
+    assert m.maskerr(tmp_path) is not None
 
 
 def test_fullres_and_bench_note_the_isolated_method(tmp_path):
@@ -638,3 +657,50 @@ def test_supp_bu_calibration_lists_the_bins_and_the_model_scores(tmp_path):
 def test_plain_prints_a_typographic_minus_and_no_plus():
     m = _mod()
     assert (m.plain(-0.31), m.plain(24.94), m.plain(-166.36, 2)) == ("$-$0.3", "24.9", "$-$166.36")
+
+
+def _sweep_certs(root, tol=1e-6, missing=None, kodak_short=True):
+    import json
+    m = _mod()
+    for sweep, _ in m.CAP_MECHANISM_CORPORA:
+        for f in m.FAMILIES:
+            for lv in m.ALL_LEVELS:
+                for seed in (0, 1):
+                    if (sweep, f"{f}_{lv}", seed) == missing:
+                        continue
+                    d = root / sweep / f"{f}_{lv}" / f"seed{seed}"
+                    d.mkdir(parents=True)
+                    big = 100 * (seed + 1) if (f, lv) == ("CF1", "L1") else 50
+                    last_ok = not (kodak_short and sweep == "sweep_v2_kodak" and seed == 1)
+                    (d / "certificate_csfr.json").write_text(json.dumps(
+                        {"iterations": [10, 20, big], "converged": [True, True, last_ok],
+                         "gap": [1e-7, 3e-7, 9e-7], "config": {"tol": tol}}), encoding="utf-8")
+    return root
+
+
+def test_supp_convergence_reports_iterations_and_gaps_per_cell(tmp_path):
+    m = _mod()
+    lines = _body(m.supp_convergence(_sweep_certs(tmp_path)))
+    assert lines[0] == (r"CF1~L1 & 20 & 200 & $3.0 \times 10^{-7}$ & 20 & 200 & $3.0 \times 10^{-7}$ "
+                        r"& 20 & 200 & $3.0 \times 10^{-7}$ \\")
+    assert "GovDocs1 120 of 120; DFRWS 2006 120 of 120; Kodak 100 of 120." in lines[-2]
+    assert "Every patch-solve" not in lines[-2]
+    assert "Patch-solves per cell (patches times mask seeds): GovDocs1 6, DFRWS 2006 6, Kodak 6." in lines[-1]
+
+
+def test_supp_convergence_says_every_patch_solve_only_when_all_met(tmp_path):
+    lines = _body(_mod().supp_convergence(_sweep_certs(tmp_path, kodak_short=False)))
+    assert r"Every patch-solve met the certificate, a gap of at most $10^{-6}$." in lines[-2]
+
+
+def test_supp_convergence_waits_for_every_seed_and_refuses_mixed_tolerances(tmp_path):
+    import json
+    m = _mod()
+    assert m.supp_convergence(_sweep_certs(tmp_path / "a", missing=("sweep_v2_dfrws", "CF3_L2", 1))) is None
+    root = _sweep_certs(tmp_path / "b")
+    p = root / "sweep_v2_dfrws" / "CF3_L2" / "seed1" / "certificate_csfr.json"
+    c = json.loads(p.read_text(encoding="utf-8"))
+    c["config"]["tol"] = 1e-4
+    p.write_text(json.dumps(c), encoding="utf-8")
+    with pytest.raises(ValueError):
+        m.supp_convergence(root)

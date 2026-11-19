@@ -11,6 +11,7 @@ every generator against its source and that the committed tex is current.
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -646,12 +647,16 @@ def jpeg(d: Path = JPEG_DIR) -> str | None:
     """Per corruption and mask: cases, hole PSNR of CSFR, of the best classical
     method and of LaMa, CSFR's paired differences to both (starred where the
     uncorrected Wilcoxon p is below ALPHA), and the mask's coverage of the
-    oracle loss and its false-positive share, over the cases with visible damage."""
+    oracle loss and its false-positive share, over the cases with visible damage.
+    The run is scored twice, the second time with LaMa, so the table waits until
+    every corruption and mask has a LaMa row."""
     summ, mq = _csv(d / "summary.csv"), _csv(d / "masks_quality.csv")
     if summ is None or mq is None:
         return None
     names = dict(METHOD_ORDER)
     by = {(r["kind"], r["condition"], r["method"]): r for r in summ}
+    if any((k, c, EXTERNAL) not in by for (k, c, meth) in by if meth == "csfr"):
+        return None
     body = []
     for kind, kname in JPEG_KINDS:
         if body:
@@ -683,6 +688,7 @@ def jpeg(d: Path = JPEG_DIR) -> str | None:
 
 
 MASKERR_DIR = ROOT / "results" / "mask_robustness"
+MASKERR_CELLS = ("CF1_L3", "CF2_L3", "CF3_L3", "CF1_L5", "CF2_L5", "CF3_L5")   # as Section VI-H states them
 
 
 def perturbation_name(p: str) -> str:
@@ -693,14 +699,20 @@ def perturbation_name(p: str) -> str:
     raise ValueError(f"unknown perturbation {p}")
 
 
-def maskerr(d: Path = MASKERR_DIR) -> str | None:
+def maskerr(d: Path = MASKERR_DIR, cells: tuple[str, ...] = MASKERR_CELLS) -> str | None:
     """Per perturbation: each method's mean change in hole PSNR against the true
     mask (perturbed minus exact, paired by patch), averaged over the cells, and
-    the realised false-positive and false-negative shares of the wrong mask."""
+    the realised false-positive and false-negative shares of the wrong mask.
+    The run rewrites robustness.csv after every cell and is scored a second time
+    with LaMa, so the table waits until every cell has every perturbation, each
+    with a LaMa row."""
     rows = _csv(d / "robustness.csv")
     if rows is None:
         return None
     perts = [p for p in dict.fromkeys(r["perturbation"] for r in rows) if p != "exact"]
+    have = {(r["cell"], r["perturbation"]) for r in rows if r["method"] == EXTERNAL}
+    if any((c, p) not in have for c in cells for p in ("exact", *perts)):
+        return None
     present = {r["method"] for r in rows}
     methods = [(k, n) for k, n in METHOD_ORDER if k in present]
     body = []
@@ -1011,6 +1023,68 @@ def supp_calibration(d: Path = CALIB_DIR) -> str | None:
     return tabular(r"@{}l c r r r r r r@{}", header, body)
 
 
+def cell_certificates(d: Path, cell: str, arm: str = "csfr") -> dict | None:
+    """Every certificate of one arm in one sweep cell, pooled over mask seeds:
+    iterations, converged flags and gaps per patch-solve, and the tolerances
+    the seeds were solved at. None if a seed of the cell has no certificate."""
+    seeds = sorted(p for p in (d / cell).iterdir() if p.is_dir() and p.name.startswith("seed"))
+    certs = [s / f"certificate_{arm}.json" for s in seeds]
+    if not certs or not all(c.exists() for c in certs):
+        return None
+    loaded = [json.loads(c.read_text(encoding="utf-8")) for c in certs]
+    out = {k: np.concatenate([c[k] for c in loaded]) for k in ("iterations", "converged", "gap")}
+    out["tols"] = {float(c["config"]["tol"]) for c in loaded}
+    out["seeds"] = tuple(s.name for s in seeds)
+    return out
+
+
+def supp_convergence(results: Path = ROOT / "results") -> str | None:
+    """Per cell and corpus, over every patch and mask seed of the CSFR sweep:
+    the median and largest iteration count and the median Frank-Wolfe gap at
+    release, read from the certificates the sweep writes. A note gives the
+    tolerance and how many patch-solves met the certificate."""
+    cells = [f"{f}_{lv}" for f in FAMILIES for lv in ALL_LEVELS]
+    data = {}
+    for sweep, name in CAP_MECHANISM_CORPORA:
+        for cell in cells:
+            c = cell_certificates(results / sweep, cell) if (results / sweep / cell).is_dir() else None
+            if c is None:
+                return None
+            data[name, cell] = c
+        if len({data[name, cell]["seeds"] for cell in cells}) != 1:
+            return None                                  # a cell is missing a seed the others have
+    tols = set().union(*(c["tols"] for c in data.values()))
+    if len(tols) != 1:
+        raise ValueError(f"the sweeps were solved at different tolerances: {sorted(tols)}")
+    tol = tols.pop()
+    names = [n for _, n in CAP_MECHANISM_CORPORA]
+    body = []
+    for cell in cells:
+        if body and cell.endswith("_L1"):
+            body.append(r"\midrule")
+        out = []
+        for n in names:
+            c = data[n, cell]
+            out += [f"{np.median(c['iterations']):.0f}", f"{c['iterations'].max():.0f}",
+                    num_sig(float(np.median(c["gap"])))]
+        body.append(" & ".join([cell.replace("_", "~"), *out]) + r" \\")
+    met = {n: sum(int(data[n, cell]["converged"].sum()) for cell in cells) for n in names}
+    total = {n: sum(len(data[n, cell]["converged"]) for cell in cells) for n in names}
+    per_cell = {n: {len(data[n, cell]["converged"]) for cell in cells} for n in names}
+    ncols = 1 + 3 * len(names)
+    if all(met[n] == total[n] for n in names):
+        cert = rf"Every patch-solve met the certificate, a gap of at most {tex_pow10(tol)}."
+    else:
+        cert = "Patch-solves that met the certificate: " + "; ".join(f"{n} {met[n]} of {total[n]}" for n in names) + "."
+    sizes = ", ".join(f"{n} {'/'.join(str(k) for k in sorted(per_cell[n]))}" for n in names)
+    body += [r"\midrule", _note(f"Gap: the median gap at release. {cert}", ncols),
+             _note(f"Patch-solves per cell (patches times mask seeds): {sizes}.", ncols)]
+    header = [" & " + " & ".join(rf"\multicolumn{{3}}{{c}}{{{n}}}" for n in names) + r" \\",
+              "".join(rf"\cmidrule(lr){{{2 + 3 * i}-{4 + 3 * i}}}" for i in range(len(names))),
+              "Cell" + r" & It.\ med. & It.\ max & Gap" * len(names) + r" \\"]
+    return tabular(rf"@{{}}l*{{{3 * len(names)}}}{{r}}@{{}}", header, body)
+
+
 SHIFTMAP_DIR = ROOT / "results" / "shiftmap_replicates"
 SHIFTMAP_CORPORA = [("sweep_v2_govdocs1", "GovDocs1"), ("sweep_v2_dfrws", "DFRWS 2006")]
 
@@ -1122,7 +1196,8 @@ TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_
           "SUPP_PSNR": supp_psnr, "SUPP_SSIM": supp_ssim, "SUPP_HRP": supp_hrp, "SUPP_CAP": supp_cap,
           "SUPP_FALLBACKS": supp_fallbacks, "SUPP_CALIBRATION": supp_calibration,
           "SUPP_SHIFTMAP": supp_shiftmap, "SUPP_DICTCAP": supp_dictcap, "SUPP_FIDELITY": supp_fidelity,
-          "SUPP_CAP_MECHANISM": supp_cap_mechanism, "SUPP_IMAGE_LEVEL": supp_image_level, "SUPP_BU_CALIBRATION": supp_bu_calibration}
+          "SUPP_CAP_MECHANISM": supp_cap_mechanism, "SUPP_IMAGE_LEVEL": supp_image_level, "SUPP_BU_CALIBRATION": supp_bu_calibration,
+          "SUPP_CONVERGENCE": supp_convergence}
 
 
 def main() -> int:

@@ -182,6 +182,13 @@ def test_typed_claims_about_the_primary_comparison_hold():
             float(v["solverTraceLossMinPsnr"]) < float(v["solverTraceFinalPsnr"]) - 1.0,
         "A four times larger budget closed most of that gap but not all of it": v["solverGainMin"] != PENDING,
         "Adam's own loss was still falling when the released budget stopped it": v["solverGainMin"] != PENDING,
+        # Convergence of the sweeps (sec:results:quality, sec:discussion:scope; R2.3d).
+        # convergence_macros refuses an uncertified CSFR patch-solve, a capped one outside
+        # the primary TV-only arm or short of the cap, and a TV-only arm no slower than CSFR.
+        "Every CSFR solve met the certificate": v["convNSolves"] != PENDING,
+        "all of them in the TV-only arm on the primary corpus": v["convArmNCapped"] != PENDING,
+        "They are kept and flagged as not converged": int(v["convArmNCapped"]) > 0,
+        "It converges more slowly": int(v["convTvItersMax"]) > int(v["convGovItersMax"]),
     }
     for sentence, holds in claims.items():
         assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
@@ -871,3 +878,59 @@ def test_solver_macros_say_what_the_fixed_budget_cost(tmp_path):
 def test_solver_macros_refuse_data_that_contradict_the_text(tmp_path, kw):
     with pytest.raises(ValueError):
         _mod().solver_macros(_solver(tmp_path, **kw))
+
+
+# ------------------------------------------------------- convergence of the sweeps (Section VI-A)
+
+def _conv(tmp_path, csfr_short=False, capped_arm="csfr_tv_only", capped_sweep="sweep_v2_govdocs1",
+          cap_iter=20000, tv_iters=4000.0, n_capped=2):
+    import json
+    m = _mod()
+    for sweep in m.SWEEPS:
+        arms = ["csfr", "csfr_tv_only"] + (["csfr_no_fc"] if sweep == m.PRIMARY_SWEEP else [])
+        rows = []
+        for arm in arms:
+            for (fam, lv), it in ((("CF1", "L3"), 300.0), (("CF2", "L5"), 1200.0)):
+                short = 0
+                if arm == "csfr" and csfr_short and sweep == m.PRIMARY_SWEEP and fam == "CF1":
+                    short = 1
+                if (arm, sweep, fam) == (capped_arm, capped_sweep, "CF1"):
+                    short = n_capped
+                rows.append({"corpus": sweep, "method": arm, "kind": "csfr", "family": fam, "level": lv,
+                             "n_patches": 600, "n_converged": 600 - short,
+                             "iters_median": tv_iters if arm == "csfr_tv_only" else it})
+            if (arm, sweep) == (capped_arm, capped_sweep) and n_capped:
+                d = tmp_path / sweep / "CF1_L3" / "seed0"
+                d.mkdir(parents=True)
+                gaps = [4.8e-6, 2.0e-6][:n_capped] + [5e-7] * (600 - n_capped)
+                (d / f"certificate_{arm}.json").write_text(json.dumps(
+                    {"iterations": [cap_iter] * n_capped + [400] * (600 - n_capped),
+                     "converged": [False] * n_capped + [True] * (600 - n_capped), "gap": gaps}), encoding="utf-8")
+        rows.append({"corpus": sweep, "method": "guleryuz", "kind": "classical", "family": "CF1", "level": "L3",
+                     "n_patches": 600, "n_converged": "", "iters_median": ""})
+        _write_rows(tmp_path / sweep / "summary.csv", rows)
+    return tmp_path
+
+
+def test_convergence_macros_count_every_patch_solve(tmp_path):
+    m = _mod()
+    assert set(m.convergence_macros(tmp_path).values()) == {m.PLACEHOLDER}
+    q = m.convergence_macros(_conv(tmp_path))
+    assert (q["convNSolves"], q["convItersMin"], q["convItersMax"], q["convGovItersMax"]) == (
+        r"3\,600", "300", "1200", "1200")
+    assert (q["convArmNSolves"], q["convArmNCapped"], q["convTvNSolves"], q["convTvItersMax"]) == (
+        r"4\,800", "2", r"1\,200", "4000")
+    assert (q["convArmCappedGapMax"], q["convArmCappedGapRatio"]) == (r"4.8\times 10^{-6}", "4.8")
+
+
+@pytest.mark.parametrize("kw", [
+    {"csfr_short": True},                          # "Every CSFR solve met the certificate"
+    {"capped_arm": "csfr_no_fc"},                  # "all of them in the TV-only arm"
+    {"capped_sweep": "sweep_v2_dfrws"},            # "on the primary corpus"
+    {"cap_iter": 19990},                           # "reached the cap"
+    {"tv_iters": 1000.0},                          # "It converges more slowly"
+    {"n_capped": 0},                               # the text reports capped patch-solves
+])
+def test_convergence_macros_refuse_data_that_contradict_the_text(tmp_path, kw):
+    with pytest.raises(ValueError):
+        _mod().convergence_macros(_conv(tmp_path, **kw))

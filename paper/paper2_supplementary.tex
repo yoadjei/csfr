@@ -569,6 +569,54 @@ CF3~L5 & $10^{-11}$ & $5.6 \times 10^{-10}$ & $7.5 \times 10^{-9}$ & $1.0 \times
 % END AUTO SUPP_CALIBRATION
 \end{table}
 
+\paragraph{Convergence of the sweeps.} Every sweep solves each patch at the
+default tolerance. Table~\ref{tab:supp:convergence} gives, for every cell of
+each corpus and over every patch and mask seed, the iterations and the gap at
+release, read from the certificates that the sweeps release.
+
+\begin{table}[htbp]
+\centering
+\caption{Convergence of the CSFR sweeps: per cell and corpus, over every patch and mask seed, the median and largest iteration count and the median Frank--Wolfe gap at release.}
+\label{tab:supp:convergence}
+\footnotesize
+% BEGIN AUTO SUPP_CONVERGENCE
+\begin{tabular}{@{}l*{9}{r}@{}}
+\toprule
+ & \multicolumn{3}{c}{GovDocs1} & \multicolumn{3}{c}{DFRWS 2006} & \multicolumn{3}{c}{Kodak} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
+Cell & It.\ med. & It.\ max & Gap & It.\ med. & It.\ max & Gap & It.\ med. & It.\ max & Gap \\
+\midrule
+CF1~L1 & 170 & 260 & $5.8 \times 10^{-7}$ & 170 & 250 & $5.6 \times 10^{-7}$ & 160 & 270 & $6.0 \times 10^{-7}$ \\
+CF1~L2 & 210 & 360 & $6.7 \times 10^{-7}$ & 210 & 300 & $6.5 \times 10^{-7}$ & 200 & 340 & $6.4 \times 10^{-7}$ \\
+CF1~L3 & 270 & 480 & $7.0 \times 10^{-7}$ & 260 & 470 & $6.8 \times 10^{-7}$ & 250 & 490 & $6.8 \times 10^{-7}$ \\
+CF1~L4 & 380 & 810 & $7.5 \times 10^{-7}$ & 360 & 680 & $7.2 \times 10^{-7}$ & 340 & 680 & $7.2 \times 10^{-7}$ \\
+CF1~L5 & 510 & 970 & $8.2 \times 10^{-7}$ & 490 & 900 & $7.9 \times 10^{-7}$ & 440 & 840 & $7.8 \times 10^{-7}$ \\
+\midrule
+CF2~L1 & 560 & 2200 & $8.2 \times 10^{-7}$ & 520 & 1680 & $8.3 \times 10^{-7}$ & 470 & 1420 & $8.1 \times 10^{-7}$ \\
+CF2~L2 & 700 & 2250 & $8.6 \times 10^{-7}$ & 670 & 1570 & $8.5 \times 10^{-7}$ & 600 & 1570 & $8.4 \times 10^{-7}$ \\
+CF2~L3 & 840 & 2130 & $8.8 \times 10^{-7}$ & 820 & 1890 & $8.9 \times 10^{-7}$ & 720 & 1980 & $8.6 \times 10^{-7}$ \\
+CF2~L4 & 1000 & 2730 & $8.9 \times 10^{-7}$ & 945 & 2150 & $9.0 \times 10^{-7}$ & 860 & 2290 & $8.8 \times 10^{-7}$ \\
+CF2~L5 & 1150 & 2950 & $9.0 \times 10^{-7}$ & 1100 & 2430 & $9.2 \times 10^{-7}$ & 1010 & 2930 & $9.1 \times 10^{-7}$ \\
+\midrule
+CF3~L1 & 410 & 1020 & $7.5 \times 10^{-7}$ & 390 & 750 & $7.8 \times 10^{-7}$ & 360 & 730 & $7.7 \times 10^{-7}$ \\
+CF3~L2 & 800 & 1650 & $8.7 \times 10^{-7}$ & 770 & 1720 & $8.8 \times 10^{-7}$ & 710 & 1520 & $8.6 \times 10^{-7}$ \\
+CF3~L3 & 1030 & 2370 & $8.9 \times 10^{-7}$ & 990 & 2070 & $9.1 \times 10^{-7}$ & 940 & 2240 & $8.9 \times 10^{-7}$ \\
+CF3~L4 & 1310 & 3780 & $9.0 \times 10^{-7}$ & 1250 & 2480 & $9.2 \times 10^{-7}$ & 1220 & 2930 & $9.2 \times 10^{-7}$ \\
+CF3~L5 & 1530 & 4550 & $9.2 \times 10^{-7}$ & 1385 & 2830 & $9.2 \times 10^{-7}$ & 1340 & 2700 & $9.3 \times 10^{-7}$ \\
+\midrule
+CF4~L1 & 420 & 830 & $7.7 \times 10^{-7}$ & 420 & 820 & $7.8 \times 10^{-7}$ & 360 & 690 & $7.8 \times 10^{-7}$ \\
+CF4~L2 & 800 & 1910 & $8.6 \times 10^{-7}$ & 795 & 1710 & $8.6 \times 10^{-7}$ & 700 & 1530 & $8.7 \times 10^{-7}$ \\
+CF4~L3 & 1020 & 3780 & $9.0 \times 10^{-7}$ & 1005 & 2130 & $9.1 \times 10^{-7}$ & 940 & 2440 & $9.1 \times 10^{-7}$ \\
+CF4~L4 & 1340 & 3070 & $9.0 \times 10^{-7}$ & 1230 & 2560 & $9.1 \times 10^{-7}$ & 1180 & 3250 & $9.2 \times 10^{-7}$ \\
+CF4~L5 & 1510 & 2960 & $9.1 \times 10^{-7}$ & 1390 & 2970 & $9.1 \times 10^{-7}$ & 1330 & 2520 & $9.1 \times 10^{-7}$ \\
+\midrule
+\multicolumn{10}{@{}l}{\footnotesize Gap: the median gap at release. Every patch-solve met the certificate, a gap of at most $10^{-6}$.} \\
+\multicolumn{10}{@{}l}{\footnotesize Patch-solves per cell (patches times mask seeds): GovDocs1 1800, DFRWS 2006 900, Kodak 720.} \\
+\bottomrule
+\end{tabular}
+% END AUTO SUPP_CONVERGENCE
+\end{table}
+
 %%======================================================================
 \section{Sensitivity record fidelity across perturbations and tolerances}
 \label{sec:supp:fidelity}
