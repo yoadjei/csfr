@@ -248,21 +248,33 @@ def test_solver_arm_names():
     assert m.tex_pow10(5e-12) == r"$5 \times 10^{-12}$"
 
 
-def test_solver_cmp_reports_time_only_for_the_cpu_rerun(tmp_path):
-    m = _mod()
+def _solver_summary(m, tmp_path, diff):
     arms = ["adam600_released", "adam600_cpu", "adam2400_cpu", "fista_gap1e-06"]
     summ = [{"family": f, "arm": a, "psnr_hole": 30.0 + i, "seconds_per_cell": 10.0 * (i + 1),
              "iterations_median": 600 if a.startswith("adam600") else (2400 if "2400" in a else 750),
-             "converged_frac": 0.99 if a.startswith("fista") else ""}
+             "converged_frac": 0.99 if a.startswith("fista") else "",
+             "device": "cuda" if a == "adam600_released" else "cpu"}
             for i, a in enumerate(arms) for f in m.FAMILIES]
     _write_csv(tmp_path / "quality_vs_compute.csv", summ)
-    _write_csv(tmp_path / "per_cell.csv", [{"arm": "adam600_cpu", "max_abs_diff_vs_released": 0.0021},
-                                           {"arm": "fista_gap1e-06", "max_abs_diff_vs_released": ""}])
-    lines = _body(m.solver_cmp(tmp_path))
-    assert lines[0] == r"Adam, 600 iterations (released, GPU) & 30.00 & 30.00 & 30.00 & 30.00 & 10 & 600 & -- \\"
+    _write_csv(tmp_path / "per_cell.csv", [{"arm": "adam600_cpu", "seed": 0, "max_abs_diff_vs_released": diff},
+                                           {"arm": "fista_gap1e-06", "seed": 0, "max_abs_diff_vs_released": ""}])
+    return _body(m.solver_cmp(tmp_path))
+
+
+def test_solver_cmp_shows_cpu_time_only_and_quality_only_where_measured(tmp_path):
+    m = _mod()
+    lines = _solver_summary(m, tmp_path, 0.0021)
+    assert lines[0] == r"Adam, 600 iterations (released, GPU) & 30.00 & 30.00 & 30.00 & 30.00 & -- & 600 & -- \\"
     assert lines[1] == r"Adam, 600 iterations (CPU) & -- & -- & -- & -- & 20 & 600 & -- \\"
     assert lines[3].endswith(r"& 33.00 & 40 & 750 & 99.0 \\")
-    assert "at most 0.0021 grey levels" in lines[-1]
+    assert "at mask seed~0 differs from the released outputs by at most 0.0021 grey levels" in lines[-2]
+    assert "timed on its GPU" in lines[-1]
+
+
+def test_solver_cmp_states_a_bit_for_bit_reproduction(tmp_path):
+    lines = _solver_summary(_mod(), tmp_path, 0.0)
+    assert "reproduces the released outputs bit for bit in every cell" in lines[-2]
+    assert "at most" not in lines[-2]
 
 
 def test_fidelity_reads_the_default_tolerance_at_one_grey_level(tmp_path):

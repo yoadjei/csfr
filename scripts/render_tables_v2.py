@@ -426,11 +426,12 @@ def solver_arm_name(arm: str) -> str:
 
 
 def solver_cmp(d: Path = SOLVER_DIR) -> str | None:
-    """Per arm: hole PSNR per family (mean over levels and seeds), time per
-    cell, median iterations and the share of patches that met the certificate.
-    The CPU re-run of the released budget exists at one seed for its time
-    only, so it shows no quality, and a note gives how far its outputs are
-    from the released GPU outputs."""
+    """Per arm: hole PSNR per family (mean over levels and seeds), CPU time
+    per cell, median iterations per patch and the share of patches that met
+    the certificate. The released outputs were timed on another device, so
+    their row shows no time. The CPU re-run of the released budget exists at
+    one seed for its time only, so it shows no quality, and a note gives how
+    far its outputs are from the released ones."""
     summ, cells = _csv(d / "quality_vs_compute.csv"), _csv(d / "per_cell.csv")
     if summ is None or cells is None:
         return None
@@ -441,16 +442,21 @@ def solver_cmp(d: Path = SOLVER_DIR) -> str | None:
         rs = [by[(arm, f)] for f in FAMILIES]
         timing_only = arm == "adam600_cpu"
         psnr = ["--"] * len(FAMILIES) if timing_only else [f"{float(r['psnr_hole']):.2f}" for r in rs]
-        secs = np.mean([float(r["seconds_per_cell"]) for r in rs])
+        on_cpu = all(r["device"] == "cpu" for r in rs)
+        secs = f"{np.mean([float(r['seconds_per_cell']) for r in rs]):.0f}" if on_cpu else "--"
         iters = np.median([float(r["iterations_median"]) for r in rs])
         conv = rs[0]["converged_frac"]
         conv = f"{100 * np.mean([float(r['converged_frac']) for r in rs]):.1f}" if conv != "" else "--"
-        body.append(" & ".join([solver_arm_name(arm), *psnr, f"{secs:.0f}", f"{iters:.0f}", conv]) + r" \\")
+        body.append(" & ".join([solver_arm_name(arm), *psnr, secs, f"{iters:.0f}", conv]) + r" \\")
     diffs = [float(r["max_abs_diff_vs_released"]) for r in cells if r.get("max_abs_diff_vs_released", "") != ""]
     if diffs:
+        seeds = sorted({r["seed"] for r in cells if r.get("max_abs_diff_vs_released", "") != ""})
+        agree = ("reproduces the released outputs bit for bit in every cell" if max(diffs) == 0
+                 else f"differs from the released outputs by at most {max(diffs):.2g} grey levels")
         body += [r"\midrule",
-                 _note(r"The CPU re-run of the released budget differs from the released outputs by at most "
-                       rf"{max(diffs):.2g} grey levels; its row reports time only.", 4 + len(FAMILIES))]
+                 _note(rf"The CPU re-run at mask seed~{', '.join(seeds)} {agree}; its row reports time only.",
+                       4 + len(FAMILIES)),
+                 _note("The released run was timed on its GPU, so its time is not shown.", 4 + len(FAMILIES))]
     header = [r" & \multicolumn{4}{c}{Hole PSNR (dB)} & & & \\", r"\cmidrule(lr){2-5}",
               "Solver & " + " & ".join(FAMILIES) + r" & s/cell & Iter. & Cert.\ (\%) \\"]
     return tabular(r"@{}l*{4}{r}rrr@{}", header, body)

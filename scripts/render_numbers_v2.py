@@ -883,6 +883,110 @@ def bu_result_macros(d: Path = ROOT / "results" / "bu_evaluation") -> dict[str, 
         f"{max(v['logistic_cv_ece_10bins'] for v in dec.values()):.3f}", logit(low), logit(high))))
 
 
+SOLVER_NAMES = ("solverNPatches", "solverRetimeSeed", "solverScatterDiffMax", "solverAdamLongGainMin",
+                "solverAdamLongGainMax", "solverFistaOverLongMin", "solverFistaOverLongMax", "solverGainMin",
+                "solverGainMax", "solverTolLoose", "solverTolTight", "solverTolDiffMax", "solverItersMin",
+                "solverItersMax", "solverSecMin", "solverSecMax", "solverAdamSecMin", "solverAdamSecMax",
+                "solverTraceLossMinIter", "solverTraceLossMinPsnr", "solverTraceLossRatio", "solverTraceLastIter",
+                "solverTraceFinalPsnr", "solverSettleTol", "solverTraceSettledIter", "solverTraceGapFirst",
+                "solverTraceGapLast")
+SOLVER_SETTLE_DB = 0.01          # "stays within 0.01 dB of its final value"
+STRUCTURED = ("CF2", "CF3", "CF4")
+
+
+def solver_macros(d: Path = ROOT / "results" / "solver_comparison") -> dict[str, str]:
+    """The solver comparison on the released DFRWS 2006 patches and masks
+    (Section VI-B; scripts/run_solver_comparison.py), from the family means of
+    quality_vs_compute.csv, per_cell.csv and the convergence trace:
+
+      ScatterDiffMax     CF1: the largest difference in hole PSNR between the arms
+                         scored at every seed
+      AdamLongGain       CF2-CF4: Adam at four times the budget minus the released run
+      FistaOverLong      CF2-CF4: the convergent solver at the default tolerance minus
+                         Adam at four times the budget
+      Gain               CF2-CF4: the convergent solver minus the released run
+      TolDiffMax         the largest |hole PSNR| difference of any cell between the
+                         loosest and the tightest tolerance
+      Iters, Sec         at the default tolerance: the range over families of the median
+                         iterations and of the mean seconds per cell; AdamSec for 2400
+                         Adam iterations on the same CPU
+      Trace*             the traced cell: the iteration of Adam's lowest own loss, its
+                         hole PSNR there and its last loss over that minimum; the last
+                         traced iteration and the convergent solver's hole PSNR there;
+                         the first traced iteration from which that PSNR stays within
+                         SOLVER_SETTLE_DB of its final value; its first and last gap
+
+    The text states the following, and the macros are refused if any fails: the
+    CPU re-run of the released budget reproduces the released outputs bit for bit;
+    the convergent solver met the certificate on every patch at every tolerance;
+    under CF2-CF4 the longer Adam run gains over the released one, the convergent
+    solver is ahead of the longer run, and the longer run recovers more than half
+    of the total gain in every family; on the traced cell Adam's hole PSNR rises at
+    every point and its loss is still falling at the released budget."""
+    summ_p, cells_p = d / "quality_vs_compute.csv", d / "per_cell.csv"
+    traces = sorted(d.glob("trace_*.csv"))
+    if not (summ_p.exists() and cells_p.exists() and traces):
+        return _pending(*SOLVER_NAMES)
+    summ = {(r["arm"], r["family"]): r for r in _rows(summ_p)}
+    cells = _rows(cells_p)
+    tols = sorted({float(r["arm"].split("gap")[1]) for r in cells if r["arm"].startswith("fista_gap")})
+    default, loose, tight = (f"fista_gap{t:.0e}" for t in (SolverConfig().tol, tols[-1], tols[0]))
+    if default not in {r["arm"] for r in cells}:
+        raise ValueError(f"{cells_p.name}: no arm at the default tolerance ({default})")
+
+    def psnr(arm: str, fam: str) -> float:
+        return float(summ[arm, fam]["psnr_hole"])
+
+    n_patches = {int(r["n"]) for r in cells}
+    if len(n_patches) != 1:
+        raise ValueError(f"{cells_p.name}: cells of different sizes {sorted(n_patches)}")
+    rerun = [r for r in cells if r.get("max_abs_diff_vs_released", "") != ""]
+    if not rerun or any(float(r["max_abs_diff_vs_released"]) != 0.0 for r in rerun):
+        raise ValueError("the CPU re-run of the released budget does not reproduce the released outputs")
+    if any(int(r["n_converged"]) != int(r["n"]) for r in cells if r["arm"].startswith("fista")):
+        raise ValueError("a convergent-solver cell where a patch did not meet the certificate")
+    long_gain = [psnr("adam2400_cpu", f) - psnr("adam600_released", f) for f in STRUCTURED]
+    over_long = [psnr(default, f) - psnr("adam2400_cpu", f) for f in STRUCTURED]
+    gain = [psnr(default, f) - psnr("adam600_released", f) for f in STRUCTURED]
+    if min(long_gain) <= 0 or min(over_long) <= 0:
+        raise ValueError("under CF2-CF4 the longer Adam run does not gain, or the convergent solver is not ahead")
+    if any(lg <= g / 2 for lg, g in zip(long_gain, gain)):
+        raise ValueError("a structured family where the longer Adam run recovers at most half of the gain")
+    scatter = [psnr(a, "CF1") for a in ("adam600_released", "adam2400_cpu", default)]
+    by_cell = {(r["arm"], r["cell"], r["seed"]): float(r["psnr_hole"]) for r in cells}
+    tol_diff = max(abs(by_cell[loose, c, s] - by_cell[tight, c, s]) for (a, c, s) in by_cell if a == loose)
+    fams = sorted({f for (_, f) in summ})
+
+    trace = _rows(traces[0])
+    adam = [r for r in trace if r["arm"] == "adam"]
+    fista = [r for r in trace if r["arm"] == "fista"]
+    if level_trend([float(r["psnr_hole"]) for r in adam]) != "rises":
+        raise ValueError("Adam's traced hole PSNR does not rise at every point")
+    loss = [float(r["objective"]) for r in adam]
+    budget = int(float(summ["adam600_released", fams[0]]["iterations_median"]))
+    at = [int(r["iter"]) for r in adam].index(budget)
+    if not (at + 1 < len(loss) and loss[at + 1] < loss[at]):
+        raise ValueError("Adam's traced loss is not still falling at the released budget")
+    lowest = loss.index(min(loss))
+    final = float(fista[-1]["psnr_hole"])
+    settled = next(r["iter"] for i, r in enumerate(fista)
+                   if all(abs(float(q["psnr_hole"]) - final) <= SOLVER_SETTLE_DB for q in fista[i:]))
+    fmt = "{:.2f}".format
+    return dict(zip(SOLVER_NAMES, (
+        str(n_patches.pop()), ", ".join(sorted({r["seed"] for r in rerun})), fmt(max(scatter) - min(scatter)),
+        fmt(min(long_gain)), fmt(max(long_gain)), fmt(min(over_long)), fmt(max(over_long)),
+        fmt(min(gain)), fmt(max(gain)), _sci(tols[-1]), _sci(tols[0]), f"{tol_diff:.3f}",
+        f"{min(float(summ[default, f]['iterations_median']) for f in fams):.0f}",
+        f"{max(float(summ[default, f]['iterations_median']) for f in fams):.0f}",
+        f"{min(float(summ[default, f]['seconds_per_cell']) for f in fams):.0f}",
+        f"{max(float(summ[default, f]['seconds_per_cell']) for f in fams):.0f}",
+        f"{min(float(summ['adam2400_cpu', f]['seconds_per_cell']) for f in fams):.0f}",
+        f"{max(float(summ['adam2400_cpu', f]['seconds_per_cell']) for f in fams):.0f}",
+        adam[lowest]["iter"], f"{float(adam[lowest]['psnr_hole']):.1f}", f"{loss[-1] / min(loss):.1f}",
+        fista[-1]["iter"], f"{final:.1f}", f"{SOLVER_SETTLE_DB:g}", settled,
+        f"{float(fista[0]['gap_max']):.1f}", _sci(float(fista[-1]["gap_max"]), 1))))
+
+
 def all_comparison_macros(results: Path = ROOT / "results") -> dict[str, str]:
     return {k: v for prefix, s in COMPARISON_SWEEPS.items()
             for k, v in comparison_macros(prefix, results / s).items()}
@@ -894,7 +998,7 @@ def render() -> str:
               **bu_macros(), **shiftmap_macros(), **dictlearn_cap_macros(), **coherence_macros(),
               **r1_hole_whole_macros(), **all_comparison_macros(), **mechanism_macros(),
               **ablation_macros(), **record_fidelity_macros(), **record_comparison_macros(),
-              **oracle_macros(), **bu_result_macros()}
+              **oracle_macros(), **bu_result_macros(), **solver_macros()}
     lines = ["% GENERATED by scripts/render_numbers_v2.py. Do not edit; re-run the script.",
              "% Every number stated in the running text of the revised manuscript."]
     for k in sorted(macros):

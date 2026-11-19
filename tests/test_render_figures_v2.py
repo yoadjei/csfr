@@ -176,7 +176,7 @@ def test_record_comparison_caption_holds_for_the_committed_numbers():
             csfr["support"] == n["n_hole"] and csfr["components_reached"] == n["n_hole_components"] > 1,
         "the other records are zero outside the part next to $k$":
             all(r["components_reached"] <= 1 for r in others),
-        "and the finite-difference records change with $\delta$":
+        r"and the finite-difference records change with $\delta$":
             all(fd(m, 1) != fd(m, 4) for m in ("inpaint_telea", "inpaint_ns")),
         "linear below $10^{-3}$ of it": _mod().CMP_LINTHRESH == 1e-3,
     }
@@ -292,3 +292,51 @@ def test_accuracy_figure_compares_with_the_strongest_method_and_lama(tmp_path):
     assert cell["capfree"] == {"diff": -1.0, "lo": -1.2, "hi": -0.8}
     assert cell["lama"] == {"diff": 0.5, "lo": 0.2, "hi": 0.8}
     assert data["corpora"][names[-1]]["CF1_L1"]["capfree"] is None      # no cap-free value: not drawn
+
+
+def test_pow10():
+    m = _mod()
+    assert m.pow10(1e-6) == "$10^{-6}$"
+    assert m.pow10(2e-12) == m.sci(2e-12)
+
+
+def _trace(d, budgets=(600,)):
+    import csv
+    d.mkdir(parents=True, exist_ok=True)
+    with (d / "quality_vs_compute.csv").open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["family", "arm", "iterations_median"])
+        w.writeheader()
+        w.writerows({"family": fam, "arm": "adam600_released", "iterations_median": b}
+                    for fam, b in zip(("CF1", "CF2", "CF3", "CF4"), budgets * 4))
+    with (d / "trace_CF2_L5.csv").open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["arm", "iter", "psnr_hole", "objective", "objective_kind", "gap_max"])
+        w.writeheader()
+        for k, (pa, la, pf, g) in zip((25, 100, 600, 2400), ((8, 9.0, 8, 9.1), (9, 1.8, 10, 3.3),
+                                                           (14, 1.3, 20.3, 0.19), (20, 2.8, 20.34, 1e-6))):
+            w.writerow({"arm": "adam", "iter": k, "psnr_hole": pa, "objective": la, "objective_kind": "released",
+                        "gap_max": ""})
+            w.writerow({"arm": "fista", "iter": k, "psnr_hole": pf, "objective": 1.0, "objective_kind": "J",
+                        "gap_max": g})
+    return d
+
+
+def test_convergence_figure_is_pending_without_the_trace(tmp_path):
+    m = _mod()
+    assert m.solver_convergence(fig_dir=tmp_path / "fig", data_dir=tmp_path / "data", d=tmp_path) is None
+    assert not (tmp_path / "fig").exists()
+
+
+def test_convergence_figure_draws_both_solvers_and_their_own_measures(tmp_path):
+    m = _mod()
+    pdf = m.solver_convergence(fig_dir=tmp_path / "fig", data_dir=tmp_path / "data", d=_trace(tmp_path / "sc"))
+    assert b"/FontFile2" in pdf.read_bytes() and b"/Type3" not in pdf.read_bytes()
+    data = json.loads((tmp_path / "data" / "solver_convergence.json").read_text())
+    assert (data["cell"], data["seed"], data["budget"], data["tol"]) == ("CF2_L5", 0, 600, SolverConfig().tol)
+    assert [r["iter"] for r in data["adam"]] == [r["iter"] for r in data["fista"]] == [25, 100, 600, 2400]
+    assert data["adam"][2] == {"iter": 600, "psnr_hole": 14.0, "loss": 1.3}
+    assert data["fista"][3] == {"iter": 2400, "psnr_hole": 20.34, "gap": 1e-6}
+
+
+def test_convergence_figure_refuses_an_ambiguous_released_budget(tmp_path):
+    with pytest.raises(ValueError):
+        _mod().convergence_data(d=_trace(tmp_path, budgets=(600, 2400)))

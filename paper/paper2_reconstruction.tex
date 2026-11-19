@@ -543,11 +543,20 @@ CF4~L5 & 6/11 & Exemplar & $-$0.73 & [$-$1.84, +0.22] & 71 & +0.86 & +0.36 & [+0
 
 The released solver ran Adam for a fixed budget on a different objective (Section~\ref{sec:framework:solver}). Table~\ref{tab:solver} scores its released outputs, a re-run with a four times larger budget, and the convergent solver at three gap tolerances, on the released DFRWS 2006 patches and masks with the hole-only metrics. The two objectives differ, so the comparison is of reconstruction quality against iterations and time, not of objective values.
 
-\resultpending{quality, iterations and time of each arm; what the fixed budget cost the released numbers}
+Under scattered loss the arms agree: their CF1 means differ by at most \solverScatterDiffMax\,dB. Under burst and contiguous loss they do not. Quadrupling the Adam budget raised hole PSNR by \solverAdamLongGainMin\ to \solverAdamLongGainMax\,dB in the CF2 to CF4 family means, and the convergent solver was a further \solverFistaOverLongMin\ to \solverFistaOverLongMax\,dB ahead of that longer run. The released outputs are not an effect of the device: the CPU re-run of the released budget at mask seed~\solverRetimeSeed\ reproduced them bit for bit in every cell. The convergent solver met the certificate on every patch at every tolerance, and the hole PSNR of a cell differed by at most \solverTolDiffMax\,dB between the tolerances $\solverTolLoose$ and $\solverTolTight$, so the choice of tolerance does not move the reported quality. At the default tolerance it took a median of \solverItersMin\ to \solverItersMax\ iterations per patch, depending on the family, and \solverSecMin\ to \solverSecMax\,s per cell of \solverNPatches\ patches, against \solverAdamSecMin\ to \solverAdamSecMax\,s for 2400 Adam iterations on the same CPU.
+
+Fig.~\ref{fig:convergence} follows one cell, CF2~L5 at mask seed~0, past both budgets. Adam's own loss was lowest at \solverTraceLossMinIter\ iterations and \solverTraceLossRatio\ times as high at the last traced point, \solverTraceLastIter\ iterations, while its hole PSNR rose at every traced point. Stopped where its loss was lowest, it would have returned a hole PSNR of \solverTraceLossMinPsnr\,dB, against \solverTraceFinalPsnr\,dB for the certified reconstruction, so its own loss does not say when to stop. The hole PSNR of the convergent solver stayed within \solverSettleTol\,dB of its final value from \solverTraceSettledIter\ iterations on, and its largest gap fell from \solverTraceGapFirst\ to $\solverTraceGapLast$.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{figures/solver_convergence.pdf}
+\caption{Convergence on one cell, DFRWS 2006 CF2~L5 at mask seed~0 (\solverNPatches\ patches), against iterations on a logarithmic axis. (a)~Mean hole PSNR of the released fixed-budget solver (Adam) and of the convergent solver; the dotted line marks the released budget. (b)~The loss the released implementation reports, which is not comparable in value with the objective of Eq.~\eqref{eq:J}. (c)~The largest Frank--Wolfe gap over the patches of the cell; the dashed line marks the default tolerance. Here the convergent solver runs without a tolerance, so every patch takes every iteration. Rendered by \texttt{scripts/\allowbreak render\allowbreak\_figures\allowbreak\_v2.py} from the trace of the solver comparison, with the values shown written to \texttt{results/\allowbreak figures\allowbreak\_v2/}.}
+\label{fig:convergence}
+\end{figure}
 
 \begin{table*}[!t]
 \centering
-\caption{Fixed-budget Adam and the convergent solver on the released DFRWS 2006 patches and masks: hole PSNR (dB) per family, the mean over levels and seeds; time per patch; iterations; share of patches that met the certificate.}
+\caption{Fixed-budget Adam and the convergent solver on the released DFRWS 2006 patches and masks: hole PSNR (dB) per family, the mean over levels and seeds; mean CPU time per cell of \solverNPatches\ patches (s/cell); the median number of iterations per patch; share of patches that met the certificate.}
 \label{tab:solver}
 \footnotesize
 % BEGIN AUTO SOLVER_CMP
@@ -557,14 +566,15 @@ The released solver ran Adam for a fixed budget on a different objective (Sectio
 \cmidrule(lr){2-5}
 Solver & CF1 & CF2 & CF3 & CF4 & s/cell & Iter. & Cert.\ (\%) \\
 \midrule
-Adam, 600 iterations (released, GPU) & 30.09 & 19.68 & 14.49 & 14.57 & 24 & 600 & -- \\
-Adam, 600 iterations (CPU) & -- & -- & -- & -- & 13 & 600 & -- \\
-Adam, 2400 iterations (CPU) & 30.08 & 22.73 & 18.49 & 18.66 & 52 & 2400 & -- \\
-Convergent, gap $10^{-4}$ & 30.13 & 22.82 & 20.22 & 20.62 & 27 & 650 & 100.0 \\
-Convergent, gap $10^{-6}$ (default) & 30.13 & 22.82 & 20.22 & 20.62 & 38 & 905 & 100.0 \\
-Convergent, gap $10^{-10}$ & 30.13 & 22.82 & 20.22 & 20.62 & 750 & 1425 & 100.0 \\
+Adam, 600 iterations (released, GPU) & 30.09 & 19.68 & 14.49 & 14.57 & -- & 600 & -- \\
+Adam, 600 iterations (CPU) & -- & -- & -- & -- & 8 & 600 & -- \\
+Adam, 2400 iterations (CPU) & 30.08 & 22.73 & 18.49 & 18.66 & 31 & 2400 & -- \\
+Convergent, gap $10^{-4}$ & 30.13 & 22.82 & 20.22 & 20.62 & 14 & 650 & 100.0 \\
+Convergent, gap $10^{-6}$ (default) & 30.13 & 22.82 & 20.22 & 20.62 & 20 & 905 & 100.0 \\
+Convergent, gap $10^{-10}$ & 30.13 & 22.82 & 20.22 & 20.62 & 31 & 1425 & 100.0 \\
 \midrule
-\multicolumn{8}{@{}l}{\footnotesize The CPU re-run of the released budget differs from the released outputs by at most 0 grey levels; its row reports time only.} \\
+\multicolumn{8}{@{}l}{\footnotesize The CPU re-run at mask seed~0 reproduces the released outputs bit for bit in every cell; its row reports time only.} \\
+\multicolumn{8}{@{}l}{\footnotesize The released run was timed on its GPU, so its time is not shown.} \\
 \bottomrule
 \end{tabular}
 % END AUTO SOLVER_CMP
@@ -832,7 +842,20 @@ On the primary corpus at one mask seed, the true mask of CF1, CF2 and CF3 at L3 
 \label{tab:maskerr}
 \footnotesize
 % BEGIN AUTO MASKERR
-\textbf{[pending]}
+\begin{tabular}{@{}l*{9}{r}@{}}
+\toprule
+ & \multicolumn{7}{c}{Change in hole PSNR (dB)} & \multicolumn{2}{c}{Wrong mask (\%)} \\
+\cmidrule(lr){2-8}\cmidrule(l){9-10}
+Perturbation & CSFR & Linear & Telea & Navier--Stokes & Biharmonic & Block-DCT thr. & FSR & FP & FN \\
+\midrule
+Erode 1\,px & $-$7.46 & $-$9.66 & $-$4.98 & $-$7.17 & $-$9.15 & $-$12.89 & $-$7.62 & 0.00 & 65.55 \\
+Erode 2\,px & $-$15.01 & $-$19.05 & $-$12.20 & $-$14.23 & $-$14.57 & $-$20.13 & $-$14.78 & 0.00 & 69.94 \\
+Dilate 1\,px & $-$21.16 & $-$19.16 & $-$18.07 & $-$20.15 & $-$22.43 & $-$26.23 & $-$20.68 & 30.00 & 0.00 \\
+Dilate 2\,px & $-$21.16 & $-$19.16 & $-$18.07 & $-$20.15 & $-$22.43 & $-$26.23 & $-$20.69 & 30.00 & 0.00 \\
+Flip 1\% & $-$4.86 & $-$3.77 & $-$3.04 & $-$4.39 & $-$6.10 & $-$9.56 & $-$4.59 & 0.30 & 0.70 \\
+Flip 5\% & $-$9.52 & $-$8.22 & $-$6.99 & $-$8.89 & $-$11.26 & $-$15.13 & $-$9.42 & 1.50 & 3.51 \\
+\bottomrule
+\end{tabular}
 % END AUTO MASKERR
 \end{table*}
 
@@ -958,7 +981,7 @@ CSFR is aimed at analytical and evidential use. It uses no prior learned outside
 
 A record is not unique to CSFR. Linear interpolation has an exact and sparse one that an examiner can read directly: each imputed pixel depends on the few observed pixels of its triangle. Telea and Navier--Stokes inpainting have finite-difference records at the cost of one re-run per observed pixel, and because they work on 8-bit images those records depend on the perturbation chosen (Section~\ref{sec:results:records}). What the convex formulation adds is a record for a global reconstruction. It is dense and signed, as the dependence of a global method is, but it is obtained in closed form at a certified minimiser at the cost of one linear system per row (Section~\ref{sec:results:cost}), and its accuracy is measured against re-solves rather than assumed (Section~\ref{sec:results:fidelity}). Comparable statements about a generative model require interpretability techniques whose own validity is contested~\cite{bhadra2021hallucinations,horsman2024sources}. The study therefore establishes the availability and the measured fidelity of the CSFR record, not exclusive traceability of the method.
 
-The certificate matters for a reason the solver comparison makes concrete (Section~\ref{sec:results:solver}). A fixed-budget solver returns whatever iterate its budget reaches, so its output depends on the budget, the step size and the hardware as well as on the evidence, and a record evaluated there is not the derivative of a defined solution map. \resultpending{what the fixed budget cost the released numbers, and how far its outputs were from the minimiser}
+The certificate matters for a reason the solver comparison makes concrete (Section~\ref{sec:results:solver}). A fixed-budget solver returns whatever iterate its budget reaches, so its output depends on the budget and the step size as well as on the evidence, and a record evaluated there is not the derivative of a defined solution map. On the released DFRWS 2006 patches, the released outputs were \solverGainMin\ to \solverGainMax\,dB below the certified reconstruction in mean hole PSNR under burst and contiguous loss. A four times larger budget closed most of that gap but not all of it, and on the traced cell Adam's own loss was still falling when the released budget stopped it.
 
 \subsection{The Cost of Convexity}
 \label{sec:discussion:convexity}

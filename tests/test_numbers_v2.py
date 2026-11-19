@@ -167,6 +167,21 @@ def test_typed_claims_about_the_primary_comparison_hold():
         "combining and calibrating the statistics adds no discrimination": v["buLogitAurocLow"] != PENDING,
         "it does not meet the rule": v["buNCells"] != PENDING,
         "does not identify the reconstructions that fail": v["buNCells"] != PENDING,
+        # The solver comparison (sec:results:solver, sec:discussion; R1.1, R1.8, R2.3, R2.10).
+        # solver_macros refuses a re-run that is not bit-identical, an uncertified patch, a
+        # structured family where the longer run does not gain, is not passed by the
+        # convergent solver or recovers at most half of the gain, an Adam trace whose PSNR
+        # does not rise at every point, and an Adam loss not still falling at the budget.
+        "Under scattered loss the arms agree": float(v["solverScatterDiffMax"]) < 0.1,
+        "dB ahead of that longer run": v["solverFistaOverLongMin"] != PENDING,
+        "reproduced them bit for bit in every cell": v["solverRetimeSeed"] != PENDING,
+        "The convergent solver met the certificate on every patch at every tolerance": v["solverNPatches"] != PENDING,
+        "so the choice of tolerance does not move the reported quality": float(v["solverTolDiffMax"]) < 0.01,
+        "while its hole PSNR rose at every traced point": v["solverTraceLossMinIter"] != PENDING,
+        "so its own loss does not say when to stop":
+            float(v["solverTraceLossMinPsnr"]) < float(v["solverTraceFinalPsnr"]) - 1.0,
+        "A four times larger budget closed most of that gap but not all of it": v["solverGainMin"] != PENDING,
+        "Adam's own loss was still falling when the released budget stopped it": v["solverGainMin"] != PENDING,
     }
     for sentence, holds in claims.items():
         assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
@@ -784,3 +799,75 @@ def test_bu_result_macros_report_the_rule_as_applied(tmp_path):
 def test_bu_result_macros_refuse_data_that_contradict_the_text(tmp_path, kw):
     with pytest.raises(ValueError):
         _mod().bu_result_macros(_bu(tmp_path, **kw))
+
+
+# ------------------------------------------------------- solver comparison (Section VI-B)
+
+SOLVER_PSNR = {"adam600_released": (30.00, 19.70, 14.50, 14.60), "adam600_cpu": (30.00, 19.70, 14.50, 14.60),
+               "adam2400_cpu": (30.00, 22.70, 18.50, 18.70), "fista_gap1e-04": (30.05, 22.80, 20.20, 20.60),
+               "fista_gap1e-06": (30.05, 22.80, 20.20, 20.60), "fista_gap1e-10": (30.05, 22.80, 20.20, 20.60)}
+SOLVER_ITERS = {"fista_gap1e-06": (260, 820, 990, 1000), "adam2400_cpu": (2400,) * 4}
+SOLVER_SECS = {"fista_gap1e-06": (7.1, 20.3, 24.4, 27.7), "adam2400_cpu": (29.5, 30.4, 30.6, 33.5)}
+
+
+def _solver(tmp_path, psnr=None, converged=300, rerun_diff=0.0, adam_psnr=(10.0, 12.0, 14.0, 15.0),
+            adam_loss=(2.0, 1.5, 1.0, 2.2)):
+    fams = ("CF1", "CF2", "CF3", "CF4")
+    table = {**SOLVER_PSNR, **(psnr or {})}
+    summ, cells = [], []
+    for arm, vals in table.items():
+        for i, f in enumerate(fams):
+            summ.append({"family": f, "arm": arm, "psnr_hole": vals[i],
+                         "seconds_per_cell": SOLVER_SECS.get(arm, (8.0,) * 4)[i],
+                         "iterations_median": SOLVER_ITERS.get(arm, (600,) * 4)[i],
+                         "device": "cuda" if arm == "adam600_released" else "cpu"})
+            for seed in (0, 1):
+                if arm == "adam600_cpu" and seed == 1:
+                    continue
+                tight = 20.0 + i + seed
+                cells.append({"arm": arm, "cell": f"{f}_L1", "seed": seed, "n": 300,
+                              "psnr_hole": tight + (0.0012 if arm == "fista_gap1e-04" and seed == 1 else 0.0),
+                              "n_converged": converged if arm.startswith("fista") else "",
+                              "max_abs_diff_vs_released": rerun_diff if arm == "adam600_cpu" else ""})
+    _write_rows(tmp_path / "quality_vs_compute.csv", summ)
+    _write_rows(tmp_path / "per_cell.csv", cells)
+    iters = (200, 600, 800, 1600)
+    trace = [{"arm": "adam", "iter": k, "psnr_hole": p, "objective": loss, "gap_max": ""}
+             for k, p, loss in zip(iters, adam_psnr, adam_loss)]
+    trace += [{"arm": "fista", "iter": k, "psnr_hole": p, "objective": 1.0, "gap_max": g}
+              for k, p, g in zip(iters, (15.0, 20.005, 20.0, 20.0), (9.13, 0.5, 0.01, 2e-12))]
+    _write_rows(tmp_path / "trace_CF2_L5.csv", trace)
+    return tmp_path
+
+
+def test_solver_macros_say_what_the_fixed_budget_cost(tmp_path):
+    m = _mod()
+    assert set(m.solver_macros(tmp_path).values()) == {m.PLACEHOLDER}
+    q = m.solver_macros(_solver(tmp_path))
+    assert (q["solverNPatches"], q["solverRetimeSeed"], q["solverScatterDiffMax"]) == ("300", "0", "0.05")
+    assert (q["solverAdamLongGainMin"], q["solverAdamLongGainMax"]) == ("3.00", "4.10")
+    assert (q["solverFistaOverLongMin"], q["solverFistaOverLongMax"]) == ("0.10", "1.90")
+    assert (q["solverGainMin"], q["solverGainMax"]) == ("3.10", "6.00")
+    assert (q["solverTolLoose"], q["solverTolTight"], q["solverTolDiffMax"]) == ("10^{-4}", "10^{-10}", "0.001")
+    assert (q["solverItersMin"], q["solverItersMax"], q["solverSecMin"], q["solverSecMax"]) == (
+        "260", "1000", "7", "28")
+    assert (q["solverAdamSecMin"], q["solverAdamSecMax"]) == ("30", "34")
+    assert (q["solverTraceLossMinIter"], q["solverTraceLossMinPsnr"], q["solverTraceLossRatio"]) == (
+        "800", "14.0", "2.2")
+    assert (q["solverTraceLastIter"], q["solverTraceFinalPsnr"]) == ("1600", "20.0")
+    assert (q["solverSettleTol"], q["solverTraceSettledIter"]) == ("0.01", "600")
+    assert (q["solverTraceGapFirst"], q["solverTraceGapLast"]) == ("9.1", r"2.0\times 10^{-12}")
+
+
+@pytest.mark.parametrize("kw", [
+    {"rerun_diff": 1e-6},                                                 # "reproduced ... bit for bit"
+    {"converged": 299},                                                   # "certified every patch"
+    {"psnr": {"adam2400_cpu": (30.0, 19.6, 18.5, 18.7)}},                 # the longer run gains under CF2-CF4
+    {"psnr": {"adam2400_cpu": (30.0, 22.9, 18.5, 18.7)}},                 # the convergent solver is ahead
+    {"psnr": {"adam2400_cpu": (30.0, 22.7, 16.0, 18.7)}},                 # "closed most of that gap"
+    {"adam_psnr": (10.0, 12.0, 11.0, 15.0)},                              # Adam's PSNR "rose at every point"
+    {"adam_loss": (2.0, 1.0, 1.5, 2.2)},                                  # "still falling when the budget stopped it"
+])
+def test_solver_macros_refuse_data_that_contradict_the_text(tmp_path, kw):
+    with pytest.raises(ValueError):
+        _mod().solver_macros(_solver(tmp_path, **kw))

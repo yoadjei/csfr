@@ -32,6 +32,7 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap, SymLogNorm  # noqa: E402
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch  # noqa: E402
+from matplotlib.ticker import FixedLocator, NullFormatter, NullLocator, ScalarFormatter  # noqa: E402
 from scipy.ndimage import label  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -700,8 +701,111 @@ def method_overview(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw) ->
     return draw_overview(data, fig_dir)
 
 
+# ------------------------------------------------------------ solver convergence
+
+CONV_CELL = "CF2_L5"                 # run_solver_comparison --trace-cell (default); its seed 0
+CONV_SERIES = {"adam": ("Adam (released solver)", 1, "s"), "fista": ("convergent solver", 0, "o")}
+CONV_LOSS_TICKS = (1, 2, 5, 10, 20, 50)
+
+
+def pow10(x: float) -> str:
+    """1e-06 -> $10^{-6}$ in mathtext; anything else as sci()."""
+    m, e = f"{x:.0e}".split("e")
+    return f"$10^{{{int(e)}}}$" if m == "1" and float(f"{x:.0e}") == x else sci(x)
+
+
+def convergence_data(d: Path = ROOT / "results" / "solver_comparison", cell: str = CONV_CELL) -> dict | None:
+    """The convergence trace of one cell: hole PSNR of both solvers at each
+    traced iteration, Adam's own (released) loss and the convergent solver's
+    largest Frank-Wolfe gap over the patches, with the released budget and the
+    default gap tolerance. None until the solver comparison has run."""
+    trace = _tables._csv(d / f"trace_{cell}.csv")
+    summ = _tables._csv(d / "quality_vs_compute.csv")
+    if trace is None or summ is None:
+        return None
+    budget = {float(r["iterations_median"]) for r in summ if r["arm"] == "adam600_released"}
+    if len(budget) != 1:
+        raise ValueError(f"released budget not unique: {sorted(budget)}")
+    pts = {arm: [r for r in trace if r["arm"] == arm] for arm in CONV_SERIES}
+    return {"cell": cell, "seed": 0, "budget": int(budget.pop()), "tol": SolverConfig().tol,
+            "adam": [{"iter": int(r["iter"]), "psnr_hole": float(r["psnr_hole"]), "loss": float(r["objective"])}
+                     for r in pts["adam"]],
+            "fista": [{"iter": int(r["iter"]), "psnr_hole": float(r["psnr_hole"]), "gap": float(r["gap_max"])}
+                      for r in pts["fista"]]}
+
+
+def _conv_axis(ax, ylabel: str, xticks: list[int]) -> None:
+    ax.set_xscale("log")
+    ax.xaxis.set_major_locator(FixedLocator(xticks))
+    ax.xaxis.set_major_formatter(ScalarFormatter())
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.set_ylabel(ylabel)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(True, color="#e4e3df", lw=0.4)
+    ax.set_axisbelow(True)
+
+
+def draw_convergence(data: dict, fig_dir: Path = FIG_DIR, name: str = "solver_convergence") -> Path:
+    """Three panels over the same iteration axis (log), one quantity each, so no
+    panel needs a second y-scale: (a) hole PSNR of both solvers, (b) Adam's own
+    loss, (c) the convergent solver's gap (log) against the default tolerance.
+    The released budget is marked where Adam is drawn."""
+    adam, fista = data["adam"], data["fista"]
+    xticks = [adam[0]["iter"], 100, data["budget"], 4 * data["budget"]]       # the budgets of Table SOLVER_CMP
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(3, 1, figsize=(3.5, 4.2), sharex=True, layout="constrained")
+        for arm, rows in (("adam", adam), ("fista", fista)):
+            label, slot, marker = CONV_SERIES[arm]
+            axes[0].plot([r["iter"] for r in rows], [r["psnr_hole"] for r in rows], marker=marker, ms=3.2,
+                         lw=1.0, color=SERIES[slot], mfc=SERIES[slot], mec="white", mew=0.5, label=label)
+        _conv_axis(axes[0], "Hole PSNR (dB)", xticks)
+        axes[0].legend(loc="lower right", frameon=False, handletextpad=0.4)
+        axes[0].set_title("(a) Quality of the iterate", loc="left")
+
+        _, slot, marker = CONV_SERIES["adam"]
+        loss = [r["loss"] for r in adam]
+        axes[1].plot([r["iter"] for r in adam], loss, marker=marker, ms=3.2, lw=1.0, color=SERIES[slot],
+                     mfc=SERIES[slot], mec="white", mew=0.5)
+        low = adam[loss.index(min(loss))]
+        axes[1].set_yscale("log")
+        axes[1].set_ylim(0.4 * min(loss), 1.4 * max(loss))   # room for the label
+        axes[1].yaxis.set_major_locator(FixedLocator(CONV_LOSS_TICKS))
+        axes[1].yaxis.set_major_formatter(ScalarFormatter())
+        axes[1].yaxis.set_minor_formatter(NullFormatter())
+        axes[1].annotate(f"lowest at {low['iter']}", (low["iter"], low["loss"]), xytext=(2, -5),
+                         textcoords="offset points", ha="left", va="top", fontsize=7, color=INK_MUTED)
+        _conv_axis(axes[1], "Released loss", xticks)
+        axes[1].set_title("(b) Adam: its own loss", loc="left")
+
+        _, slot, marker = CONV_SERIES["fista"]
+        axes[2].plot([r["iter"] for r in fista], [r["gap"] for r in fista], marker=marker, ms=3.2, lw=1.0,
+                     color=SERIES[slot], mfc=SERIES[slot], mec="white", mew=0.5)
+        axes[2].axhline(data["tol"], color=INK_MUTED, lw=0.6, ls="--")
+        axes[2].text(adam[0]["iter"], data["tol"], f"default tolerance {pow10(data['tol'])}", fontsize=7,
+                     color=INK_MUTED, va="bottom")
+        axes[2].set_yscale("log")
+        _conv_axis(axes[2], "Largest gap", xticks)
+        axes[2].set_title("(c) Convergent solver: Frank–Wolfe gap", loc="left")
+        axes[2].set_xlabel("Iterations")
+
+        for ax in axes[:2]:
+            ax.axvline(data["budget"], color=INK_MUTED, lw=0.6, ls=":")
+        axes[0].text(data["budget"], axes[0].get_ylim()[0], "released budget ", fontsize=7, color=INK_MUTED,
+                     va="bottom", ha="right")
+        return _save(fig, name, fig_dir)
+
+
+def solver_convergence(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw) -> Path | None:
+    data = convergence_data(**kw)
+    if data is None:
+        return None
+    _write_json(data_dir / "solver_convergence.json", data)
+    return draw_convergence(data, fig_dir)
+
+
 FIGURES = {"method_overview": method_overview, "accuracy_by_level": accuracy_by_level,
-           "record_walkthrough": record_walkthrough, "record_comparison": record_comparison}
+           "record_walkthrough": record_walkthrough, "record_comparison": record_comparison,
+           "solver_convergence": solver_convergence}
 
 
 def main(argv: list[str] | None = None) -> int:
