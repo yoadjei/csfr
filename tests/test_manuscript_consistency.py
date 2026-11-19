@@ -35,8 +35,10 @@ ROOT = Path(__file__).resolve().parent.parent
 TEX = ROOT / "paper" / "paper2_reconstruction.tex"
 RESULTS = ROOT / "results"
 
-# venue caps at FSI:Digital Investigation and IEEE TIFS.
+# the abstract cap of IEEE Access (and of FSI:Digital Investigation and IEEE TIFS)
 ABSTRACT_WORD_CAP = 250
+# words reserved for each result still pending in the abstract (it becomes sentences)
+PENDING_RESERVE = 35
 
 
 @pytest.fixture(scope="module")
@@ -51,12 +53,21 @@ def section(tex: str, start: str, end: str) -> str:
 
 
 def test_abstract_within_venue_cap(tex):
+    """Number macros count as the values they print; a pending result counts as
+    PENDING_RESERVE words, the room its sentences will need."""
+    values = dict(re.findall(r"\\providecommand\{\\([A-Za-z]+)\}\{(.*)\}$",
+                             (ROOT / "paper" / "numbers_v2.tex").read_text(encoding="utf-8"), re.M))
+    assert len(values) > 100, f"numbers_v2.tex gave {len(values)} macros; the pattern has rotted"
     body = section(tex, r"\begin{abstract}", r"\end{abstract}")
-    body = re.sub(r"\\[a-zA-Z]+", "", body)
-    body = re.sub(r"[${}~\\]", " ", body)
+    n_pending = len(re.findall(r"\\resultpending\{[^}]*\}", body))
+    body = re.sub(r"\\resultpending\{[^}]*\}", " ", body)
+    body = re.sub(r"\\([a-zA-Z]+)", lambda m: f" {values.get(m.group(1), '')} ", body)
+    body = re.sub(r"[${}~\\,]", " ", body)
     words = [w for w in body.split() if any(c.isalnum() for c in w)]
-    assert len(words) <= ABSTRACT_WORD_CAP, (
-        f"abstract is {len(words)} words, cap is {ABSTRACT_WORD_CAP}")
+    total = len(words) + PENDING_RESERVE * n_pending
+    assert total <= ABSTRACT_WORD_CAP, (
+        f"abstract is {len(words)} words and {n_pending} pending result(s) reserved at {PENDING_RESERVE}: "
+        f"{total}, cap is {ABSTRACT_WORD_CAP}")
 
 
 # every method the primary sweep runs, and the words that name it in §V-C

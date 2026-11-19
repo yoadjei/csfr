@@ -202,6 +202,33 @@ def test_typed_claims_about_the_primary_comparison_hold():
             v["maskDilateGulMin"] != PENDING,
         "and a two-pixel erosion leaves none in any": v["maskCFoneErodeNoneLfive"] != PENDING,
         "so the most accurate method loses most": float(v["maskCFoneDilateOverFloorMax"]) < 0.5,
+        # Abstract (R2.13) and Conclusion.
+        "block-DCT thresholding is ahead of CSFR under scattered loss at every level":
+            v["qGovCFoneStrongest"] == "block-DCT thresholding" and v["qGovCFoneNFirst"] == "0",
+        "and LaMa is ahead under burst loss":
+            v["qGovCFtwoLamaAheadMax"] == "--" and v["qGovCFtwoNLamaBehindSig"] == "5",
+        r"Under contiguous loss CSFR is \qGovCFfourBehindMin\ to \qGovCFthreeBehindMax\,dB behind the strongest":
+            v["qGovCFthreeNFirst"] == v["qGovCFfourNFirst"] == "0"
+            and float(v["qGovCFfourBehindMin"]) <= float(v["qGovCFthreeBehindMin"])
+            and float(v["qGovCFthreeBehindMax"]) >= float(v["qGovCFfourBehindMax"]),
+        "on the other patches it is ahead at every level":
+            v["qGovCFthreeCapfreeNAhead"] == v["qGovCFfourCapfreeNAhead"] == "5",
+        "because it fills blank page slightly dark where other methods reproduce it exactly":
+            v["mechContigBiasMin"] != PENDING,
+        "is more accurate than CSFR under scattered loss at every level of all three corpora, and LaMa under burst "
+        "loss on the primary corpus and on DFRWS 2006":
+            all(v[f"q{c}CFoneStrongest"] == "block-DCT thresholding" and v[f"q{c}CFoneNFirst"] == "0"
+                for c in ("Gov", *SECONDARY))
+            and v["qGovCFtwoLamaAheadMax"] == v["qDfrwsCFtwoLamaAheadMax"] == "--",
+        "and ahead of it on the other patches at every level":
+            v["qGovCFthreeCapfreeNAhead"] == v["qGovCFfourCapfreeNAhead"] == "5",
+        r"it is first at some contiguous-loss levels and elsewhere at most \qDfrwsCFthreeBehindMax":
+            sum(int(v[f"q{c}{f}NFirst"]) for c in SECONDARY for f in ("CFthree", "CFfour")) > 0
+            and float(v["qDfrwsCFthreeBehindMax"]) == max(float(v[f"q{c}{f}BehindMax"])
+                                                         for c in SECONDARY for f in ("CFthree", "CFfour")),
+        "a lost pixel wrongly marked observed costs far more than an observed pixel wrongly marked missing":
+            float(v["maskErodeAnyMax"]) < float(v["maskDilateCsfrMin"]) and v["maskDilateGulMin"] != PENDING,
+        "and every failure is next to the hole": v["recFarN"] != PENDING,
     }
     for sentence, holds in claims.items():
         assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
