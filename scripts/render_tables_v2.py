@@ -206,6 +206,9 @@ def ocr(d: Path = OCR_DIR) -> str | None:
     if rows is None:
         return None
     s = {(r["family"], r["level"], r["method"]): r for r in rows}
+    methods = {r["method"] for r in rows}
+    if EXTERNAL not in methods or not _complete(set(s), FAMILIES, MAIN_LEVELS, methods):
+        return None                                # LaMa not recognised yet, or a cell missing
     return cell_table(s, "cer_mean", False, 3, MAIN_LEVELS, set(), [], OCR_FLOOR, "ocr")
 
 
@@ -222,6 +225,14 @@ def downstream_v2(d: Path = DOWNSTREAM_DIR) -> str | None:
     if met is None or st is None:
         return None
     alias = lambda m: DOWNSTREAM_ALIAS.get(m, m)  # noqa: E731
+    cells = [r for r in met if r["family"] != "clean"]
+    methods_all = {r["method"] for r in cells}
+    for clf, _ in CLASSIFIERS:                     # both classifiers, every cell, LaMa scored
+        keys = {(r["family"], r["level"], r["method"]) for r in cells if r["classifier"] == clf}
+        if EXTERNAL not in methods_all or not _complete(keys, FAMILIES, ALL_LEVELS, methods_all):
+            return None
+        if not any(r["classifier"] == clf and r["family"] == "clean" for r in met):
+            return None
     present = {alias(r["method"]) for r in met if r["family"] != "clean"}
     methods = [(k, n) for k, n in [*METHOD_ORDER, FLOOR] if k in present]
     body = []
@@ -272,6 +283,14 @@ def _csv(path: Path) -> list[dict] | None:
         return None
     with path.open(encoding="utf-8") as f:
         return list(csv.DictReader(f))
+
+
+def _complete(keys: set[tuple], *axes) -> bool:
+    """Whether `keys` hold every combination of the axes. A stage that rewrites
+    its CSV as it goes, or is scored a second time with LaMa, leaves some out
+    until it is done (L28)."""
+    import itertools
+    return all(k in keys for k in itertools.product(*axes))
 
 
 COMPARISON_SPEC = r"@{}l c l r c r r r c@{}"
@@ -793,6 +812,7 @@ def _cell_label(c: str) -> str:
 
 
 FULLRES_DIR = ROOT / "results" / "fullres"
+FULLRES_CORRUPTIONS = ("CF1_L3", "CF2_L3", "CF3_L3")   # as Section VI-J states them
 
 
 def fullres(d: Path = FULLRES_DIR) -> str | None:
@@ -801,6 +821,13 @@ def fullres(d: Path = FULLRES_DIR) -> str | None:
     summ, cost = _csv(d / "summary.csv"), _csv(d / "cost.csv")
     if summ is None or cost is None:
         return None
+    methods_all = {r["method"] for r in summ}
+    if (EXTERNAL not in methods_all
+            or not _complete({(r["corruption"], r["method"]) for r in summ}, FULLRES_CORRUPTIONS, methods_all)
+            or len({r["n_images"] for r in summ}) != 1
+            or not _complete({(r["corruption"], r["method"]) for r in cost}, FULLRES_CORRUPTIONS,
+                             methods_all - {EXTERNAL})):
+        return None                                # scored before LaMa, or an image or method missing
     corrs = list(dict.fromkeys(r["corruption"] for r in summ))
     by = {(r["corruption"], r["method"]): r for r in summ}
     present = {r["method"] for r in summ}
@@ -821,6 +848,7 @@ def fullres(d: Path = FULLRES_DIR) -> str | None:
 
 
 BENCH_DIR = ROOT / "results" / "bench_v2"
+BENCH_CELLS = ("CF1_L3", "CF2_L5", "CF3_L5")      # scripts/run_bench_v2.py CELLS
 
 
 def bench_v2(d: Path = BENCH_DIR) -> str | None:
@@ -828,7 +856,9 @@ def bench_v2(d: Path = BENCH_DIR) -> str | None:
     in resident memory; for CSFR also the median iterations and the time of one
     record row."""
     rows = _csv(d / "runtime_memory.csv")
-    if rows is None:
+    if rows is None or not (d / "environment.json").exists():
+        return None                                # the bench writes environment.json when it is done
+    if not _complete({(r["cell"], r["method"]) for r in rows}, BENCH_CELLS, {r["method"] for r in rows}):
         return None
     cells = list(dict.fromkeys(r["cell"] for r in rows))
     by = {(r["cell"], r["method"]): r for r in rows}

@@ -157,7 +157,8 @@ X^{\star} = \arg\min_{X}\; J(X) \quad \text{s.t.} \quad X_{\Omega} = Y_{\Omega},
 \begin{aligned}
 J(X) = {} & \frac{\lambda_{\ell_1}}{N} \sum_{(k,l) \neq (0,0)} \phi_{\varepsilon}(A_{kl})
 \;+\; \frac{\lambda_{\mathrm{FC}}}{N} \sum_{(k,l) \in \mathcal{H}} A_{kl}^{2} \\
-& +\; \lambda_{\mathrm{TV}} \Bigl[ \frac{1}{N_{v}} \sum_{r,c} \phi_{\varepsilon}\bigl((\nabla_{v} X)_{rc}\bigr) + \frac{1}{N_{h}} \sum_{r,c} \phi_{\varepsilon}\bigl((\nabla_{h} X)_{rc}\bigr) \Bigr],
+& +\; \frac{\lambda_{\mathrm{TV}}}{N_{v}} \sum_{r,c} \phi_{\varepsilon}\bigl((\nabla_{v} X)_{rc}\bigr) \\
+& +\; \frac{\lambda_{\mathrm{TV}}}{N_{h}} \sum_{r,c} \phi_{\varepsilon}\bigl((\nabla_{h} X)_{rc}\bigr),
 \end{aligned}
 \end{equation}
 with $\lambda_{\ell_1} = \csfrLamLone$, $\lambda_{\mathrm{TV}} = \csfrLamTV$, $\lambda_{\mathrm{FC}} = \csfrLamFC$ and $\varepsilon = \csfrEps$ grey level for every patch, corpus and corruption family. Equation~\eqref{eq:objective} is the problem the released code solves; there is no separate idealised programme and no penalised surrogate. Four choices in it are deliberate.
@@ -638,6 +639,7 @@ Every failure is next to the hole. Of the \recNearN\ queries at distance 1, \rec
 \caption{Sensitivity record fidelity on GovDocs1 at a perturbation of one grey level: median and 90th percentile of the relative error against the reference re-solve, SRF against the reference (ref) and the operational re-solve (op), sign agreement of the largest entries, and time per record row.}
 \label{tab:fidelity}
 \footnotesize
+\setlength{\tabcolsep}{5pt}
 % BEGIN AUTO FIDELITY
 \begin{tabular}{@{}l r r r r r r r@{}}
 \toprule

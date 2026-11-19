@@ -483,7 +483,7 @@ def test_main_splices_only_the_tags_named(monkeypatch):
 def test_fullres_and_bench_note_the_isolated_method(tmp_path):
     m = _mod()
     corrs = ("CF1_L3", "CF2_L3", "CF3_L3")
-    _write_csv(tmp_path / "summary.csv", [{"corruption": c, "method": k, "psnr_hole": 30.0}
+    _write_csv(tmp_path / "summary.csv", [{"corruption": c, "method": k, "n_images": 3, "psnr_hole": 30.0}
                                           for c in corrs for k in ("csfr", "shiftmap", "lama")])
     _write_csv(tmp_path / "cost.csv", [{"corruption": c, "image": i, "method": k, "seconds": s, "rss_peak_delta_mb": mb}
                                        for c in corrs for i in range(3) for k, s, mb in
@@ -496,6 +496,7 @@ def test_fullres_and_bench_note_the_isolated_method(tmp_path):
               **({"iterations_median": 800.0, "record_ms_per_query": 4.25} if k == "csfr" else {})}
              for c in ("CF1_L3", "CF2_L5", "CF3_L5") for k, ms in (("csfr", 40.0), ("bilinear", 1.25))]
     _write_csv(tmp_path / "runtime_memory.csv", bench)
+    (tmp_path / "environment.json").write_text("{}")
     lines = _body(m.bench_v2(tmp_path))
     assert lines[0] == r"CSFR & 40.0 & 40.0 & 40.0 & 12 \\"
     assert "median iterations 800 / 800 / 800; one record row 4.2 / 4.2 / 4.2" in lines[-1]
@@ -506,7 +507,7 @@ def test_ocr_bolds_the_lowest_error_and_sets_the_input_apart(tmp_path):
     m = _mod()
     rows = [{"family": f, "level": lv, "method": k, "cer_mean": v}
             for f in m.FAMILIES for lv in m.MAIN_LEVELS
-            for k, v in (("csfr", 0.12), ("guleryuz", 0.10), ("corrupted_input", 0.05))]
+            for k, v in (("csfr", 0.12), ("guleryuz", 0.10), ("lama", 0.11), ("corrupted_input", 0.05))]
     _write_csv(tmp_path / "summary.csv", rows)
     lines = _body(m.ocr(tmp_path))
     assert lines[1].split(" & ")[1] == r"\textbf{0.100}"            # lowest among compared methods
@@ -520,8 +521,8 @@ def test_downstream_v2_accuracy_ece_and_significance_counts(tmp_path):
         met.append({"classifier": clf, "family": "clean", "level": "", "method": "clean", "accuracy": 0.95,
                     "ece_ts": 0.01})
         for f in m.FAMILIES:
-            for lv in ("L1", "L5"):
-                for k, acc in (("csfr", 0.8 if lv == "L1" else 0.6), ("telea", 0.5)):
+            for lv in m.ALL_LEVELS:
+                for k, acc in (("csfr", {"L1": 0.9, "L5": 0.5}.get(lv, 0.7)), ("telea", 0.5), ("lama", 0.6)):
                     met.append({"classifier": clf, "family": f, "level": lv, "method": k, "accuracy": acc,
                                 "ece_ts": 0.05})
                 st.append({"classifier": clf, "family": f, "level": lv, "method": "telea",
@@ -531,7 +532,7 @@ def test_downstream_v2_accuracy_ece_and_significance_counts(tmp_path):
     lines = _body(m.downstream_v2(tmp_path))
     assert lines[0] == (r"CSFR & 0.700 & 0.700 & 0.700 & 0.700 & 0.050 & -- & 0.700 & 0.700 & 0.700 & 0.700 "
                         r"& 0.050 & -- \\")
-    assert lines[1].startswith("Telea & 0.500") and lines[1].endswith(r"& 0.050 & 6/0 \\")
+    assert lines[1].startswith("Telea & 0.500") and lines[1].endswith(r"& 0.050 & 15/0 \\")
     assert "CNN 0.950, ResNet 0.950" in lines[-1]
 
 
@@ -740,3 +741,69 @@ def test_supp_convergence_waits_for_every_seed_and_refuses_mixed_tolerances(tmp_
     p.write_text(json.dumps(c), encoding="utf-8")
     with pytest.raises(ValueError):
         m.supp_convergence(root)
+
+
+def test_generators_of_running_stages_wait_for_complete_results(tmp_path):
+    """FULLRES, BENCH_V2, OCR and DOWNSTREAM_V2 give None while their source is
+    partial: a cell or method missing, or the LaMa pass not yet scored (L28)."""
+    m = _mod()
+    corrs = m.FULLRES_CORRUPTIONS
+    summ = [{"corruption": c, "method": k, "n_images": 3, "psnr_hole": 30.0} for c in corrs for k in ("csfr", "lama")]
+    cost = [{"corruption": c, "image": 0, "method": "csfr", "seconds": 1.0, "rss_peak_delta_mb": 1.0} for c in corrs]
+    d = tmp_path / "fullres"
+    d.mkdir()
+    _write_csv(d / "cost.csv", cost)
+    _write_csv(d / "summary.csv", [r for r in summ if r["method"] != "lama"])
+    assert m.fullres(d) is None                                         # before the LaMa pass
+    _write_csv(d / "summary.csv", summ[:-1])
+    assert m.fullres(d) is None                                         # a corruption without LaMa
+    _write_csv(d / "summary.csv", [{**r, "n_images": 2 if r["method"] == "lama" else 3} for r in summ])
+    assert m.fullres(d) is None                                         # LaMa on fewer images
+    _write_csv(d / "cost.csv", cost[:-1])
+    _write_csv(d / "summary.csv", summ)
+    assert m.fullres(d) is None                                         # a cost row missing
+    _write_csv(d / "cost.csv", cost)
+    assert m.fullres(d) is not None
+
+    d = tmp_path / "bench"
+    d.mkdir()
+    rows = [{"cell": c, "method": k, "ms_per_patch": 1.0, "rss_peak_delta_mb": 1.0,
+             **({"iterations_median": 800.0, "record_ms_per_query": 4.0} if k == "csfr" else {})}
+            for c in m.BENCH_CELLS for k in ("csfr", "bilinear")]
+    _write_csv(d / "runtime_memory.csv", rows[:-1])
+    (d / "environment.json").write_text("{}")
+    assert m.bench_v2(d) is None                                        # last method of the last cell running
+    _write_csv(d / "runtime_memory.csv", rows)
+    (d / "environment.json").unlink()
+    assert m.bench_v2(d) is None                                        # the bench has not finished
+    (d / "environment.json").write_text("{}")
+    assert m.bench_v2(d) is not None
+
+    d = tmp_path / "ocr"
+    d.mkdir()
+    rows = [{"family": f, "level": lv, "method": k, "cer_mean": 0.1}
+            for f in m.FAMILIES for lv in m.MAIN_LEVELS for k in ("csfr", "corrupted_input")]
+    _write_csv(d / "summary.csv", rows)
+    assert m.ocr(d) is None                                             # LaMa not recognised yet
+    lama = [{**r, "method": "lama"} for r in rows if r["method"] == "csfr"]
+    _write_csv(d / "summary.csv", rows + lama[:-1])
+    assert m.ocr(d) is None
+    _write_csv(d / "summary.csv", rows + lama)
+    assert m.ocr(d) is not None
+
+    d = tmp_path / "downstream"
+    d.mkdir()
+    met = [{"classifier": clf, "family": f, "level": lv, "method": k, "accuracy": 0.5, "ece_ts": 0.05}
+           for clf, _ in m.CLASSIFIERS for f in m.FAMILIES for lv in m.ALL_LEVELS for k in ("csfr", "lama")]
+    clean = [{"classifier": clf, "family": "clean", "level": "", "method": "clean", "accuracy": 0.9, "ece_ts": 0.01}
+             for clf, _ in m.CLASSIFIERS]
+    _write_csv(d / "stats.csv", [{"classifier": "cnn", "family": "CF1", "level": "L1", "method": "lama",
+                                  "statistic": 1, "p_holm": 0.5}])
+    _write_csv(d / "metrics.csv", clean + [r for r in met if r["classifier"] == "cnn"])
+    assert m.downstream_v2(d) is None                                   # the second classifier not run
+    _write_csv(d / "metrics.csv", clean + [r for r in met if r["method"] != "lama"])
+    assert m.downstream_v2(d) is None                                   # LaMa not scored
+    _write_csv(d / "metrics.csv", clean[:1] + met)
+    assert m.downstream_v2(d) is None                                   # a classifier without its clean row
+    _write_csv(d / "metrics.csv", clean + met)
+    assert m.downstream_v2(d) is not None
