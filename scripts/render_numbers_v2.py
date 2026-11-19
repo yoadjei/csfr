@@ -954,6 +954,107 @@ def convergence_macros(results: Path = ROOT / "results") -> dict[str, str]:
         f"{max(i for _, i in tv):.0f}", _sci(max(gaps), 1), f"{max(gaps) / tol:.1f}")))
 
 
+MASKERR_NAMES = ("maskErodeFnMax", "maskErodeCsfrMax", "maskErodeAnyMax", "maskDilateFpMin", "maskDilateFpMax",
+                 "maskDilateCsfrMin", "maskDilateCsfrMax", "maskDilateCsfrOverFloorMax", "maskDilateGulMin",
+                 "maskDilateGulMax", "maskFlipCsfrMin", "maskFlipCsfrMax", "maskCFoneDilateAllObs",
+                 "maskCFoneDilateFpLfive", "maskCFoneDilateOverFloorMax", "maskCFoneErodeFnLthree",
+                 "maskCFoneErodeNoneLfive", "maskCFoneFlipCsfrMin", "maskCFoneFlipCsfrMax", "maskCFoneFlipOtherMin",
+                 "maskCFoneFlipOtherMax")
+
+
+def maskerr_macros(d: Path = ROOT / "results" / "mask_robustness") -> dict[str, str]:
+    """The mask-error experiment (Section VI-H; Table MASKERR), from the same
+    reading as the table (render_tables_v2.maskerr_results: robustness.csv and
+    geometry.csv). A loss is minus the change in hole PSNR against the true mask;
+    "over floor" is a wrong-mask hole PSNR minus that of the zero-filled input.
+    Methods that return the floor with the true mask (linear interpolation under
+    CF3) are left out of every comparison, as in the table.
+
+    Burst and contiguous loss (CF2, CF3):
+      ErodeFnMax          the largest share of the observed pixels an erosion marks missing (%)
+      ErodeCsfrMax, ErodeAnyMax   the largest loss under erosion, of CSFR and of any method
+      DilateFp            the share of the hole a one-pixel dilation marks observed (%)
+      DilateCsfr          CSFR's loss under a one-pixel dilation
+      DilateCsfrOverFloorMax      CSFR over the floor under any dilation
+      DilateGul           block-DCT thresholding's loss under a one-pixel dilation
+      FlipCsfr            CSFR's loss when one percent of the pixels are flipped
+    Scattered loss (CF1):
+      DilateAllObs        L3 patches whose whole hole a one-pixel dilation marks observed
+      DilateFpLfive       the share of the L5 hole a one-pixel dilation marks observed (%)
+      DilateOverFloorMax  any method over the floor under any dilation
+      ErodeFnLthree       the share of the L3 observed pixels a one-pixel erosion marks missing (%)
+      ErodeNoneLfive      L5 patches a one-pixel erosion leaves with no observed pixel
+      FlipCsfr, FlipOther the loss of CSFR and of the other methods at one percent flipped
+
+    The text states the following, and the macros are refused if any fails: every
+    false positive carries 0; after every dilation each observed pixel next to the
+    remaining hole is a false positive; under CF2 and CF3 every method loses more
+    from a one-pixel dilation than from a two-pixel erosion in every cell, and
+    block-DCT thresholding loses least under every dilation; a two-pixel erosion
+    leaves no L5 patch of CF1 with an observed pixel."""
+    t = _tables()
+    res = t.maskerr_results(d)
+    if res is None:
+        return _pending(*MASKERR_NAMES)
+    by, geo, cells = res["by"], res["geo"], res["cells"]
+    methods = [k for k, _ in res["methods"]]
+    structured = [c for c in cells if not c.startswith("CF1_")]
+    if sorted(c for c in cells if c.startswith("CF1_")) != ["CF1_L3", "CF1_L5"]:
+        raise ValueError(f"the text describes CF1 at L3 and L5, the experiment has {sorted(cells)}")
+
+    def loss(c: str, p: str, k: str) -> float:
+        return -float(by[c, p, k]["degradation_mean"])
+
+    def over_floor(c: str, p: str, k: str) -> float:
+        return float(by[c, p, k]["psnr_hole_mean"]) - float(geo[c, "exact"]["zero_fill_psnr_hole"])
+
+    def compared(c: str) -> list[str]:
+        return [k for k in methods if (c, k) not in res["at_floor"]]
+
+    erodes = [p for p in res["perts"] if p.startswith("erode")]
+    dilates = [p for p in res["perts"] if p.startswith("dilate")]
+    if (erodes[-1], dilates[0]) != ("erode2", "dilate1") or "flip1pct" not in res["perts"]:
+        raise ValueError(f"the text names erosion by two pixels, dilation by one and a one percent flip: {res['perts']}")
+    fp_vals = [float(g["fp_value_max"]) for g in geo.values() if g["fp_value_max"] not in ("", "nan")]
+    if not fp_vals or max(fp_vals) != 0.0:
+        raise ValueError("a false positive does not carry the value 0")
+    borders = [float(geo[c, p]["border_fp_share"]) for c in cells for p in dilates
+               if geo[c, p]["border_fp_share"] not in ("", "nan")]
+    if not borders or min(borders) != 1.0:
+        raise ValueError("after a dilation an observed pixel next to the remaining hole is truly observed")
+    for c in structured:
+        if any(loss(c, "dilate1", k) <= loss(c, "erode2", k) for k in compared(c)):
+            raise ValueError(f"{c}: a method loses less from a one-pixel dilation than from a two-pixel erosion")
+        for p in dilates:
+            if min(compared(c), key=lambda k: loss(c, p, k)) != "guleryuz":
+                raise ValueError(f"{c} {p}: block-DCT thresholding does not lose least")
+    n_patches = int(geo["CF1_L5", "erode2"]["n"])
+    if int(geo["CF1_L5", "erode2"]["n_none_observed"]) != n_patches:
+        raise ValueError("a two-pixel erosion of CF1 L5 leaves an observed pixel")
+    others = [loss(c, "flip1pct", k) for c in ("CF1_L3", "CF1_L5") for k in compared(c) if k != "csfr"]
+    return dict(zip(MASKERR_NAMES, (
+        f"{100 * max(float(geo[c, p]['fn_share_of_observed']) for c in structured for p in erodes):.0f}",
+        f"{max(loss(c, p, 'csfr') for c in structured for p in erodes):.1f}",
+        f"{max(loss(c, p, k) for c in structured for p in erodes for k in compared(c)):.1f}",
+        f"{100 * min(float(geo[c, 'dilate1']['fp_share_of_hole']) for c in structured):.1f}",
+        f"{100 * max(float(geo[c, 'dilate1']['fp_share_of_hole']) for c in structured):.0f}",
+        f"{min(loss(c, 'dilate1', 'csfr') for c in structured):.1f}",
+        f"{max(loss(c, 'dilate1', 'csfr') for c in structured):.1f}",
+        f"{max(over_floor(c, p, 'csfr') for c in structured for p in dilates):.2f}",
+        f"{min(loss(c, 'dilate1', 'guleryuz') for c in structured):.1f}",
+        f"{max(loss(c, 'dilate1', 'guleryuz') for c in structured):.1f}",
+        f"{min(loss(c, 'flip1pct', 'csfr') for c in structured):.1f}",
+        f"{max(loss(c, 'flip1pct', 'csfr') for c in structured):.1f}",
+        str(int(geo["CF1_L3", "dilate1"]["n_hole_all_observed"])),
+        f"{100 * float(geo['CF1_L5', 'dilate1']['fp_share_of_hole']):.1f}",
+        f"{max(over_floor(c, p, k) for c in ('CF1_L3', 'CF1_L5') for p in dilates for k in compared(c)):.2f}",
+        f"{100 * float(geo['CF1_L3', 'erode1']['fn_share_of_observed']):.1f}",
+        str(int(geo["CF1_L5", "erode1"]["n_none_observed"])),
+        f"{min(loss(c, 'flip1pct', 'csfr') for c in ('CF1_L3', 'CF1_L5')):.1f}",
+        f"{max(loss(c, 'flip1pct', 'csfr') for c in ('CF1_L3', 'CF1_L5')):.1f}",
+        f"{min(others):.1f}", f"{max(others):.1f}")))
+
+
 SOLVER_NAMES = ("solverNPatches", "solverRetimeSeed", "solverScatterDiffMax", "solverAdamLongGainMin",
                 "solverAdamLongGainMax", "solverFistaOverLongMin", "solverFistaOverLongMax", "solverGainMin",
                 "solverGainMax", "solverTolLoose", "solverTolTight", "solverTolDiffMax", "solverItersMin",
@@ -1070,7 +1171,7 @@ def render() -> str:
               **r1_hole_whole_macros(), **all_comparison_macros(), **mechanism_macros(),
               **ablation_macros(), **record_fidelity_macros(), **record_comparison_macros(),
               **oracle_macros(), **bu_result_macros(), **solver_macros(),
-              **convergence_macros()}
+              **convergence_macros(), **maskerr_macros()}
     lines = ["% GENERATED by scripts/render_numbers_v2.py. Do not edit; re-run the script.",
              "% Every number stated in the running text of the revised manuscript."]
     for k in sorted(macros):

@@ -699,38 +699,88 @@ def perturbation_name(p: str) -> str:
     raise ValueError(f"unknown perturbation {p}")
 
 
-def maskerr(d: Path = MASKERR_DIR, cells: tuple[str, ...] = MASKERR_CELLS) -> str | None:
-    """Per perturbation: each method's mean change in hole PSNR against the true
-    mask (perturbed minus exact, paired by patch), averaged over the cells, and
-    the realised false-positive and false-negative shares of the wrong mask.
-    The run rewrites robustness.csv after every cell and is scored a second time
-    with LaMa, so the table waits until every cell has every perturbation, each
-    with a LaMa row."""
-    rows = _csv(d / "robustness.csv")
-    if rows is None:
+AT_FLOOR_DB = 1e-6   # a method this close to zero fill with the true mask returns the floor
+
+
+def maskerr_results(d: Path = MASKERR_DIR, cells: tuple[str, ...] = MASKERR_CELLS) -> dict | None:
+    """The mask-error results keyed for the tables and the text, or None until
+    they are complete. The run rewrites robustness.csv after every cell and is
+    scored a second time with LaMa, and geometry.csv (scripts/maskerr_geometry.py)
+    is computed from the saved masks, so both must hold every cell and
+    perturbation, each with a LaMa row.
+
+    Returns {"by": {(cell, pert, method): row}, "geo": {(cell, pert): row},
+    "perts": perturbations other than exact, in run order, "methods": [(key, name)]
+    in METHOD_ORDER, "at_floor": {(cell, method)} for methods that return the
+    zero-fill floor with the true mask}."""
+    rows, geo = _csv(d / "robustness.csv"), _csv(d / "geometry.csv")
+    if rows is None or geo is None:
         return None
-    perts = [p for p in dict.fromkeys(r["perturbation"] for r in rows) if p != "exact"]
+    perts = list(dict.fromkeys(r["perturbation"] for r in rows))
     have = {(r["cell"], r["perturbation"]) for r in rows if r["method"] == EXTERNAL}
-    if any((c, p) not in have for c in cells for p in ("exact", *perts)):
+    g = {(r["cell"], r["perturbation"]): r for r in geo}
+    if "exact" not in perts or any((c, p) not in have or (c, p) not in g for c in cells for p in perts):
         return None
+    by = {(r["cell"], r["perturbation"], r["method"]): r for r in rows}
     present = {r["method"] for r in rows}
     methods = [(k, n) for k, n in METHOD_ORDER if k in present]
+    at_floor = {(c, k) for c in cells for k, _ in methods
+                if abs(float(by[c, "exact", k]["psnr_hole_mean"]) - float(g[c, "exact"]["zero_fill_psnr_hole"]))
+                < AT_FLOOR_DB}
+    return {"by": by, "geo": g, "perts": [p for p in perts if p != "exact"], "methods": methods,
+            "at_floor": at_floor, "cells": cells}
+
+
+def _maskerr_table(res: dict, groups: list[tuple[str, list[str]]]) -> str:
+    """One block per group of cells: per perturbation, each method's change in
+    hole PSNR against the true mask (perturbed minus exact, paired by patch) and
+    the shares of the true hole marked observed (FP) and of the observed pixels
+    marked missing (FN), each the mean over the group's cells."""
+    by, geo, methods = res["by"], res["geo"], res["methods"]
+    ncols = len(methods) + 3
     body = []
-    for p in perts:
-        at = [r for r in rows if r["perturbation"] == p]
-        out = [perturbation_name(p)]
-        for k, _ in methods:
-            v = [float(r["degradation_mean"]) for r in at if r["method"] == k and r.get("degradation_mean", "") != ""]
-            out.append(signed(float(np.mean(v))) if v else "--")
-        cells = {r["cell"]: r for r in at}.values()
-        out += [f"{100 * np.mean([float(r['false_pos_frac']) for r in cells]):.2f}",
-                f"{100 * np.mean([float(r['false_neg_frac']) for r in cells]):.2f}"]
-        body.append(" & ".join(out) + r" \\")
-    header = [r" & \multicolumn{" + str(len(methods)) + r"}{c}{Change in hole PSNR (dB)} & "
+    for label, cells in groups:
+        if body:
+            body.append(r"\midrule")
+        body.append(rf"\multicolumn{{{ncols}}}{{@{{}}l}}{{\textit{{{label}}}}} \\")
+        for p in res["perts"]:
+            out = [perturbation_name(p)]
+            for k, _ in methods:
+                if any((c, k) in res["at_floor"] for c in cells):
+                    out.append("--")
+                else:
+                    out.append(signed(float(np.mean([float(by[c, p, k]["degradation_mean"]) for c in cells]))))
+            out += [f"{100 * np.mean([float(geo[c, p][f]) for c in cells]):.2f}"
+                    for f in ("fp_share_of_hole", "fn_share_of_observed")]
+            body.append(" & ".join(out) + r" \\")
+    floor = sorted({n for c, k in res["at_floor"] for kk, n in methods if kk == k})
+    if floor:
+        body += [r"\midrule", _note(rf"--: {', '.join(floor)} returns the zero-fill floor with the true mask "
+                                    "in these cells, so its change does not measure robustness.", ncols)]
+    header = [rf" & \multicolumn{{{len(methods)}}}{{c}}{{Change in hole PSNR (dB)}} & "
               r"\multicolumn{2}{c}{Wrong mask (\%)} \\",
               rf"\cmidrule(lr){{2-{1 + len(methods)}}}\cmidrule(l){{{2 + len(methods)}-{3 + len(methods)}}}",
               "Perturbation & " + " & ".join(n for _, n in methods) + r" & FP & FN \\"]
     return tabular(rf"@{{}}l*{{{len(methods) + 2}}}{{r}}@{{}}", header, body)
+
+
+def maskerr(d: Path = MASKERR_DIR, cells: tuple[str, ...] = MASKERR_CELLS) -> str | None:
+    """Per family, the mean over its levels (the supplement gives every cell)."""
+    res = maskerr_results(d, cells)
+    if res is None:
+        return None
+    fams = list(dict.fromkeys(c.split("_")[0] for c in cells))
+    levels = " and ".join(dict.fromkeys(c.split("_")[1] for c in cells))
+    return _maskerr_table(res, [(f"{f}, mean over {levels}", [c for c in cells if c.startswith(f + "_")])
+                                for f in fams])
+
+
+def supp_maskerr(d: Path = MASKERR_DIR, cells: tuple[str, ...] = MASKERR_CELLS) -> str | None:
+    """Every cell of the mask-error experiment."""
+    res = maskerr_results(d, cells)
+    if res is None:
+        return None
+    return _maskerr_table(res, [(c.replace("_", " "), [c]) for c in sorted(cells)])
 
 
 CHILD_METHODS = {"shiftmap"}   # run in a fresh interpreter (src/baselines.py)
@@ -1197,11 +1247,18 @@ TABLES = {"SEVERITY": severity, "QUALITY": quality, "GMSD": gmsd_table, "PAIRED_
           "SUPP_FALLBACKS": supp_fallbacks, "SUPP_CALIBRATION": supp_calibration,
           "SUPP_SHIFTMAP": supp_shiftmap, "SUPP_DICTCAP": supp_dictcap, "SUPP_FIDELITY": supp_fidelity,
           "SUPP_CAP_MECHANISM": supp_cap_mechanism, "SUPP_IMAGE_LEVEL": supp_image_level, "SUPP_BU_CALIBRATION": supp_bu_calibration,
-          "SUPP_CONVERGENCE": supp_convergence}
+          "SUPP_CONVERGENCE": supp_convergence, "SUPP_MASKERR": supp_maskerr}
 
 
-def main() -> int:
-    for tag, fn in TABLES.items():
+def main(argv: list[str] | None = None) -> int:
+    """Splice every table, or only the tags named (a stage still writing its
+    results must not have its table spliced by a run meant for another one)."""
+    tags = list(sys.argv[1:] if argv is None else argv) or list(TABLES)
+    unknown = [t for t in tags if t not in TABLES]
+    if unknown:
+        raise SystemExit(f"unknown table tags: {unknown}; known: {', '.join(TABLES)}")
+    for tag in tags:
+        fn = TABLES[tag]
         body = fn()
         if body is None:
             print(f"[tables_v2] {tag}: source result not available yet, left as is")

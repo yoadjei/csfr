@@ -412,36 +412,72 @@ def test_jpeg_rows_per_corruption_and_mask(tmp_path):
     assert sum(1 for ln in lines if " & " in ln and not ln.startswith(r"\multicolumn")) == 9
 
 
-def test_maskerr_averages_cells_per_perturbation(tmp_path):
-    m = _mod()
-    rows = []
-    for cell in ("CF1_L3", "CF2_L5"):
+def _maskerr_fixture(d, cells=("CF1_L3", "CF3_L5"), methods=("csfr", "bilinear", "lama"), skip=()):
+    """robustness.csv and geometry.csv for `cells`: each method loses 1, 2 or 3 dB
+    (by its position) times the cell's factor under erode1 and flip5pct;
+    linear interpolation returns the floor with the true mask under CF3."""
+    rob, geo = [], []
+    for ci, cell in enumerate(cells):
+        floor = 5.0 + ci
         for p in ("exact", "erode1", "flip5pct"):
-            for meth, deg in (("csfr", -0.5), ("guleryuz", -1.5), ("lama", -0.25)):
-                r = {"cell": cell, "perturbation": p, "method": meth, "false_pos_frac": 0.01 if cell == "CF1_L3" else 0.03,
-                     "false_neg_frac": 0.02}
-                if p != "exact":
-                    r["degradation_mean"] = deg * (1 if cell == "CF1_L3" else 3)
-                rows.append(r)
-    _write_csv(tmp_path / "robustness.csv", rows)
-    lines = _body(m.maskerr(tmp_path, cells=("CF1_L3", "CF2_L5")))
-    assert lines == [r"Erode 1\,px & $-$1.00 & $-$3.00 & $-$0.50 & 2.00 & 2.00 \\",
-                     r"Flip 5\% & $-$1.00 & $-$3.00 & $-$0.50 & 2.00 & 2.00 \\"]
+            geo.append({"cell": cell, "perturbation": p, "n": 4, "zero_fill_psnr_hole": floor,
+                        "fp_share_of_hole": 0.0 if p != "flip5pct" else 0.05 * (ci + 1),
+                        "fn_share_of_observed": {"exact": 0.0, "erode1": 0.2, "flip5pct": 0.05}[p] * (ci + 1)})
+            for mi, k in enumerate(methods):
+                if (cell, p, k) in skip:
+                    continue
+                exact = floor if (k == "bilinear" and cell.startswith("CF3")) else 20.0 + mi
+                deg = 0.0 if p == "exact" else -(mi + 1) * (ci + 1)
+                rob.append({"cell": cell, "perturbation": p, "method": k, "psnr_hole_mean": exact + deg,
+                            "degradation_mean": deg, "false_pos_frac": 0.0, "false_neg_frac": 0.0})
+    _write_csv(d / "robustness.csv", rob)
+    _write_csv(d / "geometry.csv", geo)
 
 
-def test_maskerr_waits_for_every_cell_and_perturbation(tmp_path):
+def test_maskerr_gives_each_family_the_mean_over_its_levels(tmp_path):
     m = _mod()
-    def rows(cells, methods):
-        return [{"cell": c, "perturbation": p, "method": k, "false_pos_frac": 0.0, "false_neg_frac": 0.0,
-                 **({"degradation_mean": -1.0} if p != "exact" else {})}
-                for c in cells for p in ("exact", "erode1") for k in methods]
+    _maskerr_fixture(tmp_path, cells=("CF2_L3", "CF2_L5", "CF3_L5"))
+    lines = _body(m.maskerr(tmp_path, cells=("CF2_L3", "CF2_L5", "CF3_L5")))
+    assert lines[0] == r"\multicolumn{6}{@{}l}{\textit{CF2, mean over L3 and L5}} \\"
+    assert lines[1] == r"Erode 1\,px & $-$1.50 & $-$3.00 & $-$4.50 & 0.00 & 30.00 \\"
+    assert lines[2] == r"Flip 5\% & $-$1.50 & $-$3.00 & $-$4.50 & 7.50 & 7.50 \\"
+    assert lines[4] == r"\multicolumn{6}{@{}l}{\textit{CF3, mean over L3 and L5}} \\"
+    assert lines[5] == r"Erode 1\,px & $-$3.00 & -- & $-$9.00 & 0.00 & 60.00 \\"   # linear: at the floor
+    assert lines[-1].startswith(r"\multicolumn{6}{@{}l}{\footnotesize --: Linear returns the zero-fill floor")
 
-    _write_csv(tmp_path / "robustness.csv", rows(m.MASKERR_CELLS[:-1], ("csfr", "lama")))   # last cell running
-    assert m.maskerr(tmp_path) is None
-    _write_csv(tmp_path / "robustness.csv", rows(m.MASKERR_CELLS, ("csfr",)))               # LaMa not scored yet
-    assert m.maskerr(tmp_path) is None
-    _write_csv(tmp_path / "robustness.csv", rows(m.MASKERR_CELLS, ("csfr", "lama")))
-    assert m.maskerr(tmp_path) is not None
+
+def test_supp_maskerr_gives_every_cell(tmp_path):
+    m = _mod()
+    _maskerr_fixture(tmp_path)
+    lines = _body(m.supp_maskerr(tmp_path, cells=("CF3_L5", "CF1_L3")))
+    labels = [ln for ln in lines if ln.startswith(r"\multicolumn{6}{@{}l}{\textit")]
+    assert labels == [r"\multicolumn{6}{@{}l}{\textit{CF1 L3}} \\", r"\multicolumn{6}{@{}l}{\textit{CF3 L5}} \\"]
+    assert r"Erode 1\,px & $-$1.00 & $-$2.00 & $-$3.00 & 0.00 & 20.00 \\" in lines
+
+
+def test_maskerr_waits_for_every_cell_perturbation_lama_row_and_the_geometry(tmp_path):
+    m = _mod()
+    cells = ("CF1_L3", "CF3_L5")
+    _maskerr_fixture(tmp_path, cells=cells, skip={("CF3_L5", "flip5pct", k) for k in ("csfr", "bilinear", "lama")})
+    assert m.maskerr(tmp_path, cells=cells) is None                       # last cell still running
+    _maskerr_fixture(tmp_path, cells=cells, skip={("CF3_L5", "flip5pct", "lama")})
+    assert m.maskerr(tmp_path, cells=cells) is None                       # LaMa not scored yet
+    _maskerr_fixture(tmp_path, cells=cells)
+    (tmp_path / "geometry.csv").unlink()
+    assert m.maskerr(tmp_path, cells=cells) is None                       # geometry not computed
+    _maskerr_fixture(tmp_path, cells=cells)
+    assert m.maskerr(tmp_path, cells=cells) is not None and m.supp_maskerr(tmp_path, cells=cells) is not None
+
+
+def test_main_splices_only_the_tags_named(monkeypatch):
+    m = _mod()
+    spliced = []
+    monkeypatch.setattr(m, "TABLES", {"A": lambda: "a", "B": lambda: "b", "C": lambda: None})
+    monkeypatch.setattr(m, "splice", lambda tag, body: spliced.append((tag, body)))
+    assert m.main(["B"]) == 0 and spliced == [("B", "b")]
+    assert m.main([]) == 0 and spliced[1:] == [("A", "a"), ("B", "b")]
+    with pytest.raises(SystemExit):
+        m.main(["MASKERRR"])
 
 
 def test_fullres_and_bench_note_the_isolated_method(tmp_path):

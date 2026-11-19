@@ -189,6 +189,19 @@ def test_typed_claims_about_the_primary_comparison_hold():
         "all of them in the TV-only arm on the primary corpus": v["convArmNCapped"] != PENDING,
         "They are kept and flagged as not converged": int(v["convArmNCapped"]) > 0,
         "It converges more slowly": int(v["convTvItersMax"]) > int(v["convGovItersMax"]),
+        # Errors in the mask (sec:results:maskerr; R2.5b). maskerr_macros refuses a false
+        # positive that does not carry 0, a dilation that leaves a truly observed pixel next
+        # to the hole, a CF2/CF3 method that loses less from dilation than from erosion,
+        # block-DCT thresholding not losing least under dilation, and an observed pixel
+        # left by a two-pixel erosion of CF1 L5.
+        "false negatives cost little and false positives cost much":
+            float(v["maskErodeAnyMax"]) < float(v["maskDilateCsfrMin"]),
+        "every method loses more from it than from the two-pixel erosion": v["maskDilateGulMin"] != PENDING,
+        "every observed pixel next to the remaining hole is a false positive": v["maskDilateGulMin"] != PENDING,
+        "Block-DCT thresholding loses least under every dilation of every CF2 and CF3 cell":
+            v["maskDilateGulMin"] != PENDING,
+        "and a two-pixel erosion leaves none in any": v["maskCFoneErodeNoneLfive"] != PENDING,
+        "so the most accurate method loses most": float(v["maskCFoneDilateOverFloorMax"]) < 0.5,
     }
     for sentence, holds in claims.items():
         assert sentence in tex, f"sentence gone from the manuscript (update this test): {sentence}"
@@ -200,7 +213,7 @@ def test_every_macro_the_manuscript_uses_is_generated():
     import re
     tex = (ROOT / "paper" / "paper2_reconstruction.tex").read_text(encoding="utf-8")
     generated = set(re.findall(r"\\providecommand\{\\([A-Za-z]+)\}", m.render()))
-    used = set(re.findall(r"\\((?:csfr|rec|calib|oracle|corpus|methods|env|sweep|stats|fallback|bu|shiftmap|dictlearn|mech|abl|q(?:Gov|Dfrws|Kodak))[A-Z][A-Za-z]*)", tex))
+    used = set(re.findall(r"\\((?:csfr|rec|calib|oracle|corpus|methods|env|sweep|stats|fallback|bu|shiftmap|dictlearn|mech|abl|solver|conv|mask|q(?:Gov|Dfrws|Kodak))[A-Z][A-Za-z]*)", tex))
     assert used, "the manuscript uses no number macros; the regex has rotted"
     assert used <= generated, f"manuscript uses undefined number macros: {sorted(used - generated)}"
 
@@ -934,3 +947,73 @@ def test_convergence_macros_count_every_patch_solve(tmp_path):
 def test_convergence_macros_refuse_data_that_contradict_the_text(tmp_path, kw):
     with pytest.raises(ValueError):
         _mod().convergence_macros(_conv(tmp_path, **kw))
+
+
+def _maskerr(tmp_path, fp_value=0.0, border=1.0, gul_least=True, dilate_cheaper=False, cf1_left=0):
+    """A complete mask-error result in which every sentence of Section VI-H holds:
+    CF2/CF3 cells lose 0.5 or 1 dB from erosion and fall to just above the floor
+    under dilation, block-DCT thresholding least; CF1 dilation returns the floor."""
+    m = _mod()
+    t = m._tables()
+    methods = ("csfr", "bilinear", "guleryuz", "lama")
+    rob, geo = [], []
+    for cell in t.MASKERR_CELLS:
+        fam, lv = cell.split("_")
+        floor = 5.0
+        exact = {"csfr": 20.0, "bilinear": floor if fam == "CF3" else 19.0, "guleryuz": 21.0, "lama": 19.5}
+        for p in ("exact", "erode1", "erode2", "dilate1", "dilate2", "flip1pct", "flip5pct"):
+            for k in methods:
+                if fam == "CF1":
+                    psnr = {"exact": exact[k], "erode1": exact[k] - 8, "erode2": exact[k] - 12,
+                            "flip1pct": exact[k] - {"csfr": 4.0 if lv == "L5" else 4.9, "bilinear": 3.0,
+                                                    "guleryuz": 9.6, "lama": 1.4}[k]}.get(p, floor + 0.05)
+                else:
+                    over = {"csfr": 0.1, "bilinear": 0.0, "guleryuz": 6.0 if gul_least else 0.0, "lama": 1.0}[k]
+                    erode2 = exact[k] - (14.0 if dilate_cheaper and k == "lama" else 1.0)
+                    psnr = {"exact": exact[k], "erode1": exact[k] - 0.5, "erode2": erode2,
+                            "flip1pct": exact[k] - 8.0, "flip5pct": exact[k] - 12.0}.get(p, floor + over)
+                    if fam == "CF3" and k == "bilinear":
+                        psnr = floor
+                rob.append({"cell": cell, "perturbation": p, "method": k, "psnr_hole_mean": psnr,
+                            "degradation_mean": psnr - exact[k]})
+            fp = {"dilate1": 0.95 if fam == "CF1" else (0.05 if lv == "L3" else 0.10), "dilate2": 0.99,
+                  "flip1pct": 0.01, "flip5pct": 0.05}.get(p, 0.0)
+            fn = {"erode1": 0.937 if fam == "CF1" else 0.1, "erode2": 0.999 if fam == "CF1" else 0.2,
+                  "flip1pct": 0.01, "flip5pct": 0.05}.get(p, 0.0)
+            none = {("CF1_L5", "erode1"): 463, ("CF1_L5", "erode2"): 600 - cf1_left}.get((cell, p), 0)
+            geo.append({"cell": cell, "perturbation": p, "n": 600, "hole_share": 0.3, "fp_share_of_hole": fp,
+                        "fn_share_of_observed": fn, "n_none_observed": none,
+                        "n_hole_all_observed": 478 if (cell, p) == ("CF1_L3", "dilate1") else 0,
+                        "border_fp_share": border if p.startswith("dilate") else 0.0,
+                        "fp_value_max": fp_value if fp else "nan", "zero_fill_psnr_hole": floor})
+    _write_rows(tmp_path / "robustness.csv", rob)
+    _write_rows(tmp_path / "geometry.csv", geo)
+    return tmp_path
+
+
+def test_maskerr_macros_say_what_a_wrong_mask_costs(tmp_path):
+    m = _mod()
+    assert set(m.maskerr_macros(tmp_path).values()) == {m.PLACEHOLDER}
+    q = m.maskerr_macros(_maskerr(tmp_path))
+    assert (q["maskErodeFnMax"], q["maskErodeCsfrMax"], q["maskErodeAnyMax"]) == ("20", "1.0", "1.0")
+    assert (q["maskDilateFpMin"], q["maskDilateFpMax"]) == ("5.0", "10")
+    assert (q["maskDilateCsfrMin"], q["maskDilateCsfrMax"], q["maskDilateCsfrOverFloorMax"]) == ("14.9", "14.9", "0.10")
+    assert (q["maskDilateGulMin"], q["maskDilateGulMax"]) == ("10.0", "10.0")
+    assert (q["maskFlipCsfrMin"], q["maskFlipCsfrMax"]) == ("8.0", "8.0")
+    assert (q["maskCFoneDilateAllObs"], q["maskCFoneDilateFpLfive"], q["maskCFoneDilateOverFloorMax"]) == (
+        "478", "95.0", "0.05")
+    assert (q["maskCFoneErodeFnLthree"], q["maskCFoneErodeNoneLfive"]) == ("93.7", "463")
+    assert (q["maskCFoneFlipCsfrMin"], q["maskCFoneFlipCsfrMax"]) == ("4.0", "4.9")
+    assert (q["maskCFoneFlipOtherMin"], q["maskCFoneFlipOtherMax"]) == ("1.4", "9.6")
+
+
+@pytest.mark.parametrize("kw", [
+    {"fp_value": 128.0},         # "a false positive, which carries the value 0"
+    {"border": 0.98},            # "every observed pixel next to the remaining hole is a false positive"
+    {"gul_least": False},        # "Block-DCT thresholding loses least under every dilation"
+    {"dilate_cheaper": True},    # "every method loses more from it than from the two-pixel erosion"
+    {"cf1_left": 1},             # "and a two-pixel erosion leaves none in any"
+])
+def test_maskerr_macros_refuse_data_that_contradict_the_text(tmp_path, kw):
+    with pytest.raises(ValueError):
+        _mod().maskerr_macros(_maskerr(tmp_path, **kw))

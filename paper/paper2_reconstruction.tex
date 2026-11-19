@@ -832,17 +832,51 @@ Baseline-sequential JPEG files are corrupted in their entropy-coded scan, as dam
 \subsection{Errors in the mask}
 \label{sec:results:maskerr}
 
-On the primary corpus at one mask seed, the true mask of CF1, CF2 and CF3 at L3 and L5 is eroded or dilated by one and two pixels, or has a share of its pixels flipped. The methods of Table~\ref{tab:maskerr} reconstruct from the wrong mask and are scored over the true hole. Table~\ref{tab:maskerr} gives the change in hole PSNR against the true mask.
+On the primary corpus at one mask seed, the true mask of CF1, CF2 and CF3 at L3 and L5 is eroded or dilated by one and two pixels, or has one or five percent of its pixels flipped. Erosion marks observed pixels next to the hole as missing, a false negative. Dilation marks lost pixels next to the boundary as observed, a false positive, which carries the value~0 that the zero-filled input holds there. A flip makes both errors at random positions. CSFR, LaMa and the six classical methods of Table~\ref{tab:maskerr} reconstruct from the wrong mask and are scored over the true hole; dictionary learning, shift-map and exemplar inpainting are not part of this experiment. Each of these methods returns the pixels its mask marks observed unchanged, so a false positive enters every reconstruction as it is. Table~\ref{tab:maskerr} gives the change in hole PSNR against the true mask per family, with the share of the hole marked observed and of the observed pixels marked missing; the supplement gives every cell.
 
-\resultpending{which errors cost most, and which methods degrade least}
+Under burst and contiguous loss, false negatives cost little and false positives cost much. Linear interpolation, which is at the zero-fill floor under CF3 with the true mask, is left out of the comparisons there. A two-pixel erosion, which marks up to \maskErodeFnMax\% of the observed pixels missing, lowers CSFR's hole PSNR by at most \maskErodeCsfrMax\,dB and no method's by more than \maskErodeAnyMax\,dB. A one-pixel dilation marks \maskDilateFpMin\% to \maskDilateFpMax\% of the hole observed, yet it lowers CSFR's hole PSNR by \maskDilateCsfrMin\ to \maskDilateCsfrMax\,dB, and in every CF2 and CF3 cell every method loses more from it than from the two-pixel erosion. After a dilation, every observed pixel next to the remaining hole is a false positive, and CSFR's hole PSNR is within \maskDilateCsfrOverFloorMax\,dB of filling the hole with zeros. Block-DCT thresholding loses least under every dilation of every CF2 and CF3 cell, \maskDilateGulMin\ to \maskDilateGulMax\,dB at one pixel. Flipping one percent of the pixels, which turns about one percent of the hole into isolated false zeros, costs CSFR \maskFlipCsfrMin\ to \maskFlipCsfrMax\,dB. For CSFR and the methods compared, a mask that marks a doubtful pixel missing therefore costs far less than one that marks a lost pixel observed. How much a false positive costs depends on the value it carries, here the~0 of the zero-filled input; in the byte-corrupted files of Section~\ref{sec:results:jpeg}, a false positive carries what the decoder produced.
+
+Under scattered loss, a one-pixel erosion or dilation is not a small error, because almost every pixel lies next to the hole. A one-pixel dilation marks the whole hole observed in \maskCFoneDilateAllObs\ of the \corpusGovN\ patches at L3 and \maskCFoneDilateFpLfive\% of the hole at L5, and every method is then within \maskCFoneDilateOverFloorMax\,dB of filling the hole with zeros. A one-pixel erosion marks \maskCFoneErodeFnLthree\% of the observed pixels missing at L3; at L5 it leaves no observed pixel in \maskCFoneErodeNoneLfive\ of the patches, and a two-pixel erosion leaves none in any. These rows of Table~\ref{tab:maskerr} do not measure a small error: erosion removes most of the observations, and dilation leaves almost nothing to reconstruct. Under dilation each method's change is its distance above the floor with the true mask, so the most accurate method loses most. A one-percent flip is the comparable error under scattered loss: it costs CSFR \maskCFoneFlipCsfrMin\ to \maskCFoneFlipCsfrMax\,dB and the other methods \maskCFoneFlipOtherMin\ to \maskCFoneFlipOtherMax\,dB.
 
 \begin{table*}[!t]
 \centering
-\caption{Mask errors on GovDocs1: change in hole PSNR (dB) relative to the true mask, paired by patch, per method and perturbation.}
+\caption{Mask errors on GovDocs1 at mask seed~0: change in hole PSNR (dB) against the true mask, paired by patch, the mean over L3 and L5 of each family. FP: share of the true hole marked observed; FN: share of the observed pixels marked missing. The supplement gives every cell.}
 \label{tab:maskerr}
 \footnotesize
 % BEGIN AUTO MASKERR
-\textbf{[pending]}
+\begin{tabular}{@{}l*{10}{r}@{}}
+\toprule
+ & \multicolumn{8}{c}{Change in hole PSNR (dB)} & \multicolumn{2}{c}{Wrong mask (\%)} \\
+\cmidrule(lr){2-9}\cmidrule(l){10-11}
+Perturbation & CSFR & Linear & Telea & Navier--Stokes & Biharmonic & Block-DCT thr. & FSR & LaMa & FP & FN \\
+\midrule
+\multicolumn{11}{@{}l}{\textit{CF1, mean over L3 and L5}} \\
+Erode 1\,px & $-$12.37 & $-$12.84 & $-$10.07 & $-$11.58 & $-$11.01 & $-$16.20 & $-$12.28 & $-$7.75 & 0.00 & 96.81 \\
+Erode 2\,px & $-$17.01 & $-$17.54 & $-$14.53 & $-$15.97 & $-$13.89 & $-$20.68 & $-$16.71 & $-$10.39 & 0.00 & 99.96 \\
+Dilate 1\,px & $-$20.08 & $-$17.59 & $-$17.44 & $-$18.89 & $-$20.83 & $-$23.66 & $-$19.63 & $-$16.54 & 96.77 & 0.00 \\
+Dilate 2\,px & $-$20.08 & $-$17.59 & $-$17.47 & $-$18.93 & $-$20.83 & $-$23.73 & $-$19.67 & $-$16.55 & 99.97 & 0.00 \\
+Flip 1\% & $-$4.43 & $-$3.43 & $-$2.99 & $-$4.14 & $-$5.92 & $-$8.28 & $-$4.76 & $-$2.57 & 1.00 & 1.00 \\
+Flip 5\% & $-$9.11 & $-$7.80 & $-$7.01 & $-$8.55 & $-$10.95 & $-$13.75 & $-$9.60 & $-$6.76 & 5.00 & 5.01 \\
+\midrule
+\multicolumn{11}{@{}l}{\textit{CF2, mean over L3 and L5}} \\
+Erode 1\,px & $-$0.80 & $-$1.02 & $-$0.83 & $-$0.90 & $-$1.03 & $-$1.15 & $-$1.09 & $-$0.97 & 0.00 & 16.64 \\
+Erode 2\,px & $-$1.43 & $-$2.43 & $-$1.46 & $-$1.53 & $-$1.89 & $-$1.95 & $-$1.98 & $-$1.83 & 0.00 & 30.86 \\
+Dilate 1\,px & $-$14.57 & $-$14.04 & $-$11.97 & $-$12.62 & $-$13.67 & $-$10.27 & $-$12.58 & $-$14.81 & 13.46 & 0.00 \\
+Dilate 2\,px & $-$14.57 & $-$14.04 & $-$13.24 & $-$13.40 & $-$13.67 & $-$12.12 & $-$13.34 & $-$15.03 & 26.29 & 0.00 \\
+Flip 1\% & $-$7.75 & $-$10.62 & $-$9.37 & $-$9.56 & $-$10.66 & $-$6.28 & $-$9.45 & $-$8.08 & 1.00 & 1.00 \\
+Flip 5\% & $-$13.30 & $-$12.69 & $-$11.23 & $-$11.54 & $-$12.44 & $-$12.84 & $-$12.62 & $-$12.22 & 5.01 & 5.00 \\
+\midrule
+\multicolumn{11}{@{}l}{\textit{CF3, mean over L3 and L5}} \\
+Erode 1\,px & $-$0.09 & -- & $-$0.16 & $-$0.14 & $-$0.05 & $-$0.25 & $-$0.30 & $-$0.11 & 0.00 & 3.74 \\
+Erode 2\,px & $-$0.30 & -- & $-$0.42 & $-$0.38 & $-$0.50 & $-$0.43 & $-$0.51 & $-$0.40 & 0.00 & 7.49 \\
+Dilate 1\,px & $-$11.73 & -- & $-$10.48 & $-$11.20 & $-$11.38 & $-$3.20 & $-$9.31 & $-$8.64 & 3.74 & 0.00 \\
+Dilate 2\,px & $-$11.73 & -- & $-$12.03 & $-$12.25 & $-$11.38 & $-$4.31 & $-$11.45 & $-$9.83 & 7.49 & 0.00 \\
+Flip 1\% & $-$10.48 & -- & $-$11.32 & $-$11.19 & $-$10.38 & $-$4.48 & $-$9.99 & $-$11.11 & 1.00 & 1.01 \\
+Flip 5\% & $-$11.70 & -- & $-$11.93 & $-$11.80 & $-$11.00 & $-$10.30 & $-$12.06 & $-$11.49 & 5.00 & 5.02 \\
+\midrule
+\multicolumn{11}{@{}l}{\footnotesize --: Linear returns the zero-fill floor with the true mask in these cells, so its change does not measure robustness.} \\
+\bottomrule
+\end{tabular}
 % END AUTO MASKERR
 \end{table*}
 
@@ -978,7 +1012,7 @@ The design gives up non-convex steps, and the comparison measures what that cost
 \subsection{Operational Recommendation}
 \label{sec:discussion:recommendations}
 
-A cautious deployment would preserve the source image, store the reconstruction as a separate derivative, attach the certificate, the configuration and the records of the pixels in question, and require human review for any reconstruction offered as evidence. The Bounded-Unknown label describes the corruption but does not identify the reconstructions that fail (Section~\ref{sec:results:bu}), so it cannot replace that review. An output flagged as not converged is not the minimiser and should not be treated as one. \resultpending{what the downstream tasks imply for an examiner who reads a reconstruction} These findings do not establish that CSFR should replace other methods in operational casework.
+A cautious deployment would preserve the source image, store the reconstruction as a separate derivative, attach the certificate, the configuration and the records of the pixels in question, and require human review for any reconstruction offered as evidence. The Bounded-Unknown label describes the corruption but does not identify the reconstructions that fail (Section~\ref{sec:results:bu}), so it cannot replace that review. An output flagged as not converged is not the minimiser and should not be treated as one. The mask should mark a doubtful pixel missing: an observed pixel wrongly marked missing costs little, whereas a lost pixel wrongly marked observed is kept as evidence and can spoil the whole hole (Section~\ref{sec:results:maskerr}). \resultpending{what the downstream tasks imply for an examiner who reads a reconstruction} These findings do not establish that CSFR should replace other methods in operational casework.
 
 \subsection{Adoption Scope and Validation Priorities}
 \label{sec:discussion:scope}
@@ -999,7 +1033,7 @@ This section gathers the limits of what the evidence supports. Elsewhere, each l
 
 \begin{enumerate}
   \item \textbf{Domain.} CSFR reconstructs decoded pixel arrays given a mask. It does not locate, order or decode fragments, repair the encoded bitstream or re-encode a file. The byte-corruption experiment shows how CSFR behaves behind a standard decoder (Section~\ref{sec:results:jpeg}). Storage-level fragmentation across non-contiguous clusters, progressive JPEGs and formats other than JPEG are untested.
-  \item \textbf{Masks.} The quantitative comparison uses synthetic masks in four families. Real damage can mix the families, and a mask supplied by a carver or decoder is imperfect. Section~\ref{sec:results:maskerr} measures the effect of mask errors, but only for the error types simulated there.
+  \item \textbf{Masks.} The quantitative comparison uses synthetic masks in four families. Real damage can mix the families, and a mask supplied by a carver or decoder is imperfect. Section~\ref{sec:results:maskerr} measures the effect of mask errors, but only for the error types simulated there, with a wrongly observed pixel carrying the value~0.
   \item \textbf{Corpora.} The evaluation covers documents, a forensic disk image, photographs, full-resolution colour images and byte-corrupted JPEGs. Medical, satellite, low-light surveillance and screen-capture content are not measured. DFRWS 2006 is concentrated in few source images, so its results carry cluster-aware intervals and are secondary to those of the primary corpus.
   \item \textbf{One objective, fixed constants.} One objective is evaluated, with fixed weights and a smoothing of $\varepsilon = \csfrEps$ grey level, unchanged across corpora. Other weights would change the reconstructions, the records and possibly the ranking. Tuning per corpus was deliberately avoided, because a reconstruction whose parameters depend on the evidence is harder to defend. Because of the smoothing, the record is the derivative of the smoothed problem, and its fidelity is measured against that problem.
   \item \textbf{Accuracy.} Accuracy is reported as measured (Section~\ref{sec:results}). CSFR is not the most accurate method in every regime, and the paper does not claim that it is. It is offered for workflows that value the certificate and the record, at the measured cost.
