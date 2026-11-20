@@ -50,7 +50,14 @@ imputed_queries, observed_queries = _fid.imputed_queries, _fid.observed_queries
 FIG_DIR = ROOT / "paper" / "figures"
 DATA_DIR = ROOT / "results" / "figures_v2"
 
-TEXT_WIDTH_IN = 7.16                 # IEEE two-column text width
+# the widths of ieeeaccess.cls (\textwidth 177.53 mm, \columnwidth 85.29 mm): a
+# figure drawn at the width it is placed at prints its text at the sizes below
+TEXT_WIDTH_IN = 177.53 / 25.4
+COLUMN_WIDTH_IN = 85.29 / 25.4
+# image panels are resampled (nearest) at this resolution when saved; at the
+# default 100 dpi a 64-pixel patch drawn over 1.2 in became ~120 px, i.e. pixels
+# of one or two device pixels
+IMAGE_DPI = 600
 STYLE = {"pdf.fonttype": 42, "ps.fonttype": 42,          # TrueType, embedded
          "font.family": "serif", "font.serif": ["Times New Roman", "STIXGeneral", "DejaVu Serif"],
          "mathtext.fontset": "stix", "font.size": 8, "axes.titlesize": 8, "axes.labelsize": 8,
@@ -73,7 +80,7 @@ HOLE = "#f0efec"                     # the neutral grey: hole pixels in image pa
 def _save(fig, name: str, fig_dir: Path) -> Path:
     fig_dir.mkdir(parents=True, exist_ok=True)
     path = fig_dir / f"{name}.pdf"
-    fig.savefig(path, format="pdf", metadata={"CreationDate": None, "ModDate": None})
+    fig.savefig(path, format="pdf", dpi=IMAGE_DPI, metadata={"CreationDate": None, "ModDate": None})
     plt.close(fig)
     return path
 
@@ -271,7 +278,7 @@ def draw_walkthrough(data: dict, fig_dir: Path = FIG_DIR, name: str = "record_wa
             pr, pc = r["pixel"]
             ax.set_title(f"({'efg'[i - 1]}) Row of pixel {i} ({pr}, {pc})")
             cb = fig.colorbar(im, ax=ax, orientation="horizontal", fraction=0.06, pad=0.02)
-            cb.ax.tick_params(labelsize=6)
+            cb.ax.tick_params(labelsize=7)
             defect = r["affine_defect"]
             cb.set_label(f"CG {r['cg_iters']} it., residual {sci(r['cg_residual'])}\n"
                          + (rf"$1-\sum w$ = {sci(defect)}" if defect is not None else "a hole pixel at a bound")
@@ -452,7 +459,7 @@ def draw_comparison(data: dict, fig_dir: Path = FIG_DIR, name: str = "record_com
             cb = fig.colorbar(im, ax=ax, orientation="horizontal", fraction=0.06, pad=0.02)
             cb.set_ticks([-vmax, -1e-2 * vmax, 0.0, 1e-2 * vmax, vmax],
                          labels=["−1", r"$-10^{-2}$", "0", r"$10^{-2}$", "1"])
-            cb.ax.tick_params(labelsize=6)
+            cb.ax.tick_params(labelsize=7)
             scale = f"c / {r['max_abs']:.2g}" if r["max_abs"] > 0 else "c = 0"
             cb.set_label(rf"{scale};  $\ell_1$ {r['l1_norm']:.3g}, support {r['support']:.0f}",
                          fontsize=7, labelpad=2)
@@ -619,9 +626,10 @@ def _arrow(fig, x0: float, x1: float, y: float = 0.5) -> None:
                                    mutation_scale=7, color=INK_MUTED, linewidth=0.8))
 
 
-# x extents (inches) of the five stages of the overview, left to right
-OVERVIEW_X = {"observed": (0.06, 0.96), "problem": (1.16, 3.06), "solver": (3.26, 4.66),
-              "reconstruction": (4.86, 5.76), "record": (5.96, 7.12)}
+# x extents (inches) of the five stages of the overview, left to right, within
+# TEXT_WIDTH_IN with 0.18 in between stages for the arrows
+OVERVIEW_X = {"observed": (0.04, 0.94), "problem": (1.12, 2.98), "solver": (3.16, 4.52),
+              "reconstruction": (4.70, 5.60), "record": (5.78, 6.95)}
 
 
 def draw_overview(data: dict, fig_dir: Path = FIG_DIR, name: str = "method_overview") -> Path:
@@ -630,6 +638,8 @@ def draw_overview(data: dict, fig_dir: Path = FIG_DIR, name: str = "method_overv
     reconstruction, and the record of one imputed pixel (its row over the
     observed pixels, as in the walkthrough)."""
     W, H = TEXT_WIDTH_IN, 1.75
+    if max(b for _, b in OVERVIEW_X.values()) > W:
+        raise ValueError(f"OVERVIEW_X reaches past the figure width {W:.2f} in")
     hole = ~data["observed"]
     X = {k: (a / W, b / W) for k, (a, b) in OVERVIEW_X.items()}
     with plt.rc_context(STYLE):
@@ -753,7 +763,7 @@ def draw_convergence(data: dict, fig_dir: Path = FIG_DIR, name: str = "solver_co
     adam, fista = data["adam"], data["fista"]
     xticks = [adam[0]["iter"], 100, data["budget"], 4 * data["budget"]]       # the budgets of Table SOLVER_CMP
     with plt.rc_context(STYLE):
-        fig, axes = plt.subplots(3, 1, figsize=(3.5, 4.2), sharex=True, layout="constrained")
+        fig, axes = plt.subplots(3, 1, figsize=(COLUMN_WIDTH_IN, 4.2), sharex=True, layout="constrained")
         for arm, rows in (("adam", adam), ("fista", fista)):
             label, slot, marker = CONV_SERIES[arm]
             axes[0].plot([r["iter"] for r in rows], [r["psnr_hole"] for r in rows], marker=marker, ms=3.2,
