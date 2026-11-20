@@ -22,8 +22,13 @@ on the first image of each corruption only, in a separate call, so that tracing
 never inflates a timing. For CSFR also iterations, convergence, and the time
 and CG iterations of one sensitivity row (the middle hole pixel of channel 0).
 
+A method that raises (shift-map's OpenCV child has failed with "bad
+allocation" when the machine was short of memory) is recorded in metrics.json
+as failed with its error, left out of the scores, listed in failures.csv, and
+retried on the next run; the other methods and the LaMa step go on.
+
 Outputs (results/fullres): per_image.csv, summary.csv (per corruption and
-method: means over images), cost.csv.
+method: means over images), cost.csv, and failures.csv when a run failed.
 """
 from __future__ import annotations
 
@@ -98,9 +103,11 @@ def run_method(name: str, y3: np.ndarray, M3: np.ndarray, trace_memory: bool,
             "rss_peak_delta_mb": p.peak_mb - p.start_mb, **extra}
     if trace_memory:
         tracemalloc.start()
-        call()
-        cost["tracemalloc_peak_mb"] = tracemalloc.get_traced_memory()[1] / 2 ** 20
-        tracemalloc.stop()
+        try:
+            call()
+            cost["tracemalloc_peak_mb"] = tracemalloc.get_traced_memory()[1] / 2 ** 20
+        finally:  # a failed traced call must not leave tracing on for the timings after it
+            tracemalloc.stop()
     return x, cost
 
 
@@ -121,7 +128,7 @@ def main(argv=None) -> int:
     torch.set_num_threads(args.threads)
     out = Path(args.out) if Path(args.out).is_absolute() else ROOT / args.out
     (out / "cases").mkdir(parents=True, exist_ok=True)
-    per, costs = [], []
+    per, costs, failures = [], [], []
     images = [i for i in image_list() if not args.only or i[0] in args.only][: args.limit]
     for corr in args.corruptions:
         fam, lvl = corr.split("_")
@@ -150,7 +157,14 @@ def main(argv=None) -> int:
                     x = np.moveaxis(np.load(xp).astype(np.float64), -1, 0)
                     cost = {}
                 else:
-                    x, cost = run_method(m, y3, M3, trace_memory=(k == 0), max_iter=args.max_iter)
+                    try:
+                        x, cost = run_method(m, y3, M3, trace_memory=(k == 0), max_iter=args.max_iter)
+                    except Exception as e:  # one method's failure must not cost the others; retried next run
+                        error = f"{type(e).__name__}: {e}"
+                        metrics["methods"][m] = {"status": "failed", "error": error[-2000:]}
+                        _sweep._write_json(mpath, metrics)
+                        print(f"[fullres] FAILED {corr} {name} {m}: {error[-300:]}", flush=True)
+                        continue
                     _sweep.save_output(d / f"x_hat_{m}.npy", np.moveaxis(x, 0, -1),
                                        _sweep.CSFR_STORE_MAX_ERR if m in VARIANTS else 0.0)
                     if m == "csfr":
@@ -169,9 +183,11 @@ def main(argv=None) -> int:
                       + (f"  {cost['seconds']:.1f}s" if "seconds" in cost else ""), flush=True)
             _sweep._write_json(mpath, metrics)
             for m, e in metrics["methods"].items():
+                base = {"corruption": corr, "image": name, "corpus": corpus, "H": H, "W": W, "method": m}
+                if e.get("status") == "failed":
+                    failures.append({**base, "error": e["error"]})
                 if e.get("status") != "done":
                     continue
-                base = {"corruption": corr, "image": name, "corpus": corpus, "H": H, "W": W, "method": m}
                 per.append({**base, **{kk: e[kk] for kk in ("psnr_hole", "ssim_hole", "gmsd_hole", "psnr_whole")}})
                 if "seconds" in e:
                     costs.append({**base, **{kk: v for kk, v in e.items()
@@ -184,12 +200,18 @@ def main(argv=None) -> int:
                 summary.append({"corruption": corr, "method": m, "n_images": len(rs),
                                 **{kk: float(np.mean([r[kk] for r in rs]))
                                    for kk in ("psnr_hole", "ssim_hole", "gmsd_hole", "psnr_whole")}})
-    for fname, rows in (("per_image.csv", per), ("summary.csv", summary), ("cost.csv", costs)):
+    for fname, rows in (("per_image.csv", per), ("summary.csv", summary), ("cost.csv", costs),
+                        ("failures.csv", failures)):
         if rows:
             with (out / fname).open("w", newline="", encoding="utf-8") as f:
                 w = csv.DictWriter(f, fieldnames=list(dict.fromkeys(kk for r in rows for kk in r)))
                 w.writeheader()
                 w.writerows(rows)
+    if failures:
+        print(f"[fullres] {len(failures)} method runs FAILED, listed in {out / 'failures.csv'}; "
+              f"each is retried by the next run that includes it", flush=True)
+    else:
+        (out / "failures.csv").unlink(missing_ok=True)
     return 0
 
 
