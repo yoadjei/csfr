@@ -28,6 +28,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Callable, Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 PAPER = ROOT / "paper"
@@ -78,6 +79,14 @@ def named_branch(front: str) -> str:
 # an author argument may itself contain one braced macro, \corref{cor1}, so
 # the capture must allow one level of nesting or it stops at the wrong brace.
 AUTHOR_RE = re.compile(r"\\author\[[^\]]*\]\{((?:[^{}]|\{[^{}]*\})*)\}")
+COLOUR_GROUP = re.compile(r"\{\\color\{[^}]*\}\s*(.*)\}", re.S)
+
+
+def keyword_key(term: str) -> str:
+    """Sort key of an index term: its text, without the colour group the
+    highlighted build puts around a new term."""
+    m = COLOUR_GROUP.fullmatch(term)
+    return (m.group(1) if m else term).lower()
 
 
 def parse_front(front: str) -> dict:
@@ -94,7 +103,7 @@ def parse_front(front: str) -> dict:
     keywords = [k.strip() for k in
                 between(front, r"\begin{keyword}", r"\end{keyword}").split(r"\sep")]
     # ieee access asks for index terms in alphabetical order.
-    keywords = sorted((k for k in keywords if k), key=str.lower)
+    keywords = sorted((k for k in keywords if k), key=keyword_key)
     return {"title": title, "authors": authors, "corresponding": corresponding,
             "email": email, "address": address, "abstract": abstract,
             "keywords": keywords}
@@ -281,19 +290,38 @@ def convert(src: str, doc_class: str) -> tuple[str, list[str]]:
     return out, missing
 
 
-def build(tex: Path = OUT) -> int:
-    """pdflatex, bibtex, pdflatex, pdflatex on a tex file in paper/, with the
-    class directory on every search path the fonts and map files need."""
+def tex_env() -> dict:
+    """The environment of every TeX run: the class directory on every search
+    path the fonts and map files need."""
     env = os.environ.copy()
     if class_available():
         for var in ("TEXINPUTS", "TFMFONTS", "T1FONTS", "TEXFONTMAPS", "ENCFONTS"):
             env[var] = str(CLASS_DIR) + os.pathsep + env.get(var, "")
+    return env
+
+
+def build(tex: Path = OUT, bbl_hook: Optional[Callable[[str], str]] = None) -> int:
+    """pdflatex, bibtex, pdflatex, pdflatex on a tex file in paper/. bbl_hook,
+    if given, rewrites the bibliography bibtex wrote before the two passes that
+    typeset it; the .bbl of an earlier run is removed first, so the hook never
+    sees a stale one."""
+    env = tex_env()
     pdflatex = [str(MIKTEX / "pdflatex.exe"), "-interaction=nonstopmode",
                 "-include-directory=" + str(CLASS_DIR), tex.stem]
     bibtex = [str(MIKTEX / "bibtex.exe"), tex.stem]
+    bbl = PAPER / f"{tex.stem}.bbl"
     for cmd in (pdflatex, bibtex, pdflatex, pdflatex):
+        if cmd is bibtex and bbl_hook is not None:
+            bbl.unlink(missing_ok=True)
         subprocess.run(cmd, cwd=PAPER, env=env, stdin=subprocess.DEVNULL,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        if cmd is bibtex and bbl_hook is not None:
+            if not bbl.exists():
+                raise RuntimeError(f"bibtex wrote no {bbl.name}; see {tex.stem}.blg")
+            with open(bbl, encoding="utf-8", newline="") as f:
+                text = f.read()
+            with open(bbl, "w", encoding="utf-8", newline="") as f:
+                f.write(bbl_hook(text))
     log = (PAPER / f"{tex.stem}.log").read_text(encoding="utf-8", errors="replace")
     errors = sum(1 for ln in log.splitlines() if ln.startswith("!"))
     undefined = len(re.findall(r"(Citation|Reference) .* undefined|There were undefined references", log))
