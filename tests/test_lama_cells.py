@@ -29,7 +29,7 @@ def _cells(root: Path, names=("CF1_L1/seed0", "CF1_L2/seed0")):
 def test_a_directory_killed_before_its_output_is_written_runs_again(tmp_path, monkeypatch):
     m = _mod()
     root = _cells(tmp_path / "cases")
-    monkeypatch.setattr(m, "_model", lambda: None)
+    monkeypatch.setattr(m, "_model", lambda device: None)
     calls = []
 
     def inpaint(model, y, M):
@@ -57,3 +57,16 @@ def test_a_directory_killed_before_its_output_is_written_runs_again(tmp_path, mo
     assert len(calls) == 1                                   # only the unfinished directory
     assert np.array_equal(np.load(second / "x_hat_lama.npy"), np.ones((2, 8, 8), np.float32))
     assert (second / "lama_meta.json").exists()
+
+
+@pytest.mark.parametrize("argv, expected", [([], "cpu"), (["--device", "cuda"], "cuda")])
+def test_the_device_reaches_the_model_and_the_record(tmp_path, monkeypatch, argv, expected):
+    # the workstation runs LaMa on the CPU; the Kaggle downstream run asks for the GPU
+    m = _mod()
+    root = _cells(tmp_path / "cases", names=("CF1_L1/seed0",))
+    seen = []
+    monkeypatch.setattr(m, "_model", lambda device: seen.append(str(device)))
+    monkeypatch.setattr(m, "inpaint_any", lambda model, y, M: y)
+    assert m.main(["--root", str(root), *argv]) == 0
+    assert seen == [expected]
+    assert json.loads((root / "CF1_L1" / "seed0" / "lama_meta.json").read_text())["device"] == expected

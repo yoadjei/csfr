@@ -24,6 +24,10 @@ every method; outputs under results/ocr/cases/<cell>/seed<s>/.
 recognise: EasyOCR recognition of every saved output and of the corrupted
 inputs (as the no-reconstruction floor); texts.json per case directory.
 
+EasyOCR runs on the CPU unless crops and recognise are given --gpu (the Kaggle
+downstream run); data/ocr/manifest.json and results/ocr/recognise_env.json
+record which, with the versions.
+
 score: character error rate (Levenshtein distance / reference length) and exact
 match per crop; per family, level and method the means with 95 percent bootstrap
 intervals over crops, and the paired CSFR-minus-best-classical and
@@ -80,9 +84,18 @@ def fit_crop(img: np.ndarray, box: tuple[int, int, int, int]) -> np.ndarray:
     return out
 
 
-def _reader():
+def _reader(gpu: bool = False):
     import easyocr
-    return easyocr.Reader(["en"], gpu=False, verbose=False)
+    return easyocr.Reader(["en"], gpu=gpu, verbose=False)
+
+
+def _reader_env(gpu: bool) -> dict:
+    import platform
+
+    import easyocr
+    import torch
+    return {"gpu": gpu, "easyocr": getattr(easyocr, "__version__", "unknown"), "torch": torch.__version__,
+            "python": platform.python_version(), "platform": platform.platform()}
 
 
 def _recognise(reader, crop: np.ndarray) -> str:
@@ -94,7 +107,7 @@ def _recognise(reader, crop: np.ndarray) -> str:
 def cmd_crops(args) -> int:
     from PIL import Image
     manifest = json.loads((ROOT / "data/jpeg_corruption/manifest.json").read_text())["files"]
-    reader = _reader()
+    reader = _reader(args.gpu)
     crops, records = [], []
     for rec in manifest:
         if rec["corpus"] != "govdocs1" or len(crops) >= args.target:
@@ -126,7 +139,7 @@ def cmd_crops(args) -> int:
     (out / "manifest.json").write_text(json.dumps(
         {"selection": {"conf_min": 0.8, "height_px": [24, 80], "per_document_max": 3, "target": args.target,
                        "crop": [CROP_H, CROP_W], "reference": "EasyOCR recognition of the clean crop"},
-         "crops": records}, indent=2), encoding="utf-8")
+         "environment": _reader_env(args.gpu), "crops": records}, indent=2), encoding="utf-8")
     print(f"[ocr] {len(crops)} crops from {len({r['file'] for r in records})} documents")
     return 0
 
@@ -176,7 +189,10 @@ def cmd_reconstruct(args) -> int:
 def cmd_recognise(args) -> int:
     sys.path.insert(0, str(ROOT / "src"))
     from checkpoint import write_text_atomic
-    reader = _reader()
+    reader = _reader(args.gpu)
+    out = ROOT / "results/ocr"
+    out.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(out / "recognise_env.json", json.dumps(_reader_env(args.gpu), indent=2))
     for d in sorted((ROOT / "results/ocr/cases").glob("*/seed*")):
         tpath = d / "texts.json"
         texts = json.loads(tpath.read_text()) if tpath.exists() else {}
@@ -248,10 +264,12 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("crops")
     c.add_argument("--target", type=int, default=300)
+    c.add_argument("--gpu", action="store_true", help="EasyOCR on the GPU")
     r = sub.add_parser("reconstruct")
     r.add_argument("--workers", type=int, default=8)
     r.add_argument("--threads", type=int, default=8)
-    sub.add_parser("recognise")
+    g = sub.add_parser("recognise")
+    g.add_argument("--gpu", action="store_true", help="EasyOCR on the GPU")
     sub.add_parser("score")
     args = ap.parse_args(argv)
     return {"crops": cmd_crops, "reconstruct": cmd_reconstruct, "recognise": cmd_recognise,

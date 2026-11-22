@@ -140,3 +140,52 @@ bash scripts/verify.sh
 - gpu results are not bit-identical to cpu results. the lama runs are reported
   as their own runs and no table row in the paper mixes devices. do not
   regenerate an existing cpu number on the gpu and splice it into a cpu table
+
+## round 2: the downstream stage (e12, e13)
+
+`kaggle/downstream_v2_kernel.py` runs the workstation's downstream stage,
+`bash scripts/run_round2_campaign.sh downstream`, in a kaggle gpu session with
+`DOWNSTREAM_DEVICE=cuda OCR_GPU=1`: the resnet training, lama and easyocr use the
+gpu, every other step runs as configured (classifiers and reconstructions on the
+cpu). it builds its own environments, so the warning above about
+`requirements.txt` does not apply: the main one is `requirements.txt` exactly, in
+an isolated venv that cannot see the image's torch or diffusers. it stops if any
+environment cannot run a cuda convolution, if the round-1 cnn does not score
+0.8783 on svhn test, if the evaluation or calibration subset hashes differ from
+the workstation's (`EXPECTED`), or if a govdocs1 jpeg differs from its manifest.
+
+one-time setup: a phone-verified account (gpu and internet), a token from
+kaggle > settings > api > create new token saved as `~/.kaggle/kaggle.json`, and
+the cli in its own venv (`python -m venv .venv-kaggle`, then
+`.venv-kaggle/Scripts/pip install kaggle six`: kaggle 2.2.5 imports six without
+declaring it).
+
+```bash
+K=.venv-kaggle/Scripts/kaggle; U=<kaggle user>; D=<scratch dir>
+python kaggle/downstream_v2_kernel.py stage $D/ds --user $U     # refuses uncommitted changes
+$K datasets create -p $D/ds                                    # private; later: datasets version -p $D/ds -m <msg>
+python kaggle/downstream_v2_kernel.py kernel-dir $D/k1 --user $U --session 1
+$K kernels push -p $D/k1 --accelerator NvidiaTeslaT4
+$K kernels status $U/csfr-downstream-v2-s1
+$K kernels output $U/csfr-downstream-v2-s1 -p $D/out1 \
+    --file-pattern '^(STATUS|kaggle_env\.json|stage\.log|results\.tar\.gz)$'
+```
+
+the file pattern leaves `state/` (up to ~14 gb of arrays) on kaggle, where the
+next session reads it.
+
+a session stops the stage at its time budget (12 h less 45 min for saving) and,
+until the stage is complete, saves `state/` with the arrays; session n+1
+(`kernel-dir ... --session 2`) takes session n's output as an input and
+continues, since every step resumes. `STATUS` says complete, incomplete or
+failed with the reason; `kaggle_env.json` records the gpu, the cpu count and
+`pip freeze` of each environment.
+
+bringing it back: `results.tar.gz` holds `results/downstream_v2`, `results/ocr`
+and `data/ocr` without arrays or the training checkpoint. move the
+workstation's own `results/downstream_v2` aside first (it holds the partial cpu
+training), inspect the listing, unpack at the repo root, then
+`python kaggle/downstream_v2_kernel.py check` must print `complete`. the
+workstation's campaign must then run without its downstream stage
+(`-Stages "forensic idle"`), or it would redo lama on the cpu over the gpu
+outputs.

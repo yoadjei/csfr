@@ -15,6 +15,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 LAMA=".venv-lama/Scripts/python"; [ -x "$LAMA" ] || LAMA=".venv-lama/bin/python"
 OCR=".venv-ocr/Scripts/python"; [ -x "$OCR" ] || OCR=".venv-ocr/bin/python"
+# Devices of the GPU-capable downstream steps (ResNet training, LaMa, EasyOCR):
+# the CPU, as on the workstation, unless the caller sets them
+# (kaggle/downstream_v2_kernel.py sets DOWNSTREAM_DEVICE=cuda and OCR_GPU=1).
+DOWNSTREAM_DEVICE="${DOWNSTREAM_DEVICE:-cpu}"
+OCR_GPU="${OCR_GPU:-}"
 case "$(python -c 'import sys; print(sys.prefix)')" in
   *.venv-lama*|*.venv-ocr*)
     echo "[campaign] python is $(python -c 'import sys; print(sys.executable)'), a task environment;" \
@@ -70,16 +75,16 @@ stage_forensic() {
 stage_downstream() {
   mkdir -p results/downstream_v2 results/ocr
   [ -f results/downstream_v2/classifier_resnet.pt ] || \
-    python scripts/train_resnet_classifier.py >> results/downstream_v2/run_train_resnet.log 2>&1
+    python scripts/train_resnet_classifier.py --device "$DOWNSTREAM_DEVICE" >> results/downstream_v2/run_train_resnet.log 2>&1
   python scripts/run_downstream.py --config configs/downstream_v2_cnn.yaml >> results/downstream_v2/run_cnn.log 2>&1
-  "$LAMA" scripts/run_lama_cells.py --root results/downstream_v2/cases >> results/downstream_v2/run_lama.log 2>&1
+  "$LAMA" scripts/run_lama_cells.py --root results/downstream_v2/cases --device "$DOWNSTREAM_DEVICE" >> results/downstream_v2/run_lama.log 2>&1
   python scripts/run_downstream.py --config configs/downstream_v2_cnn.yaml >> results/downstream_v2/run_cnn_lama.log 2>&1
   python scripts/run_downstream.py --config configs/downstream_v2_resnet.yaml >> results/downstream_v2/run_resnet.log 2>&1
   python scripts/run_downstream_stats_v2.py >> results/downstream_v2/run_stats.log 2>&1
-  [ -f data/ocr/crops.npy ] || "$OCR" -I scripts/run_ocr_task.py crops >> results/ocr/run_crops.log 2>&1
+  [ -f data/ocr/crops.npy ] || "$OCR" -I scripts/run_ocr_task.py crops ${OCR_GPU:+--gpu} >> results/ocr/run_crops.log 2>&1
   python scripts/run_ocr_task.py reconstruct >> results/ocr/run_reconstruct.log 2>&1
-  "$LAMA" scripts/run_lama_cells.py --root results/ocr/cases >> results/ocr/run_lama.log 2>&1
-  "$OCR" scripts/run_ocr_task.py recognise >> results/ocr/run_recognise.log 2>&1
+  "$LAMA" scripts/run_lama_cells.py --root results/ocr/cases --device "$DOWNSTREAM_DEVICE" >> results/ocr/run_lama.log 2>&1
+  "$OCR" scripts/run_ocr_task.py recognise ${OCR_GPU:+--gpu} >> results/ocr/run_recognise.log 2>&1
   python scripts/run_ocr_task.py score >> results/ocr/run_score.log 2>&1
 }
 

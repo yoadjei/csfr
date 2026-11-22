@@ -4,7 +4,8 @@
 
 DigitResNet on the SVHN training split (90 percent; 10 percent monitors
 validation accuracy), 15 epochs, Adam 1e-3 with cosine decay, batch 128, weight
-decay 5e-4, seed 0, CPU. Saves results/downstream_v2/classifier_resnet.pt with
+decay 5e-4, seed 0, on the CPU unless --device says otherwise (the Kaggle
+downstream run passes cuda). Saves results/downstream_v2/classifier_resnet.pt with
 the clean test accuracy in its metadata. Stops without saving if the clean test
 accuracy is below 0.95. The training state is saved after every epoch
 (--checkpoint), and a rerun resumes after the last saved epoch with the result
@@ -22,6 +23,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from csfr_reconstruct_2d import pick_device  # noqa: E402
 from downstream import (clean_top1_accuracy, load_digit_dataset, save_classifier,  # noqa: E402
                         set_seed, sha256_file, train_classifier)
 
@@ -34,11 +36,13 @@ def main(argv=None) -> int:
     ap.add_argument("--epochs", type=int, default=15)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--threads", type=int, default=8)
+    ap.add_argument("--device", default="cpu", help="torch device, or auto (the GPU when there is one)")
     ap.add_argument("--out", default="results/downstream_v2/classifier_resnet.pt")
     ap.add_argument("--checkpoint", default="results/downstream_v2/classifier_resnet_training.pt")
     args = ap.parse_args(argv)
 
     torch.set_num_threads(args.threads)
+    device = pick_device(args.device)
     set_seed(args.seed)
     train_x, train_y, corpus = load_digit_dataset(prefer="svhn", split="train")
     test_x, test_y, _ = load_digit_dataset(prefer=corpus, split="test", download=False)
@@ -47,15 +51,15 @@ def main(argv=None) -> int:
     t0 = time.time()
     model, info = train_classifier(train_x, train_y, epochs=args.epochs, batch_size=128, lr=1e-3,
                                    seed=args.seed, arch="DigitResNet", weight_decay=5e-4, cosine=True,
-                                   checkpoint=ROOT / args.checkpoint)
-    acc = clean_top1_accuracy(model, test_x, test_y)
+                                   checkpoint=ROOT / args.checkpoint, device=device)
+    acc = clean_top1_accuracy(model, test_x, test_y, device=device)
     print(f"[resnet] clean SVHN test top-1 {acc:.4f} after {time.time() - t0:.0f}s", flush=True)
     if acc < MIN_CLEAN_ACC:
         print(f"[resnet] below {MIN_CLEAN_ACC}: not saved; report before continuing", flush=True)
         return 2
     out = ROOT / args.out
     meta = {"corpus": corpus, "clean_test_top1": acc, "train_seconds": time.time() - t0,
-            "torch": torch.__version__, "threads": args.threads, **info}
+            "torch": torch.__version__, "threads": args.threads, "device": str(device), **info}
     save_classifier(model, out, meta=meta)
     print(f"[resnet] saved {out} sha256 {sha256_file(out)}", flush=True)
     return 0

@@ -4,6 +4,9 @@ Runs inside the isolated environment (scripts/setup_lama_venv.sh):
 
     .venv-lama/Scripts/python scripts/run_lama_cells.py --root results/sweep_v2_govdocs1
 
+On the CPU unless --device says otherwise (the Kaggle downstream run passes
+cuda); lama_meta.json records the device.
+
 For every directory under --root holding y.npy and mask.npy but no
 x_hat_lama.npy, reconstructs with LaMa (big-lama via simple-lama-inpainting) at
 the native resolution, composites the observed pixels back, and writes
@@ -28,11 +31,10 @@ sys.path.insert(0, str(ROOT / "src"))
 from checkpoint import save_npy_atomic, write_text_atomic  # noqa: E402
 
 
-def _model():
-    import torch
+def _model(device):
     from simple_lama_inpainting import SimpleLama
     try:
-        return SimpleLama(device=torch.device("cpu"))
+        return SimpleLama(device=device)
     except TypeError:
         return SimpleLama()
 
@@ -68,11 +70,16 @@ def main(argv=None) -> int:
     ap.add_argument("--root", required=True)
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--threads", type=int, default=8)
+    ap.add_argument("--device", default="cpu", help="torch device, or auto (the GPU when there is one)")
     args = ap.parse_args(argv)
 
     import torch
+    from csfr_reconstruct_2d import pick_device
     torch.set_num_threads(args.threads)
-    model = _model()
+    requested = pick_device(args.device)
+    model = _model(requested)
+    # the device the model reports, where it reports one: an old SimpleLama picks its own
+    device = str(getattr(model, "device", requested))
     dirs = sorted({p.parent for p in Path(args.root).rglob("y.npy") if (p.parent / "mask.npy").exists()})
     todo = [d for d in dirs if args.force or not (d / "x_hat_lama.npy").exists()]
     print(f"[lama] {len(todo)} of {len(dirs)} directories to run", flush=True)
@@ -85,7 +92,7 @@ def main(argv=None) -> int:
         n = y.shape[0] if y.ndim in (3, 4) and not (y.ndim == 3 and y.shape[-1] == 3) else 1
         meta = {"backend": "big-lama (simple-lama-inpainting 0.1.2)", "resolution": "native",
                 "input": "grey replicated to RGB" if y.ndim == 3 and y.shape[-1] != 3 else "RGB",
-                "observed_pixels": "composited back exactly", "device": "cpu",
+                "observed_pixels": "composited back exactly", "device": device,
                 "torch": torch.__version__, "numpy": np.__version__,
                 "python": platform.python_version(), "platform": platform.platform(),
                 "seconds": dt, "seconds_per_item": dt / max(n, 1), "n": int(n)}
