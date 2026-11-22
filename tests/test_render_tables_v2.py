@@ -395,7 +395,9 @@ def test_jpeg_rows_per_corruption_and_mask(tmp_path):
             summ += [{"kind": kind, "condition": cond, "method": "csfr", "n_cases": 20, "psnr_hole_mean": 25.0,
                       "vs_best_classical": "fsr", "diff_psnr_hole_vs_best_classical": -0.4,
                       "p_wilcoxon_vs_best_classical": 0.01, "diff_psnr_hole_vs_lama": 0.3,
-                      "p_wilcoxon_vs_lama": 0.2},
+                      "p_wilcoxon_vs_lama": 0.2,
+                      "n_nothing_to_fill": 7 if (kind, cond) == ("flip", "decoder") else 0,
+                      "n_nothing_observed": {"overwrite": 2, "flip": 3}.get(kind, 0) if cond == "offset" else 0},
                      {"kind": kind, "condition": cond, "method": "fsr", "n_cases": 20, "psnr_hole_mean": 25.4},
                      {"kind": kind, "condition": cond, "method": "lama", "n_cases": 20, "psnr_hole_mean": 24.7}]
             mq += [{"kind": kind, "condition": cond, "visible_damage": v, "coverage_of_oracle_loss": c,
@@ -410,6 +412,15 @@ def test_jpeg_rows_per_corruption_and_mask(tmp_path):
                         r"& 80.0 & 2.00 \\")                      # invisible cases excluded from the mask means
     assert lines[1].startswith(" & Decoder & ")
     assert sum(1 for ln in lines if " & " in ln and not ln.startswith(r"\multicolumn")) == 9
+    note = next(ln for ln in lines if "not compared" in ln)
+    assert ("the mask marks nothing missing in 7 (flipped byte, decoder mask) and every pixel missing in "
+            "2 (overwritten run, offset mask) and 3 (flipped byte, offset mask)") in note
+    for r in summ:
+        r.pop("n_nothing_to_fill", None)
+        r.pop("n_nothing_observed", None)
+    _write_csv(tmp_path / "summary.csv", summ)
+    with pytest.raises(ValueError, match="no counts"):
+        m.jpeg(tmp_path)                                          # a summary.csv of the earlier script
 
 
 def _maskerr_fixture(d, cells=("CF1_L3", "CF3_L5"), methods=("csfr", "bilinear", "lama"), skip=()):

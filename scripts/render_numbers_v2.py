@@ -494,7 +494,7 @@ CORPUS_FIELDS = ("NMethods", "NFirst", "GmsdNFirst", "GmsdRankMin", "CapfreeNFir
 
 
 def _prose_list(names: list[str]) -> str:
-    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    return _tables().prose_list(names)
 
 
 def level_trend(xs: list[float]) -> str:

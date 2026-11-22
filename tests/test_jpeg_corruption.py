@@ -176,3 +176,25 @@ def test_summary_is_per_corruption_kind_with_paired_comparisons():
         assert r["vs_best_classical"] == "fsr" and r["diff_psnr_hole_vs_best_classical"] == 1.0
         assert r["vs_lama"] == "lama" and r["diff_psnr_hole_vs_lama"] == -1.0
         assert r["n_paired_vs_best_classical"] == 4 and r["n_paired_vs_lama"] == 4
+
+
+def test_summary_counts_but_does_not_compare_cases_without_information():
+    # a mask that marks nothing missing leaves every method the decode; one that
+    # marks everything missing leaves them no data, and their scores are only
+    # their fallback constants: both are counted, neither enters the means or
+    # the paired tests
+    mod = _driver()
+    rows = []
+    for c, (nothing_to_fill, nothing_observed, shift) in enumerate(
+            [(False, False, 0.0), (False, False, 1.0), (True, False, 50.0), (False, True, -50.0)]):
+        case = {"case": f"f{c}_flip_r0", "kind": "flip", "condition": "offset", "nothing_observed": nothing_observed}
+        metrics = {"nothing_to_fill": nothing_to_fill, "methods": {
+            m: {"kind": "csfr" if m == "csfr" else "classical", "status": "done", "psnr_hole": v + shift,
+                "ssim_hole": 0.5, "gmsd_hole": 0.1, "psnr_whole": v}
+            for m, v in {"csfr": 20.0, "bilinear": 19.0}.items()}}
+        rows += mod.method_rows(case, metrics)
+    summ = mod.summarise(rows, ["bilinear"], n_boot=200, seed=0)
+    csfr = next(r for r in summ if r["method"] == "csfr")
+    assert csfr["n_cases"] == 2 and csfr["psnr_hole_mean"] == 20.5
+    assert (csfr["n_nothing_to_fill"], csfr["n_nothing_observed"]) == (1, 1)
+    assert csfr["n_paired_vs_best_classical"] == 2 and csfr["diff_psnr_hole_vs_best_classical"] == 1.0

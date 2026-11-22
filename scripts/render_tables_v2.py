@@ -90,6 +90,11 @@ MAIN_FALLBACK_REF = r"Section~\ref{sec:experiments:methods}"
 SUPP_FALLBACK_REF = r"Table~\ref{tab:supp:fallbacks}"
 
 
+def prose_list(names: list[str]) -> str:
+    """a; a and b; a, b and c."""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def _note(text: str, ncols: int) -> str:
     return rf"\multicolumn{{{ncols}}}{{@{{}}l}}{{\footnotesize {text}}} \\"
 
@@ -676,6 +681,9 @@ def jpeg(d: Path = JPEG_DIR) -> str | None:
     by = {(r["kind"], r["condition"], r["method"]): r for r in summ}
     if any((k, c, EXTERNAL) not in by for (k, c, meth) in by if meth == "csfr"):
         return None
+    if any("n_nothing_to_fill" not in r or "n_nothing_observed" not in r for r in summ):
+        raise ValueError("jpeg: summary.csv has no counts of the cases left out of the comparison; "
+                         "it predates the current run_jpeg_corruption.py, so rerun its scoring step")
     body = []
     for kind, kname in JPEG_KINDS:
         if body:
@@ -699,6 +707,15 @@ def jpeg(d: Path = JPEG_DIR) -> str | None:
             body.append(" & ".join(out) + r" \\")
     body += [r"\midrule", _note(rf"$^{{*}}$ Wilcoxon signed-rank $p < {ALPHA:g}$, paired by case, "
                                 r"not corrected for multiplicity.", 11)]
+    left_out = {key: [f"{by[(k, c, 'csfr')][key]} ({kn.lower()}, {cn.lower()} mask)"
+                      for k, kn in JPEG_KINDS for c, cn in JPEG_CONDITIONS
+                      if int(by[(k, c, "csfr")][key]) > 0]
+                for key in ("n_nothing_to_fill", "n_nothing_observed")}
+    parts = [f"{what} in {prose_list(left_out[key])}"
+             for key, what in (("n_nothing_to_fill", "nothing missing"), ("n_nothing_observed", "every pixel missing"))
+             if left_out[key]]
+    if parts:
+        body.append(_note("Cases counted and not compared: the mask marks " + " and ".join(parts) + ".", 11))
     header = [r" & & & & \multicolumn{2}{c}{Best classical} & & \multicolumn{2}{c}{CSFR $-$} & "
               r"\multicolumn{2}{c}{Mask (\%)} \\",
               r"\cmidrule(lr){5-6}\cmidrule(lr){8-9}\cmidrule(l){10-11}",

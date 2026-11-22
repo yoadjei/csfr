@@ -26,7 +26,8 @@ Outputs: per_image.csv (one row per case, condition and method), masks_quality.c
 (mask error rates against the oracle per case and condition) and summary.csv (per
 kind, condition and method: means with 95 percent bootstrap intervals over cases,
 and the paired CSFR-minus-best-classical and CSFR-minus-LaMa differences with
-Wilcoxon p). Baselines run concurrently in the worker pool and CSFR after them,
+Wilcoxon p, over the cases whose mask marks something missing and leaves
+something observed; the others are counted, not compared). Baselines run concurrently in the worker pool and CSFR after them,
 so the recorded seconds are not runtime measurements (E11 and E15 are).
 """
 from __future__ import annotations
@@ -168,17 +169,27 @@ def _write(path: Path, rows: list[dict]) -> None:
 
 
 def summarise(rows: list[dict], classical: list[str], n_boot: int, seed: int) -> list[dict]:
+    """Per kind, condition and method: means with bootstrap intervals over cases,
+    and CSFR's paired differences to the best classical method and to LaMa.
+    Cases whose mask marks nothing missing (every method returns the decode) or
+    everything missing (no method has data; the scores are the methods' fallback
+    constants) are counted in n_nothing_to_fill and n_nothing_observed and left
+    out of the means and the tests."""
     out = []
     groups = sorted({(r["kind"], r["condition"]) for r in rows})
     for kind, cond in groups:
-        g = [r for r in rows if r["kind"] == kind and r["condition"] == cond and r["status"] == "done"]
+        g_all = [r for r in rows if r["kind"] == kind and r["condition"] == cond and r["status"] == "done"]
+        n_fill = len({r["case"] for r in g_all if r["nothing_to_fill"]})
+        n_obs = len({r["case"] for r in g_all if r.get("nothing_observed")})
+        g = [r for r in g_all if not r["nothing_to_fill"] and not r.get("nothing_observed")]
         by_m: dict[str, dict] = {}
         for r in g:
             by_m.setdefault(r["method"], {})[r["case"]] = r
         means = {m: np.mean([v["psnr_hole"] for v in cases.values()]) for m, cases in by_m.items()}
         best = max((m for m in by_m if m in classical), key=lambda m: means[m], default=None)
         for m, cases in by_m.items():
-            row = {"kind": kind, "condition": cond, "method": m, "n_cases": len(cases)}
+            row = {"kind": kind, "condition": cond, "method": m, "n_cases": len(cases),
+                   "n_nothing_to_fill": n_fill, "n_nothing_observed": n_obs}
             for k in METRICS:
                 v = np.array([c[k] for c in cases.values()], dtype=np.float64)
                 lo, hi = _paired.bootstrap_ci(v, n_boot, np.random.default_rng([seed, len(out), METRICS.index(k)]))
@@ -241,6 +252,7 @@ def main(argv=None) -> int:
                                           cfg["seed"], args.force)
                         rows += method_rows({"case": case, "file": rec["file"], "corpus": rec["corpus"],
                                              "kind": kind, "repeat": r, "condition": cond,
+                                             "nothing_observed": bool((M == 0).all()),
                                              "H": c["clean"].shape[0], "W": c["clean"].shape[1]}, m)
                     done = [x for x in rows if x["case"] == case and x["method"] == "csfr"]
                     print(f"[jpeg] {fi + 1}/{len(manifest)} {case}: visible {visible}; csfr hole PSNR " +
