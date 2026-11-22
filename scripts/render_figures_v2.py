@@ -39,6 +39,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from csfr_objective import HI  # noqa: E402
 from csfr_solver import SolverConfig, solve  # noqa: E402
+from jpeg_corruption import mask_errors  # noqa: E402
 from sensitivity import (RecordConfig, fidelity_patch, free_set,  # noqa: E402
                          sensitivity_column, sensitivity_row)
 
@@ -813,9 +814,138 @@ def solver_convergence(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw)
     return draw_convergence(data, fig_dir)
 
 
+# ------------------------------------------------------------ byte-corrupted JPEG examples
+
+JPEG_DIR = ROOT / "results" / "jpeg_corruption"
+JPEG_CONFIG = ROOT / "configs" / "jpeg_corruption.yaml"
+# fixed by content, not by results: the first file of the manifest that shows no
+# person (files 0 and 1 show people; 2 is a landscape), repeat 0, one row per
+# corruption kind, reconstructed with the oracle mask. Not the offset mask: when
+# the damage starts near the top of the crop it marks every pixel missing (file
+# 2 under an overwritten run and a flipped byte), and every panel would be black.
+JPEG_EX_FILE, JPEG_EX_REPEAT, JPEG_EX_MASK = 2, 0, "oracle"
+JPEG_EX_KINDS = (("truncate", "Truncation"), ("overwrite", "Overwritten run"), ("flip", "Flipped byte"))
+JPEG_EX_MASKS = (("oracle", "Oracle mask"), ("decoder", "Decoder mask"), ("offset", "Offset mask"))
+JPEG_EX_METHODS = (("csfr", "CSFR"), ("lama", "LaMa"))
+# mask panels: kept, marked missing, and lost (oracle) but marked observed
+MASK_COLOURS = ListedColormap(["#ffffff", "#b7b6b2", SERIES[1]])
+
+
+def _jpeg_driver():
+    spec = importlib.util.spec_from_file_location("_jpeg_drv", ROOT / "scripts" / "run_jpeg_corruption.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def jpeg_examples_data(d: Path = JPEG_DIR, config: Path = JPEG_CONFIG) -> dict | None:
+    """The example cases of the byte-corruption experiment, or None until each
+    has its CSFR and LaMa outputs under JPEG_EX_MASK, both scored. Each case is
+    rebuilt from the source file with the driver's own build_case and seed, and
+    refused unless that reproduces the saved clean decode and the input (y,
+    mask) of every condition, so the panels show what the methods were given.
+    A case the driver ran without visible damage has no conditions and cannot be
+    an example."""
+    import yaml
+    cfg = yaml.safe_load(Path(config).read_text(encoding="utf-8"))
+    rec = json.loads((ROOT / cfg["manifest"]).read_text(encoding="utf-8"))["files"][JPEG_EX_FILE]
+    stem = Path(rec["file"]).stem
+    cdirs = {kind: d / "cases" / f"{stem}_{kind}_r{JPEG_EX_REPEAT}" for kind, _ in JPEG_EX_KINDS}
+    scored = {}
+    for kind, cdir in cdirs.items():
+        if not (cdir / "case.json").exists():
+            return None
+        if not (cdir / "oracle").exists():
+            raise ValueError(f"{cdir.name}: no visible damage, so it cannot be an example")
+        mpath = cdir / JPEG_EX_MASK / "metrics.json"
+        if not mpath.exists():
+            return None
+        methods = json.loads(mpath.read_text(encoding="utf-8"))["methods"]
+        if any(methods.get(m, {}).get("status") != "done" for m, _ in JPEG_EX_METHODS):
+            return None
+        scored[kind] = {m: float(methods[m]["psnr_hole"]) for m, _ in JPEG_EX_METHODS}
+
+    drv = _jpeg_driver()
+    raw = (ROOT / cfg["src_dir"] / rec["file"]).read_bytes()
+    rows = []
+    for kind, cdir in cdirs.items():
+        rng = np.random.default_rng([cfg["seed"], JPEG_EX_FILE, drv.KIND_INDEX[kind], JPEG_EX_REPEAT])
+        c = drv.build_case(raw, kind, rng, cfg["max_side"], cfg["offset_margin_rows"])
+        if not np.array_equal(c["clean"].astype(np.uint8), np.load(cdir / "clean.npy")):
+            raise ValueError(f"{cdir.name}: the saved clean decode is not the case's")
+        for cond, _ in JPEG_EX_MASKS:
+            M = c["masks"][cond]
+            if not (np.array_equal(np.load(cdir / cond / "mask.npy")[0], M.astype(np.float32))
+                    and np.array_equal(np.load(cdir / cond / "y.npy")[0], (c["decoded"] * M).astype(np.float32))):
+                raise ValueError(f"{cdir.name}/{cond}: the saved input is not the case's decode and mask")
+        rows.append({"kind": kind, "case": cdir.name, "clean": c["clean"], "decoded": c["decoded"],
+                     "masks": {cond: c["masks"][cond] for cond, _ in JPEG_EX_MASKS},
+                     "mask_errors": {cond: mask_errors(c["masks"][cond], c["masks"]["oracle"])
+                                     for cond, _ in JPEG_EX_MASKS},
+                     "outputs": {m: np.load(cdir / JPEG_EX_MASK / f"x_hat_{m}.npy")[0] for m, _ in JPEG_EX_METHODS},
+                     "psnr_hole": scored[kind], "scan_frac": c["meta"]["scan_frac"]})
+    return {"file": rec["file"], "repeat": JPEG_EX_REPEAT, "mask": JPEG_EX_MASK, "rows": rows}
+
+
+def jpeg_examples_numbers(data: dict) -> dict:
+    return {"file": data["file"], "repeat": data["repeat"], "mask": data["mask"],
+            "rows": [{"kind": r["kind"], "case": r["case"], "scan_frac": r["scan_frac"],
+                      "psnr_hole": r["psnr_hole"], "masks": r["mask_errors"]} for r in data["rows"]]}
+
+
+def _mask_panel(ax, M: np.ndarray, M_oracle: np.ndarray) -> None:
+    code = np.where(M == 0, 1, np.where(M_oracle == 0, 2, 0))
+    ax.imshow(code, cmap=MASK_COLOURS, vmin=0, vmax=2, interpolation="nearest")
+
+
+def draw_jpeg_examples(data: dict, fig_dir: Path = FIG_DIR, name: str = "jpeg_examples") -> Path:
+    """One row per corruption kind: the clean and the corrupted decode, the three
+    masks (grey: marked missing; orange: lost but marked observed), and the CSFR
+    and LaMa reconstructions with JPEG_EX_MASK, each with its hole PSNR."""
+    rows = data["rows"]
+    h, w = rows[0]["clean"].shape
+    ncol = 2 + len(JPEG_EX_MASKS) + len(JPEG_EX_METHODS)
+    panel = TEXT_WIDTH_IN / ncol
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(len(rows), ncol, figsize=(TEXT_WIDTH_IN, len(rows) * (panel * h / w + 0.3) + 0.2),
+                                 layout="constrained", squeeze=False)
+        mask_name = dict(JPEG_EX_MASKS)[data["mask"]].split()[0].lower()
+        titles = (["Clean decode", "Corrupted decode"] + [t for _, t in JPEG_EX_MASKS]
+                  + [f"{t} ({mask_name})" for _, t in JPEG_EX_METHODS])
+        for i, (r, (_, kname)) in enumerate(zip(rows, JPEG_EX_KINDS)):
+            ax = axes[i]
+            for j, img in enumerate((r["clean"], r["decoded"])):
+                ax[j].imshow(img, cmap="gray", vmin=0, vmax=255, interpolation="nearest")
+            for j, (cond, _) in enumerate(JPEG_EX_MASKS, start=2):
+                _mask_panel(ax[j], r["masks"][cond], r["masks"]["oracle"])
+                e = r["mask_errors"][cond]
+                ax[j].set_xlabel(f"missing {100 * e['missing_frac']:.1f}%\nFP {100 * e['false_pos_frac']:.1f}%",
+                                 fontsize=7, labelpad=2)
+            for j, (m, _) in enumerate(JPEG_EX_METHODS, start=2 + len(JPEG_EX_MASKS)):
+                ax[j].imshow(r["outputs"][m], cmap="gray", vmin=0, vmax=255, interpolation="nearest")
+                ax[j].set_xlabel(f"hole PSNR {r['psnr_hole'][m]:.2f} dB", fontsize=7, labelpad=2)
+            for j, a in enumerate(ax):
+                a.set_xticks([])
+                a.set_yticks([])
+                for s in a.spines.values():
+                    s.set_linewidth(0.4)
+                if i == 0:
+                    a.set_title(titles[j])
+            ax[0].set_ylabel(kname)
+        return _save(fig, name, fig_dir)
+
+
+def jpeg_examples(fig_dir: Path = FIG_DIR, data_dir: Path = DATA_DIR, **kw) -> Path | None:
+    data = jpeg_examples_data(**kw)
+    if data is None:
+        return None
+    _write_json(data_dir / "jpeg_examples.json", jpeg_examples_numbers(data))
+    return draw_jpeg_examples(data, fig_dir)
+
+
 FIGURES = {"method_overview": method_overview, "accuracy_by_level": accuracy_by_level,
            "record_walkthrough": record_walkthrough, "record_comparison": record_comparison,
-           "solver_convergence": solver_convergence}
+           "solver_convergence": solver_convergence, "jpeg_examples": jpeg_examples}
 
 
 def main(argv: list[str] | None = None) -> int:

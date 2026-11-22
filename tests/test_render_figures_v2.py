@@ -340,3 +340,96 @@ def test_convergence_figure_draws_both_solvers_and_their_own_measures(tmp_path):
 def test_convergence_figure_refuses_an_ambiguous_released_budget(tmp_path):
     with pytest.raises(ValueError):
         _mod().convergence_data(d=_trace(tmp_path, budgets=(600, 2400)))
+
+
+def _jpeg_results(tmp_path, lama=True, scored=True, kinds=("truncate", "overwrite", "flip")):
+    """A results directory as run_jpeg_corruption.py leaves it for the example
+    file of the manifest, built with the driver's own build_case and seed."""
+    import io
+
+    import yaml
+    from PIL import Image
+    m = _mod()
+    drv, fi = m._jpeg_driver(), m.JPEG_EX_FILE
+    rng = np.random.default_rng(0)
+    yy, xx = np.mgrid[0:96, 0:96]
+    g = (128 + 60 * np.sin(xx / 7.0) + 40 * np.cos(yy / 5.0) + rng.normal(0, 8, (96, 96))).clip(0, 255)
+    buf = io.BytesIO()
+    Image.fromarray(g.astype(np.uint8)).save(buf, "JPEG", quality=85)
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.jpg").write_bytes(buf.getvalue())
+    files = [{"file": f"other{i}.jpg", "corpus": "t", "mode": "L"} for i in range(fi)]
+    files.append({"file": "a.jpg", "corpus": "t", "mode": "L"})
+    (tmp_path / "manifest.json").write_text(json.dumps({"files": files}))
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text(yaml.safe_dump({"manifest": str(tmp_path / "manifest.json"), "src_dir": str(src), "seed": 0,
+                                   "max_side": 64, "offset_margin_rows": 2}))
+    out = tmp_path / "out"
+    for kind in kinds:
+        c = drv.build_case(buf.getvalue(), kind, np.random.default_rng([0, fi, drv.KIND_INDEX[kind], 0]), 64, 2)
+        cdir = out / "cases" / f"a_{kind}_r0"
+        cdir.mkdir(parents=True)
+        np.save(cdir / "clean.npy", c["clean"].astype(np.uint8))
+        (cdir / "case.json").write_text(json.dumps(c["meta"]))
+        for cond, M in c["masks"].items():
+            d = cdir / cond
+            d.mkdir()
+            np.save(d / "y.npy", (c["decoded"] * M)[None].astype(np.float32))
+            np.save(d / "mask.npy", M[None].astype(np.float32))
+            np.save(d / "x_hat_csfr.npy", c["clean"][None].astype(np.float32))
+            methods = {"csfr": {"kind": "csfr", "status": "done", "psnr_hole": 20.5}}
+            if lama:
+                np.save(d / "x_hat_lama.npy", c["clean"][None].astype(np.float32))
+                methods["lama"] = ({"kind": "external", "status": "done", "psnr_hole": 21.25} if scored
+                                   else {"kind": "external", "status": "pending"})
+            (d / "metrics.json").write_text(json.dumps({"nothing_to_fill": False, "methods": methods}))
+    return out, cfg
+
+
+@pytest.mark.parametrize("lama,scored", [(False, False), (True, False)])
+def test_jpeg_examples_are_pending_until_lama_is_scored(tmp_path, lama, scored):
+    out, cfg = _jpeg_results(tmp_path, lama=lama, scored=scored)
+    m = _mod()
+    assert m.jpeg_examples(fig_dir=tmp_path / "fig", data_dir=tmp_path / "data", d=out, config=cfg) is None
+    assert not (tmp_path / "fig").exists()
+
+
+def test_jpeg_examples_are_pending_until_every_kind_has_run(tmp_path):
+    out, cfg = _jpeg_results(tmp_path, kinds=("truncate", "overwrite"))
+    assert _mod().jpeg_examples_data(d=out, config=cfg) is None
+
+
+def test_jpeg_examples_show_the_saved_inputs_and_outputs(tmp_path):
+    import pymupdf
+    out, cfg = _jpeg_results(tmp_path)
+    m = _mod()
+    pdf = m.jpeg_examples(fig_dir=tmp_path / "fig", data_dir=tmp_path / "data", d=out, config=cfg)
+    page = pymupdf.open(pdf)[0]
+    assert abs(page.rect.width - 72 * m.TEXT_WIDTH_IN) < 0.5
+    assert b"/FontFile2" in pdf.read_bytes() and b"/Type3" not in pdf.read_bytes()
+    nums = json.loads((tmp_path / "data" / "jpeg_examples.json").read_text())
+    assert (nums["file"], nums["repeat"], nums["mask"]) == ("a.jpg", 0, m.JPEG_EX_MASK)
+    assert [r["kind"] for r in nums["rows"]] == ["truncate", "overwrite", "flip"]
+    for r in nums["rows"]:
+        assert r["case"] == f"a_{r['kind']}_r0" and r["psnr_hole"] == {"csfr": 20.5, "lama": 21.25}
+        M = np.load(out / "cases" / r["case"] / "decoder" / "mask.npy")[0]
+        assert r["masks"]["decoder"]["missing_frac"] == pytest.approx(float((M == 0).mean()))
+        assert r["masks"]["oracle"]["false_pos_frac"] == 0.0
+
+
+def test_jpeg_examples_refuse_an_input_they_do_not_reproduce(tmp_path):
+    out, cfg = _jpeg_results(tmp_path)
+    y = out / "cases" / "a_overwrite_r0" / "decoder" / "y.npy"
+    np.save(y, np.load(y) + 1)
+    with pytest.raises(ValueError, match="a_overwrite_r0/decoder"):
+        _mod().jpeg_examples_data(d=out, config=cfg)
+
+
+def test_jpeg_examples_refuse_a_case_without_visible_damage(tmp_path):
+    import shutil
+    out, cfg = _jpeg_results(tmp_path)
+    for cond in ("oracle", "decoder", "offset"):
+        shutil.rmtree(out / "cases" / "a_flip_r0" / cond)
+    with pytest.raises(ValueError, match="no visible damage"):
+        _mod().jpeg_examples_data(d=out, config=cfg)
