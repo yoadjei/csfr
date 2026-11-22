@@ -115,6 +115,9 @@ def test_driver_end_to_end(tmp_path):
     assert {r["method"] for r in done} == {"csfr", "bilinear", "inpaint_ns"}
     assert {r["condition"] for r in done} == {"oracle", "decoder", "offset"}
     assert any(r["method"] == "lama" and r["status"] == "pending" for r in rows)
+    assert {r["kind"] for r in rows} == {"truncate"}
+    assert {r["method"]: r["method_kind"] for r in rows} == {
+        "csfr": "csfr", "bilinear": "classical", "inpaint_ns": "classical", "lama": "external"}
     case = out / "cases" / "a_truncate_r0" / "oracle"
     assert np.load(case / "y.npy").shape == (1, 64, 64)
     mq = list(csv.DictReader((out / "masks_quality.csv").open()))
@@ -123,3 +126,53 @@ def test_driver_end_to_end(tmp_path):
     assert float(oracle["false_pos_frac"]) == 0.0 and float(oracle["false_neg_frac"]) == 0.0
     summ = list(csv.DictReader((out / "summary.csv").open()))
     assert {r["method"] for r in summ} == {"csfr", "bilinear", "inpaint_ns"}
+    assert {r["kind"] for r in summ} == {"truncate"}
+    csfr = [r for r in summ if r["method"] == "csfr"]
+    assert len(csfr) == 3 and all(r["vs_best_classical"] in ("bilinear", "inpaint_ns") for r in csfr)
+
+
+def _driver():
+    import importlib.util
+    root = Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location("jpeg_drv", root / "scripts" / "run_jpeg_corruption.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_rows_keep_the_corruption_kind():
+    # each method's metrics carry their own "kind" (csfr, classical, external);
+    # flattened into the row it must not replace the corruption kind
+    mod = _driver()
+    case = {"case": "a_flip_r0", "kind": "flip", "condition": "oracle"}
+    metrics = {"nothing_to_fill": False, "methods": {
+        "csfr": {"kind": "csfr", "status": "done", "psnr_hole": 20.0},
+        "lama": {"kind": "external", "status": "pending"}}}
+    rows = mod.method_rows(case, metrics)
+    assert [(r["kind"], r["method"], r["method_kind"]) for r in rows] == [
+        ("flip", "csfr", "csfr"), ("flip", "lama", "external")]
+    assert rows[0]["psnr_hole"] == 20.0 and rows[0]["nothing_to_fill"] is False
+
+
+def test_summary_is_per_corruption_kind_with_paired_comparisons():
+    mod = _driver()
+    rows = []
+    for kind, shift in (("truncate", 0.0), ("flip", 5.0)):
+        for c in range(4):
+            case = {"case": f"f{c}_{kind}_r0", "kind": kind, "condition": "oracle"}
+            psnr = {"csfr": 20 + shift + c, "bilinear": 18 + shift + c, "fsr": 19 + shift + c,
+                    "lama": 21 + shift + c}
+            metrics = {"nothing_to_fill": False, "methods": {
+                m: {"kind": "external" if m == "lama" else "csfr" if m == "csfr" else "classical",
+                    "status": "done", "psnr_hole": v, "ssim_hole": 0.5, "gmsd_hole": 0.1, "psnr_whole": v}
+                for m, v in psnr.items()}}
+            rows += mod.method_rows(case, metrics)
+    summ = mod.summarise(rows, ["bilinear", "fsr"], n_boot=200, seed=0)
+    assert {(r["kind"], r["condition"]) for r in summ} == {("truncate", "oracle"), ("flip", "oracle")}
+    csfr = {r["kind"]: r for r in summ if r["method"] == "csfr"}
+    for kind, shift in (("truncate", 0.0), ("flip", 5.0)):
+        r = csfr[kind]
+        assert r["n_cases"] == 4 and r["psnr_hole_mean"] == 20 + shift + 1.5
+        assert r["vs_best_classical"] == "fsr" and r["diff_psnr_hole_vs_best_classical"] == 1.0
+        assert r["vs_lama"] == "lama" and r["diff_psnr_hole_vs_lama"] == -1.0
+        assert r["n_paired_vs_best_classical"] == 4 and r["n_paired_vs_lama"] == 4

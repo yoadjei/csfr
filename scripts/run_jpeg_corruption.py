@@ -146,6 +146,17 @@ def run_condition(d: Path, clean: np.ndarray, dec: np.ndarray, M: np.ndarray, M_
     return metrics
 
 
+def method_rows(case: dict, metrics: dict) -> list[dict]:
+    """One per_image.csv row per method of a (case, condition): the case fields,
+    then the method's scalar fields. A method's own "kind" (csfr, classical,
+    external) is written as method_kind, so it cannot replace the corruption
+    kind that summarise groups by."""
+    return [{**case, "method": name, "nothing_to_fill": metrics["nothing_to_fill"],
+             **{("method_kind" if k == "kind" else k): v for k, v in e.items()
+                if not isinstance(v, (dict, list))}}
+            for name, e in metrics["methods"].items()]
+
+
 def _write(path: Path, rows: list[dict]) -> None:
     if not rows:
         return
@@ -228,12 +239,9 @@ def main(argv=None) -> int:
                             continue
                         m = run_condition(cdir / cond, c["clean"], c["decoded"], M, Mo, cfg, pool,
                                           cfg["seed"], args.force)
-                        for name, e in m["methods"].items():
-                            rows.append({"case": case, "file": rec["file"], "corpus": rec["corpus"], "kind": kind,
-                                         "repeat": r, "condition": cond, "method": name,
-                                         "nothing_to_fill": m["nothing_to_fill"],
-                                         "H": c["clean"].shape[0], "W": c["clean"].shape[1],
-                                         **{k: v for k, v in e.items() if not isinstance(v, (dict, list))}})
+                        rows += method_rows({"case": case, "file": rec["file"], "corpus": rec["corpus"],
+                                             "kind": kind, "repeat": r, "condition": cond,
+                                             "H": c["clean"].shape[0], "W": c["clean"].shape[1]}, m)
                     done = [x for x in rows if x["case"] == case and x["method"] == "csfr"]
                     print(f"[jpeg] {fi + 1}/{len(manifest)} {case}: visible {visible}; csfr hole PSNR " +
                           " ".join(f"{x['condition']} {x['psnr_hole']:.2f}" for x in done if "psnr_hole" in x),
