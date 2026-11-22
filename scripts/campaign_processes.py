@@ -4,8 +4,8 @@ The campaign is a tree of Git-bash and Python processes, but Git bash starts a
 script through a short-lived process that exits, so the Windows parent links
 inside the tree break: stopping the wrapper's PID with its tree (taskkill /T)
 leaves the campaign script and the sweep it started running. The campaign is
-found instead by its scripts: every bash process running the wrapper or the
-campaign snapshot, and everything below each of them (Python's own parent links
+found instead by its scripts: every bash process running the wrapper, the
+campaign snapshot or the campaign script itself, and everything below each of them (Python's own parent links
 are intact). The caller and its ancestors are never counted, so the wrapper can
 ask whether another campaign is running.
 
@@ -20,7 +20,9 @@ import sys
 
 import psutil
 
-SCRIPTS = ("run_campaign_detached.sh", "campaign_snapshot.sh")
+# the wrapper, the snapshot it runs, and the campaign script run directly (a
+# stage started outside the wrapper writes the same outputs)
+SCRIPTS = ("run_campaign_detached.sh", "campaign_snapshot.sh", "run_round2_campaign.sh")
 
 
 def runs_script(cmdline: list[str], scripts) -> bool:

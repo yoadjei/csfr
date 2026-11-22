@@ -40,6 +40,13 @@ def test_a_process_counts_when_it_runs_one_of_the_scripts(cmdline, expected):
     assert _mod().runs_script(cmdline, ("run_campaign_detached.sh", "campaign_snapshot.sh")) is expected
 
 
+def test_a_stage_run_outside_the_wrapper_is_campaign_too():
+    # a stage started directly (bash scripts/run_round2_campaign.sh downstream)
+    # writes the same outputs: stop must reach it and a wrapper must not start beside it
+    m = _mod()
+    assert m.runs_script(["bash.exe", "scripts/run_round2_campaign.sh", "downstream"], m.SCRIPTS)
+
+
 def _wait_for(path: Path, timeout=60.0) -> str:
     end = time.time() + timeout
     while time.time() < end:
