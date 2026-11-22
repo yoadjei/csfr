@@ -13,6 +13,7 @@ same for a run that was interrupted and resumed as for one that was not.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import os
@@ -61,6 +62,24 @@ def save_npy_atomic(path: Path, arr: np.ndarray) -> None:
     tmp = _partial(path)
     try:
         np.save(tmp, arr)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    replace_with_retry(tmp, path)
+
+
+def write_csv_atomic(path: Path, rows: Iterable[dict], fields: list[str]) -> None:
+    """A CSV written in full before it appears under its name (a field a row
+    lacks is left empty), so a run stopped while writing leaves the old file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _partial(path)
+    try:
+        with tmp.open("w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            for row in rows:
+                w.writerow({k: row.get(k, "") for k in fields})
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise

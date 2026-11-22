@@ -71,3 +71,25 @@ def test_cached_reconstructions_are_reused_and_lama_scored(cfg):
     b = list(csv.DictReader((tmp / "second" / "CF2_L3" / "csfr.csv").open()))
     assert [r["prediction"] for r in a] == [r["prediction"] for r in b]
     assert len(list(csv.DictReader((tmp / "second" / "CF2_L3" / "lama.csv").open()))) == 40
+
+
+def test_a_cell_csv_interrupted_while_written_leaves_the_previous_file(tmp_path, monkeypatch):
+    # a stage stopped at its time budget (the Kaggle run) must not leave half a
+    # CSV that the resumed run would read as finished rows
+    h = _harness()
+    path = tmp_path / "CF1_L1" / "csfr.csv"
+    h.write_csv(path, [{"a": 1}], ["a"])
+    before = path.read_text(encoding="utf-8")
+
+    real = csv.DictWriter.writerow
+
+    def dies_on_the_second_row(self, row):
+        if row.get("a") == 3:
+            raise KeyboardInterrupt
+        return real(self, row)
+
+    monkeypatch.setattr(csv.DictWriter, "writerow", dies_on_the_second_row)
+    with pytest.raises(KeyboardInterrupt):
+        h.write_csv(path, [{"a": 2}, {"a": 3}], ["a"])
+    assert path.read_text(encoding="utf-8") == before
+    assert [p.name for p in path.parent.iterdir()] == ["csfr.csv"]

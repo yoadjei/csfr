@@ -46,6 +46,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from baselines import BASELINES  # noqa: E402
+from checkpoint import save_npy_atomic, write_csv_atomic  # noqa: E402
 from csfr_reconstruct_2d import pick_device, reconstruct  # noqa: E402
 from csfr_solver import VARIANTS, solve  # noqa: E402
 from downstream import (  # noqa: E402
@@ -377,12 +378,9 @@ def reconstruct_method(
 
 
 def write_csv(path: Path, rows: list[dict], fields: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
-        w.writeheader()
-        for row in rows:
-            w.writerow({k: row.get(k, "") for k in fields})
+    # atomic: a run stopped while writing (the Kaggle run's time budget) leaves the
+    # previous file, never half of one that a resumed run would read as finished rows
+    write_csv_atomic(path, rows, fields)
 
 
 def apply_smoke_overrides(cfg: dict) -> dict:
@@ -596,7 +594,7 @@ def run_pipeline(cfg: dict, *, force: bool = False) -> Path:
                         )
                         continue
                     if cached is not None:
-                        np.save(cached, rec.astype(np.float32))
+                        save_npy_atomic(cached, rec.astype(np.float32))
 
                 pred_np, conf_np, conf_ts = classify(rec)
                 correct = pred_np == true_labels
