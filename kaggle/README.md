@@ -154,9 +154,10 @@ environment cannot run a cuda convolution, if the round-1 cnn does not score
 0.8783 on svhn test, if the evaluation or calibration subset hashes differ from
 the workstation's (`EXPECTED`), or if a govdocs1 jpeg differs from its manifest.
 
-one-time setup: a phone-verified account (gpu and internet), a token from
-kaggle > settings > api > create new token saved as `~/.kaggle/kaggle.json`, and
-the cli in its own venv (`python -m venv .venv-kaggle`, then
+one-time setup: a phone-verified account (gpu and internet), credentials for
+the cli (`kaggle auth login` in a terminal, or a token from kaggle > settings >
+api > generate new token saved as `~/.kaggle/access_token`; a legacy
+`~/.kaggle/kaggle.json` also works), and the cli in its own venv (`python -m venv .venv-kaggle`, then
 `.venv-kaggle/Scripts/pip install kaggle six`: kaggle 2.2.5 imports six without
 declaring it).
 
