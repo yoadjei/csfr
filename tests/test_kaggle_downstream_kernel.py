@@ -245,3 +245,58 @@ def test_a_later_session_takes_the_previous_output_as_input(tmp_path):
     assert one["enable_gpu"] and one["enable_internet"] and one["is_private"]
     assert one["dataset_sources"] == ["someone/csfr-round2-code"]
     assert (tmp_path / "k1" / one["code_file"]).exists()
+
+
+def test_a_cloned_work_tree_is_used_as_it_is(tmp_path):
+    # the notebook route clones the repository to the work tree before the driver runs
+    m = _mod()
+    work = tmp_path / "work"
+    (work / "scripts").mkdir(parents=True)
+    (work / "scripts" / "run_round2_campaign.sh").write_text("clone\n")
+    assert m.locate_source(tmp_path / "no_input", work) == "clone"
+    assert (work / "scripts" / "run_round2_campaign.sh").read_text() == "clone\n"
+
+
+def _govdocs_work(tmp_path: Path, jpg: bytes, sha: str) -> Path:
+    work = tmp_path / "work"
+    (work / "scripts").mkdir(parents=True)
+    shutil.copy(ROOT / "scripts" / "fetch_corpora.py", work / "scripts")
+    (work / "data/jpeg_corruption").mkdir(parents=True)
+    (work / "data/jpeg_corruption/manifest.json").write_text(json.dumps({"files": [
+        {"file": "govdocs_000.jpg", "corpus": "govdocs1", "source": "001.zip:001/001234.jpg", "sha256": sha},
+        {"file": "mikus_000.jpg", "corpus": "nick_mikus_dftt", "source": "x", "sha256": "0"}]}))
+    return work
+
+
+def _zip_with(path: Path, member: str, data: bytes) -> Path:
+    import zipfile
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr(member, data)
+    return path
+
+
+def test_the_govdocs_jpegs_come_from_their_archives_checked_by_hash(tmp_path):
+    import hashlib
+    m, jpg = _mod(), b"\xff\xd8 a govdocs jpeg"
+    work = _govdocs_work(tmp_path, jpg, hashlib.sha256(jpg).hexdigest())
+    archive = _zip_with(tmp_path / "local.zip", "001/001234.jpg", jpg)
+    urls = []
+
+    def download(url, dest):
+        urls.append(url)
+        shutil.copy(archive, dest)
+
+    assert m.fetch_govdocs_jpegs(work, tmp_path / "cache", download=download) == 1
+    assert urls == ["https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/001.zip"]
+    assert (work / "data/jpeg_corruption/src/govdocs_000.jpg").read_bytes() == jpg
+    # present and matching: nothing to fetch
+    assert m.fetch_govdocs_jpegs(work, tmp_path / "cache", download=download) == 0 and len(urls) == 1
+
+
+def test_a_govdocs_jpeg_that_does_not_match_its_manifest_is_not_written(tmp_path):
+    m = _mod()
+    work = _govdocs_work(tmp_path, b"", "0" * 64)
+    archive = _zip_with(tmp_path / "local.zip", "001/001234.jpg", b"something else")
+    with pytest.raises(ValueError, match="govdocs_000.jpg"):
+        m.fetch_govdocs_jpegs(work, tmp_path / "cache", download=lambda url, dest: shutil.copy(archive, dest))
+    assert not (work / "data/jpeg_corruption/src/govdocs_000.jpg").exists()

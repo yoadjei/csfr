@@ -15,9 +15,13 @@ the workstation:
   .venv-lama  the image's CUDA torch + simple-lama-inpainting 0.1.2 without its pins
   .venv-ocr   the image's CUDA torch + easyocr 1.7.2
 
-Inputs (/kaggle/input): the repository, a private dataset built by `stage`
-below (the committed tree plus the GovDocs1 JPEGs the OCR crops come from), and
-from the second session on the previous session's output (its state/).
+The repository reaches the session either as a clone in /tmp/paper2_recon
+(the notebook kaggle/downstream_v2.ipynb clones it from GitHub at a pinned
+commit before running this script) or as a private dataset built by `stage`
+below. The GovDocs1 JPEGs the OCR crops come from are not in git: when absent
+they are downloaded from their Digital Corpora archives and each is kept only if
+it matches its manifest SHA-256. From the second session on, the previous
+session's output (its state/) is an input (/kaggle/input).
 
 Before the stage starts: every environment runs a CUDA operation, the round-1
 CNN classifier scores as on the workstation, the evaluation and calibration
@@ -166,11 +170,15 @@ def _csv_rows(path: Path) -> list[dict] | None:
         return list(csv.DictReader(f))
 
 
-def _ocr_constants(root: Path):
-    spec = importlib.util.spec_from_file_location("_ocr_task", root / "scripts" / "run_ocr_task.py")
+def _script(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
+
+
+def _ocr_constants(root: Path):
+    return _script(root / "scripts" / "run_ocr_task.py", "_ocr_task")
 
 
 def missing(root: Path) -> list[str]:
@@ -273,16 +281,52 @@ def find_marked(base: Path, rel: str) -> Path | None:
     return hits[0] if hits else None
 
 
-def locate_source(base: Path, work: Path) -> None:
+def locate_source(base: Path, work: Path) -> str:
+    """Put the repository in the work tree; how it came: a clone already there
+    (the notebook route), or a dataset under base, extracted or not."""
+    if (work / MARKER).is_file():
+        return "clone"
     tree = find_marked(base, MARKER)
     if tree is not None:
         shutil.copytree(tree, work, dirs_exist_ok=True)
-        return
+        return "dataset"
     tarball = find_marked(base, SRC_TARBALL)
     if tarball is None:
-        raise RuntimeError(f"no repository in {base}: neither {MARKER} nor {SRC_TARBALL}")
+        raise RuntimeError(f"no repository in {work} or {base}: neither {MARKER} nor {SRC_TARBALL}")
     with tarfile.open(tarball / SRC_TARBALL) as t:
         t.extractall(work, filter="data")
+    return "dataset archive"
+
+
+def _sha256_of(path: Path) -> str | None:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+
+def fetch_govdocs_jpegs(work: Path, cache: Path = Path("/tmp/govdocs1"), download=None) -> int:
+    """Write the manifest's GovDocs1 JPEGs that are absent or differ, each read
+    from its Digital Corpora archive by its manifest path and written only if it
+    matches its manifest SHA-256 (the download is untrusted data). Returns how
+    many were written. download(url, dest) defaults to fetch_corpora's."""
+    fetch = _script(work / "scripts" / "fetch_corpora.py", "_fetch_corpora")
+    download = download or fetch._download
+    manifest = json.loads((work / "data/jpeg_corruption/manifest.json").read_text(encoding="utf-8"))["files"]
+    src = work / "data/jpeg_corruption/src"
+    todo: dict[str, list[dict]] = {}
+    for rec in manifest:
+        if rec["corpus"] == "govdocs1" and _sha256_of(src / rec["file"]) != rec["sha256"]:
+            todo.setdefault(rec["source"].split(":", 1)[0], []).append(rec)
+    import zipfile
+    for archive, recs in sorted(todo.items()):
+        cache.mkdir(parents=True, exist_ok=True)
+        download(fetch.GOVDOCS_URL.format(int(archive.split(".")[0])), cache / archive)
+        with zipfile.ZipFile(cache / archive) as z:
+            for rec in recs:
+                data = z.read(rec["source"].split(":", 1)[1])
+                if hashlib.sha256(data).hexdigest() != rec["sha256"]:
+                    raise ValueError(f"{rec['file']} from {rec['source']} does not match its manifest SHA-256")
+                src.mkdir(parents=True, exist_ok=True)
+                (src / rec["file"]).write_bytes(data)
+    return sum(len(r) for r in todo.values())
 
 
 def restore_state(base: Path, work: Path) -> int:
@@ -399,7 +443,9 @@ def kernel() -> int:
         record["nvidia_smi"] = f"unavailable: {exc}"
     status, lacking = "failed: before the stage", []
     try:
-        locate_source(KAGGLE_INPUT, WORK)
+        record["source"] = locate_source(KAGGLE_INPUT, WORK)
+        record["commit"] = capture(["git", "-C", WORK, "rev-parse", "HEAD"], check=False).strip() or "unknown"
+        record["govdocs_jpegs_fetched"] = fetch_govdocs_jpegs(WORK)
         record["session"] = restore_state(KAGGLE_INPUT, WORK)
         log(f"session {record['session']}")
         record["environments"] = make_environments(WORK)

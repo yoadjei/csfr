@@ -154,6 +154,21 @@ environment cannot run a cuda convolution, if the round-1 cnn does not score
 0.8783 on svhn test, if the evaluation or calibration subset hashes differ from
 the workstation's (`EXPECTED`), or if a govdocs1 jpeg differs from its manifest.
 
+### the notebook route (no api token)
+
+`kaggle/downstream_v2.ipynb` clones this repository from github at a pinned
+commit and runs the driver. in kaggle: new notebook > file > import notebook >
+github (or upload the .ipynb); settings: accelerator **gpu t4 x2**, internet
+**on** (a phone-verified account); then **save version > save & run all**, which
+runs headless for up to 12 h (an interactive session stops when idle). the
+govdocs1 jpegs are not in git: the driver downloads the three digital corpora
+archives they come from (about 1 gb) and keeps each jpeg only if it matches its
+manifest sha-256. a later session: add input > your work > this notebook's
+previous version, whose output holds `state/`, then save & run all again.
+download `results.tar.gz` (and `STATUS`, `kaggle_env.json`) from the output tab.
+
+### the api route
+
 one-time setup: a phone-verified account (gpu and internet), credentials for
 the cli (`kaggle auth login` in a terminal, or a token from kaggle > settings >
 api > generate new token saved as `~/.kaggle/access_token`; a legacy
