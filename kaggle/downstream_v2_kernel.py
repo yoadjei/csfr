@@ -361,7 +361,8 @@ def _venv(path: Path, system_site: bool) -> Path:
     return py
 
 
-def make_environments(work: Path) -> dict:
+def _main_venv(work: Path) -> tuple[Path, dict]:
+    """.venv-main (requirements.txt exactly, isolated) with a torch that runs CUDA; (python, probe)."""
     main = _venv(work / ".venv-main", system_site=False)
     sh([main, "-m", "pip", "install", "-q", "-r", work / "requirements.txt"])
     probe = _probe(main, MAIN_MODULES)
@@ -373,6 +374,21 @@ def make_environments(work: Path) -> dict:
                          if ln.startswith("torch=="))
         sh([main, "-m", "pip", "install", "-q", "--force-reinstall", torch_pin, "--index-url", index])
         probe = _probe(main, MAIN_MODULES)
+    return main, probe
+
+
+def make_main_environment(work: Path) -> tuple[Path, dict]:
+    """The main environment alone (kaggle/jpeg_gpu_kernel.py): (python, probe with pip freeze)."""
+    main, probe = _main_venv(work)
+    bad = _probe_failures("main", probe)
+    if bad:
+        raise RuntimeError("environment: " + "; ".join(bad))
+    probe["freeze"] = capture([main, "-m", "pip", "freeze"], check=False).splitlines()
+    return main, probe
+
+
+def make_environments(work: Path) -> dict:
+    main, probe = _main_venv(work)
     lama = _venv(work / ".venv-lama", system_site=True)
     sh([lama, "-m", "pip", "install", "-q", "--no-deps", "simple-lama-inpainting==0.1.2"])
     sh([lama, "-m", "pip", "install", "-q", "fire"])

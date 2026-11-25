@@ -300,3 +300,32 @@ def test_a_govdocs_jpeg_that_does_not_match_its_manifest_is_not_written(tmp_path
     with pytest.raises(ValueError, match="govdocs_000.jpg"):
         m.fetch_govdocs_jpegs(work, tmp_path / "cache", download=lambda url, dest: shutil.copy(archive, dest))
     assert not (work / "data/jpeg_corruption/src/govdocs_000.jpg").exists()
+
+
+def _fake_main_env(m, monkeypatch, probes):
+    calls = []
+    monkeypatch.setattr(m, "_venv", lambda path, system_site: Path(path) / "bin" / "python")
+    monkeypatch.setattr(m, "sh", lambda cmd, **kw: calls.append([str(c) for c in cmd]))
+    monkeypatch.setattr(m, "_probe", lambda py, modules: probes.pop(0))
+    monkeypatch.setattr(m, "capture", lambda cmd, **kw: "torch==2.13.0\nnumpy==2.3.5\n")
+    return calls
+
+
+def test_the_main_environment_alone_gets_a_cuda_torch(tmp_path, monkeypatch):
+    m = _mod()
+    (tmp_path / "requirements.txt").write_text("numpy==2.3.5\ntorch==2.13.0\n")
+    ok = {"numpy": "2.3.5", "torch": "2.13.0", "cuda_ok": True, "gpu": "Tesla T4", "cv2_xphoto": True}
+    calls = _fake_main_env(m, monkeypatch, [{**ok, "cuda_ok": False, "gpu": "no kernel image"}, dict(ok)])
+    py, probe = m.make_main_environment(tmp_path)
+    assert py == tmp_path / ".venv-main" / "bin" / "python"
+    assert probe["cuda_ok"] and probe["freeze"] == ["torch==2.13.0", "numpy==2.3.5"]
+    assert any("--index-url" in c and m.TORCH_INDEXES[0] in c and "torch==2.13.0" in c for c in calls)
+
+
+def test_the_main_environment_alone_refuses_a_missing_module(tmp_path, monkeypatch):
+    m = _mod()
+    (tmp_path / "requirements.txt").write_text("torch==2.13.0\n")
+    bad = {"numpy": "MISSING: no module", "cuda_ok": True, "gpu": "Tesla T4"}
+    _fake_main_env(m, monkeypatch, [bad])
+    with pytest.raises(RuntimeError, match="numpy MISSING"):
+        m.make_main_environment(tmp_path)

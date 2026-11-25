@@ -125,3 +125,35 @@ def test_active_subset_matches_full_batch():
     xa, _ = solve(y, M, SolverConfig())
     xb = torch.cat([solve(y[i:i + 1], M[i:i + 1], SolverConfig())[0] for i in range(4)])
     assert float((xa - xb).abs().max()) < 1e-6
+
+
+def test_solve_task_is_solve_at_the_same_thread_count():
+    """The JPEG driver moved its solves from the main process into pool workers:
+    at the same thread count they must be the same bits. The image is large enough
+    (65,536 pixels) for torch to split its sums across threads."""
+    from csfr_solver import solve_task
+    rng = np.random.default_rng(3)
+    yy, xx = np.mgrid[0:256, 0:256]
+    ref = (100 + 60 * np.sin(xx / 9.0) + 40 * (yy > 128) + rng.normal(0, 5, (256, 256))).clip(0, 255)
+    M = (rng.uniform(size=(1, 256, 256)) > 0.3).astype(np.float32)
+    y = (ref[None] * M).astype(np.float32)
+    cfg = dataclasses.replace(VARIANTS["csfr"], max_iter=60)
+    before = torch.get_num_threads()
+    try:
+        x4, i4 = solve_task(y, M, cfg, threads=4)
+        assert torch.get_num_threads() == before             # the worker's own setting is restored
+        torch.set_num_threads(4)
+        x, cert = solve(torch.from_numpy(y.astype(np.float64)), torch.from_numpy(M), cfg)
+    finally:
+        torch.set_num_threads(before)
+    assert np.array_equal(x.numpy(), x4)
+    assert (int(cert.iterations[0]), float(cert.gap[0]), bool(cert.converged[0])) == (
+        i4["iterations"], i4["gap"], i4["converged"])
+
+
+def test_solve_task_takes_one_image():
+    import pytest
+    from csfr_solver import solve_task
+    ref, y, M = _toy(b=2)
+    with pytest.raises(ValueError):
+        solve_task(y.numpy(), M.numpy(), SolverConfig(), threads=1)

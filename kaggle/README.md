@@ -205,3 +205,29 @@ training), inspect the listing, unpack at the repo root, then
 workstation's campaign must then run without its downstream stage
 (`-Stages "forensic idle"`), or it would redo lama on the cpu over the gpu
 outputs.
+
+## round 2: the jpeg csfr solves (e9)
+
+the csfr solve is bound by memory bandwidth: on the workstation four concurrent
+solves give about 10% more than one, and a t4 has several times the bandwidth.
+`kaggle/jpeg_gpu_kernel.py` runs `scripts/run_jpeg_corruption.py --csfr-only`
+on cuda in float64, one shard of the 105 files per gpu, for every file (the csfr
+rows of e9 then come from one device; the files the workstation solved on its
+cpu become a measured cpu-versus-gpu comparison). the baselines and lama stay on
+the workstation. the source jpegs are rebuilt in the session: the govdocs1 ones
+from their digital corpora archives, the five dftt ones carved from the dftt
+test images on sourceforge with the carver that built the manifest; each must
+match its manifest sha-256 (checked against the workstation's copies: all 105
+identical).
+
+notebook: `kaggle/jpeg_gpu.ipynb`, the same settings and route as the
+downstream one (gpu t4 x2, internet on, save & run all; a later session adds
+the previous version as an input). it can run before, after or beside the
+downstream notebook: they share nothing.
+
+bringing it back: unpack `results.tar.gz` at the repo root (it holds only
+`results/jpeg_corruption_gpu`: metrics, logs, and the csfr outputs of the
+figure's file), `python kaggle/jpeg_gpu_kernel.py check` must print `complete`,
+then with the jpeg stage stopped `python -I scripts/merge_jpeg_gpu.py --dry-run`
+(prints the largest cpu-gpu differences), then without `--dry-run`, then restart
+the campaign: the jpeg driver skips every solved csfr and adds the baselines.

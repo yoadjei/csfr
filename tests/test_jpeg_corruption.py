@@ -87,13 +87,11 @@ def test_masks_handle_sizes_that_are_not_block_multiples():
     assert Md[36, 44] == 0
 
 
-def test_driver_end_to_end(tmp_path):
-    import csv
-    import importlib.util
+def _small_run(tmp_path) -> Path:
+    """Config of a one-file, one-kind run; returns its path."""
     import json
 
     import yaml
-    root = Path(__file__).resolve().parent.parent
     src = tmp_path / "src"
     src.mkdir()
     (src / "a.jpg").write_bytes(_jpeg(side=96))
@@ -105,10 +103,51 @@ def test_driver_end_to_end(tmp_path):
            "solver": {"max_iter": 3000}, "csfr_variants": ["csfr"],
            "baselines": ["bilinear", "inpaint_ns"], "external": ["lama"]}
     (tmp_path / "cfg.yaml").write_text(yaml.safe_dump(cfg))
-    spec = importlib.util.spec_from_file_location("jpeg_drv", root / "scripts" / "run_jpeg_corruption.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    assert mod.main(["--config", str(tmp_path / "cfg.yaml"), "--workers", "2", "--bootstrap", "200"]) == 0
+    return tmp_path / "cfg.yaml"
+
+
+def test_a_csfr_only_shard_solves_its_files_in_order_and_nothing_else(tmp_path):
+    import csv
+    import json
+    mod = _driver()
+    cfg_path = _small_run(tmp_path)
+    src = tmp_path / "src"
+    (src / "b.jpg").write_bytes(_jpeg(side=96, seed=1))
+    (tmp_path / "manifest.json").write_text(json.dumps(
+        {"files": [{"file": "a.jpg", "corpus": "synthetic", "mode": "L"},
+                   {"file": "b.jpg", "corpus": "synthetic", "mode": "L"}]}))
+    gpu = tmp_path / "gpu" / "shard0"
+    # files 1 then 0; shard 1 of 2 takes the second of them: file 0
+    assert mod.main(["--config", str(cfg_path), "--csfr-only", "--output-dir", str(gpu), "--files", "1,0",
+                     "--shard", "1/2", "--workers", "2", "--bootstrap", "200"]) == 0
+    assert sorted(p.name for p in (gpu / "cases").iterdir()) == ["a_truncate_r0"]
+    assert not (tmp_path / "out").exists()
+    rows = list(csv.DictReader((gpu / "per_image.csv").open()))
+    assert {r["method"] for r in rows} == {"csfr"} and {r["status"] for r in rows} == {"done"}
+    m = json.loads((gpu / "cases" / "a_truncate_r0" / "oracle" / "metrics.json").read_text())
+    assert set(m["inputs_sha256"]) == {"y", "mask"}
+    with pytest.raises(SystemExit):
+        mod.main(["--config", str(cfg_path), "--files", "0", "--limit", "1"])
+
+
+def test_records_solved_on_other_inputs_are_refused(tmp_path):
+    import json
+    mod = _driver()
+    cfg_path = _small_run(tmp_path)
+    args = ["--config", str(cfg_path), "--workers", "2", "--bootstrap", "200"]
+    assert mod.main(args) == 0
+    mp = tmp_path / "out" / "cases" / "a_truncate_r0" / "decoder" / "metrics.json"
+    m = json.loads(mp.read_text())
+    m["inputs_sha256"]["y"] = "0" * 64
+    mp.write_text(json.dumps(m))
+    with pytest.raises(RuntimeError, match="other inputs"):
+        mod.main(args)
+
+
+def test_driver_end_to_end(tmp_path):
+    import csv
+    mod = _driver()
+    assert mod.main(["--config", str(_small_run(tmp_path)), "--workers", "2", "--bootstrap", "200"]) == 0
     out = tmp_path / "out"
     rows = list(csv.DictReader((out / "per_image.csv").open()))
     done = [r for r in rows if r["status"] == "done"]
@@ -138,6 +177,161 @@ def _driver():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+class _FakePool:
+    def shutdown(self, **kw):
+        pass
+
+
+def _spawn_pool():
+    from concurrent.futures import ProcessPoolExecutor
+    from multiprocessing import get_context
+    return ProcessPoolExecutor(max_workers=1, mp_context=get_context("spawn"))
+
+
+def test_a_dead_worker_gets_a_new_pool_and_a_rerun():
+    import os
+    mod = _driver()
+    made, waits, seen = [], [], []
+
+    def make():
+        made.append(_spawn_pool())
+        return made[-1]
+
+    def fn(pool):
+        seen.append(pool)
+        if len(seen) == 1:
+            return pool.submit(os._exit, 1).result()     # the worker dies: the pool is broken for good
+        return pool.submit(abs, -3).result()
+
+    try:
+        out, live = mod.on_live_pool(fn, make(), make, retries=2, wait=7, sleep=waits.append)
+    finally:
+        for p in made:
+            p.shutdown()
+    assert out == 3
+    assert len(made) == 2 and seen == made and live is made[1]
+    assert waits == [7]
+
+
+def test_a_pool_that_keeps_breaking_is_given_up_after_the_retries():
+    from concurrent.futures.process import BrokenProcessPool
+    mod = _driver()
+    calls = []
+
+    def fn(pool):
+        calls.append(pool)
+        raise BrokenProcessPool("a worker died")
+
+    with pytest.raises(BrokenProcessPool):
+        mod.on_live_pool(fn, _FakePool(), _FakePool, retries=2, wait=0, sleep=lambda s: None)
+    assert len(calls) == 3
+
+
+def test_other_errors_get_no_new_pool():
+    mod = _driver()
+    made = []
+
+    def fn(pool):
+        raise ValueError("a bug, not a dead worker")
+
+    with pytest.raises(ValueError):
+        mod.on_live_pool(fn, _FakePool(), lambda: made.append(1), retries=2, wait=0, sleep=lambda s: None)
+    assert made == []
+
+
+def test_driver_finishes_when_a_worker_dies_mid_run(tmp_path, monkeypatch):
+    import csv
+    import os
+    mod = _driver()
+    real, broke = mod.start_condition, []
+
+    def flaky(d, clean, dec, M, Mo, cfg, pool, *rest):
+        if not broke:
+            broke.append(d.name)
+            pool.submit(os._exit, 1).result()
+        return real(d, clean, dec, M, Mo, cfg, pool, *rest)
+
+    monkeypatch.setattr(mod, "start_condition", flaky)
+    monkeypatch.setattr(mod, "POOL_WAIT_S", 0)
+    assert mod.main(["--config", str(_small_run(tmp_path)), "--workers", "2", "--bootstrap", "200"]) == 0
+    assert broke == ["oracle"]
+    rows = list(csv.DictReader((tmp_path / "out" / "per_image.csv").open()))
+    done = {(r["condition"], r["method"]) for r in rows if r["status"] == "done"}
+    assert done == {(c, m) for c in ("oracle", "decoder", "offset") for m in ("csfr", "bilinear", "inpaint_ns")}
+
+
+class _InlinePool:
+    """Runs each task at submit and logs submits and collections in order."""
+
+    def __init__(self, log):
+        self.log = log
+
+    def submit(self, fn, *args):
+        from concurrent.futures import Future
+        f = Future()
+        f.set_result(fn(*args))
+        self.log.append("submit")
+        return f
+
+    def shutdown(self, **kw):
+        pass
+
+
+def test_every_condition_of_a_file_is_submitted_before_any_is_collected(tmp_path, monkeypatch):
+    import json
+
+    import yaml
+    mod = _driver()
+    cfg_path = _small_run(tmp_path)
+    cfg = yaml.safe_load(cfg_path.read_text())
+    cfg["kinds"], cfg["repeats"] = ["truncate", "overwrite"], 1
+    log = []
+    real = mod.finish_condition
+    monkeypatch.setattr(mod, "finish_condition", lambda job: (log.append("collect"), real(job))[1])
+    rec = json.loads(Path(cfg["manifest"]).read_text())["files"][0]
+    raw = (Path(cfg["src_dir"]) / rec["file"]).read_bytes()
+    import torch
+    before = torch.get_num_threads()
+    try:
+        rows, mq = mod.run_file(0, 1, rec, raw, cfg, tmp_path / "out", _InlinePool(log), False)
+    finally:
+        torch.set_num_threads(before)
+    n_cond = len({(r["case"], r["condition"]) for r in rows})
+    n_fill = len({(r["case"], r["condition"]) for r in rows if not r["nothing_to_fill"]})
+    assert n_cond >= 2 and log.count("collect") == n_cond
+    assert log.index("collect") == log.count("submit")    # every submit came before the first collect
+    assert log.count("submit") == n_fill * 3              # csfr and two baselines per condition with a hole
+    assert len(mq) == 2 * 3
+
+
+def test_pooled_csfr_is_the_solve_the_main_process_gave(tmp_path):
+    """The pool runs one-thread solves; the record must be what a direct solve of
+    the same input gives (the driver solved in the main process before)."""
+    import json
+
+    import torch
+    import yaml
+    from csfr_solver import solve
+    mod = _driver()
+    cfg_path = _small_run(tmp_path)
+    assert mod.main(["--config", str(cfg_path), "--workers", "2", "--bootstrap", "200"]) == 0
+    cfg = yaml.safe_load(cfg_path.read_text())
+    d = tmp_path / "out" / "cases" / "a_truncate_r0" / "decoder"
+    y, M = np.load(d / "y.npy"), np.load(d / "mask.npy")
+    rec = json.loads((d / "metrics.json").read_text())["methods"]["csfr"]
+    before = torch.get_num_threads()
+    torch.set_num_threads(mod.SOLVE_THREADS)       # what the main process ran with
+    try:
+        x, cert = solve(torch.from_numpy(y.astype(np.float64)), torch.from_numpy(M),
+                        mod._sweep.solver_config("csfr", cfg["solver"]))
+    finally:
+        torch.set_num_threads(before)
+    assert rec["iterations"] == int(cert.iterations[0]) and rec["gap"] == float(cert.gap[0])
+    ref = np.load(d.parent / "clean.npy")[None].astype(np.float32)
+    Mo = np.load(d.parent / "oracle" / "mask.npy")
+    assert rec["psnr_hole"] == float(mod._sweep.score(ref, x.numpy(), y, Mo)["psnr_hole"][0])
 
 
 def test_rows_keep_the_corruption_kind():

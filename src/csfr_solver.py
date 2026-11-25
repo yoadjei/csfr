@@ -196,3 +196,27 @@ def solve(y: Tensor, M: Tensor, cfg: SolverConfig = SolverConfig(),
                        lipschitz=L, step=step, config=asdict(cfg), trace=trace,
                        elapsed_s=time.time() - t0)
     return x.detach(), cert
+
+
+def solve_task(y: np.ndarray, M: np.ndarray, cfg: SolverConfig, threads: int,
+               device: str = "cpu") -> tuple[np.ndarray, dict]:
+    """solve() on one image (B = 1) as a process-pool task: NumPy in, NumPy out,
+    on `threads` torch threads (restored afterwards) and `device`.
+
+    It lives here, not in a script, so that it pickles by reference under the
+    spawn start method. The result is the bits solve() gives in a process at the
+    same thread count and device (tests/test_csfr_solver.py checks that); torch
+    splits its CPU sums by thread count, so another count can move the last bit
+    of the gap, and with it, in principle, the iteration the stopping rule fires.
+    """
+    if len(y) != 1:
+        raise ValueError(f"solve_task takes one image, got a batch of {len(y)}")
+    before = torch.get_num_threads()
+    torch.set_num_threads(threads)
+    try:
+        t0 = time.time()
+        x, cert = solve(torch.from_numpy(np.asarray(y, dtype=np.float64)), torch.from_numpy(M), cfg, device)
+        return x.cpu().numpy(), {"iterations": int(cert.iterations[0]), "converged": bool(cert.converged[0]),
+                                 "gap": float(cert.gap[0]), "seconds": time.time() - t0}
+    finally:
+        torch.set_num_threads(before)
