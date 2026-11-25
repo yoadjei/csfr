@@ -26,7 +26,7 @@ Outputs (/kaggle/working):
   STATUS           complete | incomplete (time budget) | failed: <reason>
   results.tar.gz   results/jpeg_corruption_gpu without arrays, except the CSFR
                    outputs of the figure's file (render_figures_v2.JPEG_EX_FILE)
-  state/           what a later session needs (while not complete)
+  state/           the same tree, for a later session (while not complete)
   kaggle_env.json  GPUs, CPU count, package versions, timings
   shard<k>.log     each shard's driver output
 
@@ -71,6 +71,8 @@ SRC = "data/jpeg_corruption/src"
 # manifest indices; the workstation was at file 49 (index 48) when this was written
 ORDER = "48-104,0-47"
 WORKERS_PER_GPU = 2         # two processes per GPU hide each other's launch latency
+SHARDS = 2                  # fixed, so every session splits the files the same way; shard k runs
+                            # on GPU k mod (GPUs present)
 FIGURE_FILE = 2             # render_figures_v2.JPEG_EX_FILE: its CSFR outputs come back
 STATE_DIR, STATE_FILE = "state", "STATE.json"
 SESSION_SECONDS, RESERVE_SECONDS = _dk.SESSION_SECONDS, 30 * 60
@@ -88,19 +90,38 @@ def shard_cmd(py, k: int, n: int, device: str) -> list:
 # ── completeness ─────────────────────────────────────────────────────
 
 
-def missing(root: Path) -> list[str]:
-    """What the GPU run has not yet solved under root: every case of every
-    manifest file must be in some shard's masks_quality.csv, and every condition
-    with visible damage must hold both CSFR variants done. Empty when complete."""
+def solved(gpu_dir: Path, variants: list[str]) -> dict[tuple[str, str], tuple[Path, dict]]:
+    """Per (case, condition), a GPU record with every variant done, over all shard
+    directories (a session with another shard layout leaves a second record); two
+    such records must have solved the same inputs."""
+    out: dict[tuple[str, str], tuple[Path, dict]] = {}
+    for mp in sorted(Path(gpu_dir).glob("shard*/cases/*/*/metrics.json")):
+        g = json.loads(mp.read_text(encoding="utf-8"))
+        if any(g.get("methods", {}).get(v, {}).get("status") != "done" for v in variants):
+            continue
+        key = (mp.parent.parent.name, mp.parent.name)
+        if key in out and out[key][1].get("inputs_sha256") != g.get("inputs_sha256"):
+            raise RuntimeError(f"{key[0]}/{key[1]}: two shards solved different inputs")
+        out.setdefault(key, (mp, g))
+    return out
+
+
+def missing(root: Path, gpu_dir: Path | None = None) -> list[str]:
+    """What the GPU run under gpu_dir (default root/GPU_DIR) has not yet solved:
+    every case of every manifest file must be in some shard's masks_quality.csv,
+    and every condition with visible damage must have a record with both CSFR
+    variants done. Empty when complete."""
     import yaml
     root = Path(root)
+    gpu = Path(gpu_dir) if gpu_dir is not None else root / GPU_DIR
     cfg = yaml.safe_load((root / CONFIG).read_text(encoding="utf-8"))
     files = json.loads((root / MANIFEST).read_text(encoding="utf-8"))["files"]
     seen: dict[tuple[str, str], bool] = {}
-    for mq in sorted((root / GPU_DIR).glob("shard*/masks_quality.csv")):
+    for mq in sorted(gpu.glob("shard*/masks_quality.csv")):
         with mq.open(encoding="utf-8", newline="") as f:
             for r in csv.DictReader(f):
                 seen[(r["case"], r["condition"])] = r["visible_damage"] == "True"
+    done = solved(gpu, cfg["csfr_variants"])
     out = []
     for rec in files:
         for kind in cfg["kinds"]:
@@ -109,13 +130,11 @@ def missing(root: Path) -> list[str]:
                 for cond in cfg["conditions"]:
                     if (case, cond) not in seen:
                         out.append(f"{case}/{cond}: not run")
-                        continue
-                    if not seen[(case, cond)]:
-                        continue
-                    hits = list((root / GPU_DIR).glob(f"shard*/cases/{case}/{cond}/metrics.json"))
-                    methods = json.loads(hits[0].read_text(encoding="utf-8"))["methods"] if hits else {}
-                    lacking = [v for v in cfg["csfr_variants"] if methods.get(v, {}).get("status") != "done"]
-                    if lacking:
+                    elif seen[(case, cond)] and (case, cond) not in done:
+                        records = [json.loads(p.read_text(encoding="utf-8")).get("methods", {})
+                                   for p in gpu.glob(f"shard*/cases/{case}/{cond}/metrics.json")] or [{}]
+                        lacking = min(([v for v in cfg["csfr_variants"] if m.get(v, {}).get("status") != "done"]
+                                       for m in records), key=len)
                         out.append(f"{case}/{cond}: lacks {', '.join(lacking)}")
     return out
 
@@ -195,8 +214,11 @@ def run_all_with_budget(cmds: list[list], *, seconds: float, cwd=None, env=None,
         running = [p.poll() is None for p, _ in procs]
         for (p, _), stop in zip(procs, running):
             if stop:
-                parent = psutil.Process(p.pid)
-                tree = [parent, *parent.children(recursive=True)]
+                try:
+                    parent = psutil.Process(p.pid)
+                    tree = [parent, *parent.children(recursive=True)]
+                except psutil.NoSuchProcess:       # it ended since the poll
+                    tree = []
                 for q in tree:
                     try:
                         q.kill()
@@ -211,13 +233,16 @@ def run_all_with_budget(cmds: list[list], *, seconds: float, cwd=None, env=None,
 
 
 def status_of(rcs: list[int | None], timed_out: bool, lacking: list[str]) -> str:
+    """A shard that exited nonzero is a failure even when the other ran to the
+    budget: the next session would repeat the crash."""
     if not lacking and all(rc == 0 for rc in rcs):
         return "complete"
+    bad = [f"shard{k} exited {rc}" for k, rc in enumerate(rcs) if rc not in (0, None)]
+    if bad:
+        stopped = " (the others stopped at the time budget)" if timed_out else ""
+        return f"failed: {', '.join(bad)}{stopped}; see shard<k>.log"
     if timed_out:
         return "incomplete (time budget)"
-    bad = [f"shard{k} exited {rc}" for k, rc in enumerate(rcs) if rc != 0]
-    if bad:
-        return f"failed: {', '.join(bad)}; see shard<k>.log"
     return f"failed: the shards finished, {len(lacking)} conditions incomplete: {'; '.join(lacking[:5])}"
 
 
@@ -229,7 +254,8 @@ def figure_stem(work: Path) -> str:
 
 
 def result_filter(stem: str):
-    """results.tar.gz: no arrays except the CSFR outputs of the figure's file, no partial file."""
+    """results.tar.gz and state/: no arrays except the CSFR outputs of the figure's
+    file (a later session does not solve them again), no partial file."""
     def keep(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
         name = Path(member.name)
         if name.name.startswith(".partial_"):
@@ -241,20 +267,17 @@ def result_filter(stem: str):
     return keep
 
 
-def state_filter(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
-    return None if Path(member.name).suffix == ".npy" or Path(member.name).name.startswith(".partial_") else member
-
-
 def save_outputs(work: Path, out: Path, *, status: str, record: dict, lacking: list[str]) -> None:
     out.mkdir(parents=True, exist_ok=True)
     gpu = work / GPU_DIR
     if gpu.exists():
+        keep = result_filter(figure_stem(work))
         with tarfile.open(out / "results.tar.gz", "w:gz") as t:
-            t.add(gpu, arcname=GPU_DIR, filter=result_filter(figure_stem(work)))
+            t.add(gpu, arcname=GPU_DIR, filter=keep)
         if status != "complete":
             buf = io.BytesIO()
             with tarfile.open(fileobj=buf, mode="w") as t:
-                t.add(gpu, arcname=GPU_DIR, filter=state_filter)
+                t.add(gpu, arcname=GPU_DIR, filter=keep)
             buf.seek(0)
             with tarfile.open(fileobj=buf) as t:
                 t.extractall(out / STATE_DIR, filter="data")
@@ -293,10 +316,10 @@ def kernel() -> int:
         env = {**os.environ, "PYTHONUNBUFFERED": "1", "TORCH_HOME": "/tmp/torch"}
         env.pop("VIRTUAL_ENV", None)
         budget = SESSION_SECONDS - RESERVE_SECONDS - (time.time() - t0)
-        log(f"{n_gpu} shards with a budget of {budget / 3600:.2f} h")
-        rcs, timed_out = run_all_with_budget([shard_cmd(py, k, n_gpu, f"cuda:{k}") for k in range(n_gpu)],
-                                             seconds=budget, cwd=WORK, env=env,
-                                             logs=[KAGGLE_OUT / f"shard{k}.log" for k in range(n_gpu)])
+        log(f"{SHARDS} shards on {n_gpu} GPU(s) with a budget of {budget / 3600:.2f} h")
+        rcs, timed_out = run_all_with_budget(
+            [shard_cmd(py, k, SHARDS, f"cuda:{k % n_gpu}") for k in range(SHARDS)],
+            seconds=budget, cwd=WORK, env=env, logs=[KAGGLE_OUT / f"shard{k}.log" for k in range(SHARDS)])
         record["shards_seconds"], record["shard_rcs"] = time.time() - t0 - record["setup_seconds"], rcs
         lacking = missing(WORK)
         status = status_of(rcs, timed_out, lacking)

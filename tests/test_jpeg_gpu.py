@@ -164,6 +164,31 @@ def test_status(jk):
     assert jk.status_of([None, 0], True, ["x"]) == "incomplete (time budget)"
     assert jk.status_of([0, 1], False, []).startswith("failed: shard1 exited 1")
     assert jk.status_of([0, 0], False, ["x"]).startswith("failed: the shards finished, 1")
+    # a crash is not hidden behind the other shard's time budget
+    assert jk.status_of([None, 1], True, ["x"]).startswith(
+        "failed: shard1 exited 1 (the others stopped at the time budget)")
+
+
+def test_a_second_shard_layout_neither_hides_nor_doubles_a_record(jk, tmp_path):
+    root = _gpu_tree(tmp_path)
+    other = root / "results/jpeg_corruption_gpu/shard1/cases/a_truncate_r0/oracle"
+    other.mkdir(parents=True)
+    (other / "metrics.json").write_text(json.dumps({"methods": {"csfr": {"status": "done"}}}))   # incomplete
+    assert jk.missing(root) == []
+    done = jk.solved(root / "results/jpeg_corruption_gpu", ["csfr", "csfr_tv_only"])
+    assert sorted(done) == [("a_truncate_r0", "decoder"), ("a_truncate_r0", "oracle")]
+    both = {"methods": {v: {"status": "done"} for v in ("csfr", "csfr_tv_only")}, "inputs_sha256": {"y": "1"}}
+    (other / "metrics.json").write_text(json.dumps(both))                    # complete, other inputs
+    with pytest.raises(RuntimeError, match="different inputs"):
+        jk.missing(root)
+
+
+def test_completeness_is_judged_on_the_given_gpu_tree(jk, tmp_path):
+    root = _gpu_tree(tmp_path)
+    moved = tmp_path / "elsewhere"
+    shutil.move(str(root / "results/jpeg_corruption_gpu"), str(moved))
+    assert jk.missing(root, moved) == []
+    assert jk.missing(root) != []
 
 
 def test_shards_run_together_and_stop_at_the_budget(jk, tmp_path):
@@ -198,7 +223,8 @@ def test_outputs_keep_only_the_figures_arrays(jk, tmp_path):
     assert arrays == {f"{base}/x_hat_csfr.npy", f"{base}/x_hat_csfr_tv_only.npy"}
     assert f"{jk.GPU_DIR}/shard0/cases/f0_flip_r0/oracle/metrics.json" in names
     state = out / jk.STATE_DIR
-    assert not list(state.rglob("*.npy")) and (state / jk.GPU_DIR / "shard0" / "cases").is_dir()
+    kept = {p.relative_to(state).as_posix() for p in state.rglob("*.npy")}
+    assert kept == {f"{base}/x_hat_csfr.npy", f"{base}/x_hat_csfr_tv_only.npy"}   # a later session keeps them
     assert json.loads((state / jk.STATE_FILE).read_text())["session"] == 1
     assert (out / "STATUS").read_text().strip() == "incomplete (time budget)"
     assert jk.restore_state(out, tmp_path / "next") == 2
@@ -271,13 +297,49 @@ def test_merge_dry_run_writes_nothing(mg, tmp_path):
     assert not (root / "results/jpeg_corruption/cases/z_truncate_r0").exists()
 
 
+def test_merge_refuses_records_of_other_inputs_even_when_the_files_match(mg, tmp_path):
+    root = _merge_tree(tmp_path)
+    lm = root / "results/jpeg_corruption/cases/fig_truncate_r0/oracle/metrics.json"
+    m = json.loads(lm.read_text())
+    m["inputs_sha256"] = {"y": "0" * 64, "mask": "0" * 64}
+    lm.write_text(json.dumps(m))
+    with pytest.raises(RuntimeError, match="other inputs"):
+        mg.merge(root, root / "results/jpeg_corruption_gpu", ["csfr"], "fig")
+
+
+def test_merge_refuses_a_figure_condition_without_its_gpu_outputs(mg, tmp_path):
+    root = _merge_tree(tmp_path)
+    (root / "results/jpeg_corruption_gpu/shard0/cases/fig_truncate_r0/oracle/x_hat_csfr.npy").unlink()
+    with pytest.raises(RuntimeError, match="figure's GPU outputs"):
+        mg.merge(root, root / "results/jpeg_corruption_gpu", ["csfr"], "fig")
+
+
+def test_merge_neither_marks_nor_compares_a_condition_with_nothing_to_fill(mg, tmp_path):
+    root = _merge_tree(tmp_path)
+    for side in ("results/jpeg_corruption_gpu/shard0", "results/jpeg_corruption"):
+        mp = root / side / "cases/fig_truncate_r0/oracle/metrics.json"
+        m = json.loads(mp.read_text())
+        m["nothing_to_fill"] = True
+        mp.write_text(json.dumps(m))
+    (root / "results/jpeg_corruption_gpu/shard0/cases/fig_truncate_r0/oracle/x_hat_csfr.npy").unlink()
+    pairs = mg.merge(root, root / "results/jpeg_corruption_gpu", ["csfr"], "fig")
+    assert pairs == []
+    lm = json.loads((root / "results/jpeg_corruption/cases/fig_truncate_r0/oracle/metrics.json").read_text())
+    assert "device" not in lm["methods"]["csfr"] and "csfr_cpu" not in lm
+    assert lm["methods"]["csfr"]["gap"] == 1.1e-7                           # the workstation's record stays
+
+
 def test_merge_refuses_an_incomplete_gpu_run(mg, monkeypatch):
+    seen = []
+
     class Kernel:
         FIGURE_FILE = 2
 
         @staticmethod
-        def missing(root):
+        def missing(root, gpu_dir):
+            seen.append(gpu_dir)
             return ["a_truncate_r0/oracle: not run"]
 
-    monkeypatch.setattr(mg, "_gpu_kernel", lambda root: Kernel)
-    assert mg.main([]) == 1
+    monkeypatch.setattr(mg, "_gpu_kernel", lambda: Kernel)
+    assert mg.main(["--gpu", "results/elsewhere"]) == 1
+    assert seen == [mg.ROOT / "results/elsewhere"]

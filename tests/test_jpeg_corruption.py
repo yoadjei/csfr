@@ -140,8 +140,10 @@ def test_records_solved_on_other_inputs_are_refused(tmp_path):
     m = json.loads(mp.read_text())
     m["inputs_sha256"]["y"] = "0" * 64
     mp.write_text(json.dumps(m))
+    y_on_disk = (mp.parent / "y.npy").read_bytes()
     with pytest.raises(RuntimeError, match="other inputs"):
         mod.main(args)
+    assert (mp.parent / "y.npy").read_bytes() == y_on_disk          # the refusal changed nothing on disk
 
 
 def test_driver_end_to_end(tmp_path):

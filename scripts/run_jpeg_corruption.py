@@ -151,15 +151,15 @@ def start_condition(d: Path, clean: np.ndarray, dec: np.ndarray, M: np.ndarray, 
     d.mkdir(parents=True, exist_ok=True)
     y = (dec * M)[None].astype(np.float32)
     Mb = M[None].astype(np.float32)
-    np.save(d / "y.npy", y)
-    np.save(d / "mask.npy", Mb)
     mpath = d / "metrics.json"
     metrics = json.loads(mpath.read_text()) if mpath.exists() and not force else {}
     metrics.setdefault("methods", {})
     inputs = {"y": hashlib.sha256(y.tobytes()).hexdigest(), "mask": hashlib.sha256(Mb.tobytes()).hexdigest()}
-    if metrics.get("inputs_sha256", inputs) != inputs:
+    if metrics.get("inputs_sha256", inputs) != inputs:     # checked before the inputs on disk change
         raise RuntimeError(f"{d}: its records were solved on other inputs (inputs_sha256)")
     metrics["inputs_sha256"] = inputs
+    np.save(d / "y.npy", y)
+    np.save(d / "mask.npy", Mb)
     nothing = bool((M == 1).all())
     metrics["nothing_to_fill"] = nothing
     job = {"d": d, "mpath": mpath, "metrics": metrics, "y": y, "ref": clean[None].astype(np.float32),
