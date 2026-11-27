@@ -302,6 +302,20 @@ def test_a_govdocs_jpeg_that_does_not_match_its_manifest_is_not_written(tmp_path
     assert not (work / "data/jpeg_corruption/src/govdocs_000.jpg").exists()
 
 
+@pytest.mark.parametrize("system_site", [False, True])
+def test_a_venv_gets_pip_from_the_image_pip_not_ensurepip(tmp_path, monkeypatch, system_site):
+    m = _mod()
+    calls = []
+    monkeypatch.setattr(m, "sh", lambda cmd, **kw: calls.append([str(c) for c in cmd]))
+    py = m._venv(tmp_path / ".venv-x", system_site=system_site)
+    assert py == tmp_path / ".venv-x" / "bin" / "python"
+    create, bootstrap = calls
+    assert create[:4] == [sys.executable, "-m", "venv", "--without-pip"]
+    assert ("--system-site-packages" in create) == system_site
+    assert bootstrap[:5] == [sys.executable, "-m", "pip", "--python", str(py)]
+    assert "--ignore-installed" in bootstrap and bootstrap[-1] == "pip"
+
+
 def _fake_main_env(m, monkeypatch, probes):
     calls = []
     monkeypatch.setattr(m, "_venv", lambda path, system_site: Path(path) / "bin" / "python")

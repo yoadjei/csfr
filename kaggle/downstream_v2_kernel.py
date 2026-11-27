@@ -355,9 +355,13 @@ def _probe_failures(name: str, probe: dict) -> list[str]:
 
 
 def _venv(path: Path, system_site: bool) -> Path:
-    sh([sys.executable, "-m", "venv", path, *(["--system-site-packages"] if system_site else [])])
+    """A venv at path; (its python). pip comes from the image's own pip, not
+    ensurepip: ensurepip fails in the Python 3.13 Kaggle image. --ignore-installed
+    puts pip in the venv even when the image's pip is visible through
+    --system-site-packages."""
+    sh([sys.executable, "-m", "venv", "--without-pip", path, *(["--system-site-packages"] if system_site else [])])
     py = path / "bin" / "python"
-    sh([py, "-m", "pip", "install", "-q", "--upgrade", "pip"])
+    sh([sys.executable, "-m", "pip", "--python", py, "install", "-q", "--ignore-installed", "--upgrade", "pip"])
     return py
 
 
