@@ -58,6 +58,19 @@ def test_predict_returns_labels_and_confidence():
     assert torch.all((conf >= 0) & (conf <= 1))
 
 
+def test_predict_refuses_a_device_the_model_is_not_on():
+    # the Kaggle ResNet run: train_classifier returns the model on the CPU and
+    # the clean accuracy asked for cuda (meta stands in for it here)
+    model = freeze(DigitCNN())
+    x = torch.rand(3, 1, 32, 32)
+    with pytest.raises(ValueError, match="the model is on cpu, not meta"):
+        predict(model, x, device=torch.device("meta"))
+    with pytest.raises(ValueError, match="the model is on cpu"):
+        clean_top1_accuracy(model, x, torch.zeros(3, dtype=torch.long), device="meta")
+    labels, _ = predict(model, x, device="cpu")
+    assert labels.shape == (3,)
+
+
 def test_deterministic_seed_reproduces_weights():
     x, y = _synthetic_digits(n=80, seed=1)
 

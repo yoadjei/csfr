@@ -516,7 +516,12 @@ def predict(
     labels : LongTensor[N]
     confidence : FloatTensor[N]  (max softmax probability)
     """
-    device = device or next(model.parameters()).device
+    model_device = next(model.parameters()).device
+    device = torch.device(device) if device is not None else model_device
+    # "cuda" names the current GPU; a model moved there reports "cuda:0"
+    same_index = device.index is None or model_device.index is None or device.index == model_device.index
+    if device.type != model_device.type or not same_index:
+        raise ValueError(f"the model is on {model_device}, not {device}: move it first (model.to(device))")
     model.eval()
     if images.ndim == 2:  # H, W
         images = images.unsqueeze(0).unsqueeze(0)

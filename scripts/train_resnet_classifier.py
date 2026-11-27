@@ -52,7 +52,8 @@ def main(argv=None) -> int:
     model, info = train_classifier(train_x, train_y, epochs=args.epochs, batch_size=128, lr=1e-3,
                                    seed=args.seed, arch="DigitResNet", weight_decay=5e-4, cosine=True,
                                    checkpoint=ROOT / args.checkpoint, device=device)
-    acc = clean_top1_accuracy(model, test_x, test_y, device=device)
+    # train_classifier returns the model on the CPU, where the downstream harness scores it
+    acc = clean_top1_accuracy(model, test_x, test_y)
     print(f"[resnet] clean SVHN test top-1 {acc:.4f} after {time.time() - t0:.0f}s", flush=True)
     if acc < MIN_CLEAN_ACC:
         print(f"[resnet] below {MIN_CLEAN_ACC}: not saved; report before continuing", flush=True)
