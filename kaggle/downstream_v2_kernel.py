@@ -545,8 +545,9 @@ def kernel_dir(out: Path, user: str, session: int) -> Path:
 
 def main(argv=None) -> int:
     if argv is None and len(sys.argv) == 1:
-        if not KAGGLE_INPUT.is_dir():
-            print("no /kaggle/input: this is the Kaggle kernel; locally use stage, kernel-dir, check or expected",
+        # /kaggle/input exists only once an input is attached; a first session has none
+        if not KAGGLE_OUT.is_dir():
+            print("no /kaggle/working: this is the Kaggle kernel; locally use stage, kernel-dir, check or expected",
                   file=sys.stderr)
             return 2
         return kernel()

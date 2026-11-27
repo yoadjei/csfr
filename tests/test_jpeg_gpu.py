@@ -40,6 +40,17 @@ def mg():
     return _load("merge_jpeg_gpu", "scripts/merge_jpeg_gpu.py")
 
 
+def test_a_first_session_without_kaggle_input_runs_the_kernel(jk, tmp_path, monkeypatch):
+    monkeypatch.setattr(jk, "KAGGLE_INPUT", tmp_path / "input")  # absent: no input attached
+    monkeypatch.setattr(jk, "KAGGLE_OUT", tmp_path / "working")
+    monkeypatch.setattr(jk, "kernel", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["jpeg_gpu_kernel.py"])
+    assert jk.main() == 2  # not on Kaggle: no /kaggle/working
+    (tmp_path / "working").mkdir()
+    assert jk.main() == 0
+    assert jk.restore_state(tmp_path / "input", tmp_path / "work") == 1
+
+
 def test_the_order_solves_every_manifest_file_once(jk):
     drv = _load("jpeg_drv_order", "scripts/run_jpeg_corruption.py")
     files = json.loads((ROOT / jk.MANIFEST).read_text(encoding="utf-8"))["files"]

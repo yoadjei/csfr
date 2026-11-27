@@ -302,6 +302,18 @@ def test_a_govdocs_jpeg_that_does_not_match_its_manifest_is_not_written(tmp_path
     assert not (work / "data/jpeg_corruption/src/govdocs_000.jpg").exists()
 
 
+def test_a_first_session_without_kaggle_input_runs_the_kernel(tmp_path, monkeypatch):
+    m = _mod()
+    monkeypatch.setattr(m, "KAGGLE_INPUT", tmp_path / "input")  # absent: no input attached
+    monkeypatch.setattr(m, "KAGGLE_OUT", tmp_path / "working")
+    monkeypatch.setattr(m, "kernel", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["downstream_v2_kernel.py"])
+    assert m.main() == 2  # not on Kaggle: no /kaggle/working
+    (tmp_path / "working").mkdir()
+    assert m.main() == 0
+    assert m.restore_state(tmp_path / "input", tmp_path / "work") == 1
+
+
 @pytest.mark.parametrize("system_site", [False, True])
 def test_a_venv_gets_pip_from_the_image_pip_not_ensurepip(tmp_path, monkeypatch, system_site):
     m = _mod()

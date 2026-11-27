@@ -337,8 +337,9 @@ def kernel() -> int:
 
 def main(argv=None) -> int:
     if argv is None and len(sys.argv) == 1:
-        if not KAGGLE_INPUT.is_dir():
-            print("no /kaggle/input: this is the Kaggle kernel; locally use check", file=sys.stderr)
+        # /kaggle/input exists only once an input is attached; a first session has none
+        if not KAGGLE_OUT.is_dir():
+            print("no /kaggle/working: this is the Kaggle kernel; locally use check", file=sys.stderr)
             return 2
         return kernel()
     repo = Path(__file__).resolve().parent.parent
